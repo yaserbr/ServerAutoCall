@@ -59,7 +59,7 @@ app.get("/devices", (req, res) => {
 // إنشاء أمر اتصال
 // =====================
 app.post("/commands", (req, res) => {
-  const { deviceUid, phoneNumber } = req.body;
+  const { deviceUid, phoneNumber, scheduledAt } = req.body;
 
   const command = {
     id: Date.now().toString(),
@@ -67,6 +67,7 @@ app.post("/commands", (req, res) => {
     type: "CALL",
     phoneNumber,
     status: "pending",
+    scheduledAt: scheduledAt || null,
     createdAt: new Date()
   };
 
@@ -74,7 +75,6 @@ app.post("/commands", (req, res) => {
 
   res.json(command);
 });
-
 // =====================
 // جلب الأوامر
 // =====================
