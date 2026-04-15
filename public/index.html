@@ -121,7 +121,8 @@
             margin-bottom: 12px;
         }
 
-        input {
+        input,
+        select {
             width: 100%;
             border: 1px solid rgba(255, 255, 255, 0.22);
             border-radius: 12px;
@@ -136,7 +137,8 @@
             opacity: 0.7;
         }
 
-        input:focus {
+        input:focus,
+        select:focus {
             border-color: rgba(103, 232, 249, 0.75);
             box-shadow: 0 0 0 3px rgba(103, 232, 249, 0.18);
         }
@@ -188,7 +190,7 @@
             <article class="card">
                 <h2>Send Call</h2>
                 <div class="input-row">
-                    <input id="deviceUid" placeholder="deviceUid" />
+                    <select id="deviceSelect"></select>
                     <input id="phone" placeholder="phone number" />
                 </div>
                 <div class="actions">
@@ -216,6 +218,35 @@
                 JSON.stringify(data, null, 2);
         }
 
+        async function loadDevicesToSelect() {
+            const res = await fetch(SERVER + "/devices");
+            const data = await res.json();
+            const select = document.getElementById("deviceSelect");
+            const previousValue = select.value;
+
+            select.innerHTML = "";
+
+            if (!Array.isArray(data) || data.length === 0) {
+                const emptyOption = document.createElement("option");
+                emptyOption.value = "";
+                emptyOption.textContent = "No devices found";
+                select.appendChild(emptyOption);
+                return;
+            }
+
+            data.forEach((device) => {
+                const option = document.createElement("option");
+                option.value = device.deviceUid;
+                option.textContent = `${device.deviceUid} ${device.online ? "🟢" : "🔴"}`;
+                select.appendChild(option);
+            });
+
+            const hasPrevious = data.some((device) => device.deviceUid === previousValue);
+            if (hasPrevious) {
+                select.value = previousValue;
+            }
+        }
+
         async function loadCommands() {
             const res = await fetch(SERVER + "/commands");
             const data = await res.json();
@@ -224,7 +255,7 @@
         }
 
         async function sendCall() {
-            const deviceUid = document.getElementById("deviceUid").value;
+            const deviceUid = document.getElementById("deviceSelect").value;
             const phoneNumber = document.getElementById("phone").value;
 
             await fetch(SERVER + "/commands", {
@@ -238,6 +269,9 @@
             alert("Command sent");
             loadCommands();
         }
+
+        loadDevicesToSelect();
+        setInterval(loadDevicesToSelect, 10000);
     </script>
 </body>
 
