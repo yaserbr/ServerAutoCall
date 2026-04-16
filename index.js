@@ -9,20 +9,65 @@ app.use(express.json());
 const devices = [];
 const commands = [];
 
-function formatRiyadhDate(dateValue) {
+const RIYADH_TIMEZONE = "Asia/Riyadh";
+const RIYADH_UTC_OFFSET_MINUTES = 3 * 60;
+
+// Time strategy:
+// 1) Storage format: UTC ISO strings only (toISOString).
+// 2) Response display format: Asia/Riyadh localized string for end users.
+// 3) Parsing input format: datetime-local is interpreted as Riyadh local time, then converted to UTC.
+function toUtcISOString(date = new Date()) {
+  return new Date(date).toISOString();
+}
+
+function parseScheduledAtAsRiyadhToUtcDate(value) {
+  if (!value || typeof value !== "string") return null;
+
+  const hasExplicitTimezone = /[zZ]|[+-]\d{2}:\d{2}$/.test(value);
+  if (hasExplicitTimezone) {
+    return new Date(value);
+  }
+
+  // Expected from datetime-local: YYYY-MM-DDTHH:mm (optional :ss).
+  const match = value.match(
+    /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})(?::(\d{2}))?$/
+  );
+  if (!match) return new Date(NaN);
+
+  const [, year, month, day, hour, minute, second = "00"] = match;
+  const utcMillis = Date.UTC(
+    Number(year),
+    Number(month) - 1,
+    Number(day),
+    Number(hour),
+    Number(minute) - RIYADH_UTC_OFFSET_MINUTES,
+    Number(second)
+  );
+
+  return new Date(utcMillis);
+}
+
+function formatUtcForRiyadhDisplay(dateValue) {
   if (!dateValue) return null;
   return new Date(dateValue).toLocaleString("en-GB", {
-    timeZone: "Asia/Riyadh",
+    timeZone: RIYADH_TIMEZONE,
     hour12: false
   });
+}
+
+function mapDeviceForResponse(device) {
+  return {
+    ...device,
+    lastSeen: formatUtcForRiyadhDisplay(device.lastSeen)
+  };
 }
 
 function mapCommandForResponse(command) {
   return {
     ...command,
-    createdAt: formatRiyadhDate(command.createdAt),
-    executedAt: formatRiyadhDate(command.executedAt),
-    scheduledAt: formatRiyadhDate(command.scheduledAt)
+    createdAt: formatUtcForRiyadhDisplay(command.createdAt),
+    executedAt: formatUtcForRiyadhDisplay(command.executedAt),
+    scheduledAt: formatUtcForRiyadhDisplay(command.scheduledAt)
   };
 }
 
@@ -38,15 +83,15 @@ app.post("/devices/register", (req, res) => {
     device = {
       deviceUid,
       online: true,
-      lastSeen: new Date()
+      lastSeen: toUtcISOString()
     };
     devices.push(device);
   } else {
     device.online = true;
-    device.lastSeen = new Date();
+    device.lastSeen = toUtcISOString();
   }
 
-  res.json({ success: true, device });
+  res.json({ success: true, device: mapDeviceForResponse(device) });
 });
 
 // =====================
@@ -59,7 +104,7 @@ app.post("/devices/heartbeat", (req, res) => {
 
   if (device) {
     device.online = true;
-    device.lastSeen = new Date();
+    device.lastSeen = toUtcISOString();
   }
 
   res.json({ success: true });
@@ -69,7 +114,7 @@ app.post("/devices/heartbeat", (req, res) => {
 // جلب الأجهزة
 // =====================
 app.get("/devices", (req, res) => {
-  res.json(devices);
+  res.json(devices.map(mapDeviceForResponse));
 });
 
 // =====================
@@ -80,7 +125,7 @@ app.post("/commands", (req, res) => {
   let scheduledAtIso = null;
 
   if (scheduledAt) {
-    const parsedDate = new Date(scheduledAt);
+    const parsedDate = parseScheduledAtAsRiyadhToUtcDate(scheduledAt);
     const parsedTime = parsedDate.getTime();
 
     if (Number.isNaN(parsedTime)) {
@@ -95,7 +140,7 @@ app.post("/commands", (req, res) => {
     }
 
     if (diff > 0) {
-      scheduledAtIso = parsedDate.toISOString();
+      scheduledAtIso = toUtcISOString(parsedDate);
     }
   }
 
@@ -107,7 +152,7 @@ app.post("/commands", (req, res) => {
     status: "pending",
     scheduledAt: scheduledAtIso,
     isImmediate: scheduledAtIso === null,
-    createdAt: new Date().toISOString()
+    createdAt: toUtcISOString()
   };
 
   commands.push(command);
@@ -172,7 +217,8 @@ app.post("/commands/:id/status", (req, res) => {
   command.status = status;
 
   if (status === "executed") {
-    command.executedAt = new Date().toISOString();
+    command.executedAt = toUtcISOString();
+
   }
 
   res.json(mapCommandForResponse(command));
