@@ -9,6 +9,23 @@ app.use(express.json());
 const devices = [];
 const commands = [];
 
+function formatRiyadhDate(dateValue) {
+  if (!dateValue) return null;
+  return new Date(dateValue).toLocaleString("en-GB", {
+    timeZone: "Asia/Riyadh",
+    hour12: false
+  });
+}
+
+function mapCommandForResponse(command) {
+  return {
+    ...command,
+    createdAt: formatRiyadhDate(command.createdAt),
+    executedAt: formatRiyadhDate(command.executedAt),
+    scheduledAt: formatRiyadhDate(command.scheduledAt)
+  };
+}
+
 // =====================
 // تسجيل جهاز
 // =====================
@@ -60,6 +77,27 @@ app.get("/devices", (req, res) => {
 // =====================
 app.post("/commands", (req, res) => {
   const { deviceUid, phoneNumber, scheduledAt } = req.body;
+  let scheduledAtIso = null;
+
+  if (scheduledAt) {
+    const parsedDate = new Date(scheduledAt);
+    const parsedTime = parsedDate.getTime();
+
+    if (Number.isNaN(parsedTime)) {
+      return res.status(400).json({ error: "Invalid scheduledAt date" });
+    }
+
+    const now = Date.now();
+    const diff = parsedTime - now;
+
+    if (diff < -60000) {
+      return res.status(400).json({ error: "scheduledAt is too far in the past" });
+    }
+
+    if (diff > 0) {
+      scheduledAtIso = parsedDate.toISOString();
+    }
+  }
 
   const command = {
     id: Date.now().toString(),
@@ -67,13 +105,14 @@ app.post("/commands", (req, res) => {
     type: "CALL",
     phoneNumber,
     status: "pending",
-    scheduledAt: scheduledAt || null,
-    createdAt: new Date()
+    scheduledAt: scheduledAtIso,
+    isImmediate: scheduledAtIso === null,
+    createdAt: new Date().toISOString()
   };
 
   commands.push(command);
 
-  res.json(command);
+  res.json(mapCommandForResponse(command));
 });
 // =====================
 // جلب الأوامر
@@ -91,7 +130,26 @@ app.get("/commands", (req, res) => {
     result = result.filter(c => c.status === status);
   }
 
-  res.json(result);
+  const sortedResult = [...result].sort((a, b) => {
+    const aImmediate = !a.scheduledAt;
+    const bImmediate = !b.scheduledAt;
+
+    if (aImmediate && !bImmediate) return -1;
+    if (!aImmediate && bImmediate) return 1;
+    if (aImmediate && bImmediate) return 0;
+
+    return new Date(a.scheduledAt).getTime() - new Date(b.scheduledAt).getTime();
+  });
+
+  res.json(sortedResult.map(mapCommandForResponse));
+});
+
+app.delete("/commands", (req, res) => {
+  commands.length = 0;
+  res.json({
+    success: true,
+    message: "All commands cleared"
+  });
 });
 
 // =====================
@@ -107,9 +165,17 @@ app.post("/commands/:id/status", (req, res) => {
     return res.status(404).json({ error: "Command not found" });
   }
 
+  if (command.status !== "pending") {
+    return res.json(mapCommandForResponse(command));
+  }
+
   command.status = status;
 
-  res.json(command);
+  if (status === "executed") {
+    command.executedAt = new Date().toISOString();
+  }
+
+  res.json(mapCommandForResponse(command));
 });
 
 // =====================

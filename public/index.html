@@ -192,6 +192,7 @@
                 <div class="input-row">
                     <select id="deviceSelect"></select>
                     <input id="phone" placeholder="phone number" />
+                    <input type="datetime-local" id="scheduleTime" />
                 </div>
                 <div class="actions">
                     <button onclick="sendCall()">Call</button>
@@ -202,6 +203,7 @@
                 <h2>Commands</h2>
                 <div class="actions">
                     <button onclick="loadCommands()">Refresh</button>
+                    <button onclick="clearCommands()">Clear Commands</button>
                 </div>
                 <pre id="commands"></pre>
             </article>
@@ -209,68 +211,124 @@
     </main>
 
     <script>
-        const SERVER = "https://serverautocall-production.up.railway.app";
+        const SERVER =
+            window.location.hostname === "localhost"
+                ? "http://localhost:4000"
+                : "https://serverautocall-production.up.railway.app";
 
         async function loadDevices() {
-            const res = await fetch(SERVER + "/devices");
-            const data = await res.json();
-            document.getElementById("devices").innerText =
-                JSON.stringify(data, null, 2);
+            try {
+                const res = await fetch(SERVER + "/devices");
+                if (!res.ok) throw new Error("Failed to load devices");
+                const data = await res.json();
+                document.getElementById("devices").innerText =
+                    JSON.stringify(data, null, 2);
+            } catch (error) {
+                document.getElementById("devices").innerText = JSON.stringify({
+                    error: error.message
+                }, null, 2);
+            }
         }
 
         async function loadDevicesToSelect() {
-            const res = await fetch(SERVER + "/devices");
-            const data = await res.json();
-            const select = document.getElementById("deviceSelect");
-            const previousValue = select.value;
+            try {
+                const res = await fetch(SERVER + "/devices");
+                if (!res.ok) throw new Error("Failed to load devices");
+                const data = await res.json();
+                const select = document.getElementById("deviceSelect");
+                const previousValue = select.value;
 
-            select.innerHTML = "";
+                select.innerHTML = "";
 
-            if (!Array.isArray(data) || data.length === 0) {
-                const emptyOption = document.createElement("option");
-                emptyOption.value = "";
-                emptyOption.textContent = "No devices found";
-                select.appendChild(emptyOption);
-                return;
-            }
+                if (!Array.isArray(data) || data.length === 0) {
+                    const emptyOption = document.createElement("option");
+                    emptyOption.value = "";
+                    emptyOption.textContent = "No devices found";
+                    select.appendChild(emptyOption);
+                    return;
+                }
 
-            data.forEach((device) => {
-                const option = document.createElement("option");
-                option.value = device.deviceUid;
-                option.textContent = `${device.deviceUid} ${device.online ? "🟢" : "🔴"}`;
-                select.appendChild(option);
-            });
+                data.forEach((device) => {
+                    const option = document.createElement("option");
+                    option.value = device.deviceUid;
+                    option.textContent = `${device.deviceUid} ${device.online ? "🟢" : "🔴"}`;
+                    select.appendChild(option);
+                });
 
-            const hasPrevious = data.some((device) => device.deviceUid === previousValue);
-            if (hasPrevious) {
-                select.value = previousValue;
+                const hasPrevious = data.some((device) => device.deviceUid === previousValue);
+                if (hasPrevious) {
+                    select.value = previousValue;
+                }
+            } catch (error) {
+                const select = document.getElementById("deviceSelect");
+                select.innerHTML = "";
+                const errorOption = document.createElement("option");
+                errorOption.value = "";
+                errorOption.textContent = "Error loading devices";
+                select.appendChild(errorOption);
             }
         }
 
         async function loadCommands() {
-            const res = await fetch(SERVER + "/commands");
-            const data = await res.json();
-            document.getElementById("commands").innerText =
-                JSON.stringify(data, null, 2);
+            try {
+                const res = await fetch(SERVER + "/commands");
+                if (!res.ok) throw new Error("Failed to load commands");
+                const data = await res.json();
+                document.getElementById("commands").innerText =
+                    JSON.stringify(data, null, 2);
+            } catch (error) {
+                document.getElementById("commands").innerText = JSON.stringify({
+                    error: error.message
+                }, null, 2);
+            }
         }
 
         async function sendCall() {
             const deviceUid = document.getElementById("deviceSelect").value;
             const phoneNumber = document.getElementById("phone").value;
+            const scheduledAt = document.getElementById("scheduleTime").value;
 
-            await fetch(SERVER + "/commands", {
-                method: "POST",
-                headers: {
-                    "Content-Type": "application/json"
-                },
-                body: JSON.stringify({ deviceUid, phoneNumber })
-            });
+            try {
+                const res = await fetch(SERVER + "/commands", {
+                    method: "POST",
+                    headers: {
+                        "Content-Type": "application/json"
+                    },
+                    body: JSON.stringify({ deviceUid, phoneNumber, scheduledAt: scheduledAt || null })
+                });
 
-            alert("Command sent");
-            loadCommands();
+                const data = await res.json();
+                if (!res.ok) throw new Error(data.error || "Failed to send command");
+
+                alert("Command sent");
+                await loadCommands();
+            } catch (error) {
+                alert(error.message);
+            }
+        }
+
+        async function clearCommands() {
+            const isConfirmed = window.confirm("Are you sure you want to clear all commands?");
+            if (!isConfirmed) return;
+
+            try {
+                const res = await fetch(SERVER + "/commands", {
+                    method: "DELETE"
+                });
+
+                const data = await res.json();
+                if (!res.ok) throw new Error(data.error || "Failed to clear commands");
+
+                alert(data.message || "All commands cleared");
+                await loadCommands();
+            } catch (error) {
+                alert(error.message);
+            }
         }
 
         loadDevicesToSelect();
+        loadDevices();
+        loadCommands();
         setInterval(loadDevicesToSelect, 10000);
     </script>
 </body>
