@@ -115,6 +115,16 @@
             opacity: 0.95;
         }
 
+        .danger-button {
+            color: #fff5f5;
+            background: linear-gradient(135deg, #ef4444, #dc2626);
+            box-shadow: 0 6px 18px rgba(220, 38, 38, 0.45);
+        }
+
+        .danger-button:hover {
+            box-shadow: 0 10px 22px rgba(220, 38, 38, 0.58);
+        }
+
         .input-row {
             display: grid;
             gap: 10px;
@@ -206,7 +216,7 @@
                 </div>
                 <div class="actions">
                     <button onclick="sendCall()">Call</button>
-                    <button onclick="sendEndCall()">End Call</button>
+                    <button class="danger-button" onclick="sendEndCall()">End Call</button>
                 </div>
             </article>
 
