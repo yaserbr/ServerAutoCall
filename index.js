@@ -121,8 +121,25 @@ app.get("/devices", (req, res) => {
 // إنشاء أمر اتصال
 // =====================
 app.post("/commands", (req, res) => {
-  const { deviceUid, phoneNumber, scheduledAt } = req.body;
+  const { deviceUid, action, phoneNumber, scheduledAt, durationSeconds } = req.body;
   let scheduledAtIso = null;
+  const normalizedAction =
+    typeof action === "string" && action.trim()
+      ? action.trim().toLowerCase()
+      : "call";
+
+  if (normalizedAction !== "call") {
+    return res.status(400).json({ error: "Invalid action. Only 'call' is supported." });
+  }
+
+  let normalizedDurationSeconds = null;
+  if (durationSeconds !== undefined && durationSeconds !== null) {
+    const parsedDuration = Number(durationSeconds);
+    if (!Number.isFinite(parsedDuration) || parsedDuration <= 0) {
+      return res.status(400).json({ error: "durationSeconds must be a number greater than 0" });
+    }
+    normalizedDurationSeconds = parsedDuration;
+  }
 
   if (scheduledAt) {
     const parsedDate = parseScheduledAtAsRiyadhToUtcDate(scheduledAt);
@@ -147,8 +164,10 @@ app.post("/commands", (req, res) => {
   const command = {
     id: Date.now().toString(),
     deviceUid,
+    action: "call",
     type: "CALL",
     phoneNumber,
+    durationSeconds: normalizedDurationSeconds,
     status: "pending",
     scheduledAt: scheduledAtIso,
     isImmediate: scheduledAtIso === null,

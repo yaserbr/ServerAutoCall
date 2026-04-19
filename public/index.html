@@ -121,6 +121,13 @@
             margin-bottom: 12px;
         }
 
+        .field-label {
+            font-size: 0.84rem;
+            color: var(--muted);
+            margin-top: -2px;
+            margin-bottom: -4px;
+        }
+
         input,
         select {
             width: 100%;
@@ -192,6 +199,9 @@
                 <div class="input-row">
                     <select id="deviceSelect"></select>
                     <input id="phone" placeholder="phone number" />
+                    <label class="field-label" for="durationSeconds">Call duration (seconds)</label>
+                    <input id="durationSeconds" type="text" inputmode="numeric" pattern="[0-9]*"
+                        placeholder="18" oninput="sanitizeDurationInput(event)" />
                     <input type="datetime-local" id="scheduleTime" />
                 </div>
                 <div class="actions">
@@ -283,10 +293,41 @@
             }
         }
 
+        function sanitizeDurationInput(event) {
+            const input = event.target;
+            input.value = input.value.replace(/[^\d]/g, "");
+        }
+
+        function getValidDurationSeconds(rawValue) {
+            if (!rawValue) return null;
+            const parsed = Number(rawValue);
+            if (!Number.isInteger(parsed) || parsed <= 0) return null;
+            return parsed;
+        }
+
         async function sendCall() {
             const deviceUid = document.getElementById("deviceSelect").value;
             const phoneNumber = document.getElementById("phone").value;
             const scheduledAt = document.getElementById("scheduleTime").value;
+            const durationRaw = document.getElementById("durationSeconds").value.trim();
+            const durationSeconds = getValidDurationSeconds(durationRaw);
+
+            const payload = {
+                deviceUid,
+                action: "call",
+                phoneNumber,
+                scheduledAt: scheduledAt || null
+            };
+
+            if (durationSeconds !== null) {
+                payload.durationSeconds = durationSeconds;
+            }
+
+            console.log("Sending call command:", {
+                phoneNumber,
+                durationSeconds,
+                deviceUid
+            });
 
             try {
                 const res = await fetch(SERVER + "/commands", {
@@ -294,7 +335,7 @@
                     headers: {
                         "Content-Type": "application/json"
                     },
-                    body: JSON.stringify({ deviceUid, phoneNumber, scheduledAt: scheduledAt || null })
+                    body: JSON.stringify(payload)
                 });
 
                 const data = await res.json();
