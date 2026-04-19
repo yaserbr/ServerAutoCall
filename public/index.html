@@ -206,6 +206,7 @@
                 </div>
                 <div class="actions">
                     <button onclick="sendCall()">Call</button>
+                    <button onclick="sendEndCall()">End Call</button>
                 </div>
             </article>
 
@@ -342,6 +343,32 @@
                 if (!res.ok) throw new Error(data.error || "Failed to send command");
 
                 alert("Command sent");
+                await loadCommands();
+            } catch (error) {
+                alert(error.message);
+            }
+        }
+
+        async function sendEndCall() {
+            const deviceUid = document.getElementById("deviceSelect").value;
+            const payload = {
+                deviceUid,
+                action: "end"
+            };
+
+            try {
+                const res = await fetch(SERVER + "/commands", {
+                    method: "POST",
+                    headers: {
+                        "Content-Type": "application/json"
+                    },
+                    body: JSON.stringify(payload)
+                });
+
+                const data = await res.json();
+                if (!res.ok) throw new Error(data.error || "Failed to send end command");
+
+                alert("End command sent");
                 await loadCommands();
             } catch (error) {
                 alert(error.message);

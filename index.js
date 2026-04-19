@@ -128,12 +128,12 @@ app.post("/commands", (req, res) => {
       ? action.trim().toLowerCase()
       : "call";
 
-  if (normalizedAction !== "call") {
-    return res.status(400).json({ error: "Invalid action. Only 'call' is supported." });
+  if (normalizedAction !== "call" && normalizedAction !== "end") {
+    return res.status(400).json({ error: "Invalid action. Only 'call' and 'end' are supported." });
   }
 
   let normalizedDurationSeconds = null;
-  if (durationSeconds !== undefined && durationSeconds !== null) {
+  if (normalizedAction === "call" && durationSeconds !== undefined && durationSeconds !== null) {
     const parsedDuration = Number(durationSeconds);
     if (!Number.isFinite(parsedDuration) || parsedDuration <= 0) {
       return res.status(400).json({ error: "durationSeconds must be a number greater than 0" });
@@ -161,13 +161,14 @@ app.post("/commands", (req, res) => {
     }
   }
 
+  const commandType = normalizedAction === "end" ? "END" : "CALL";
   const command = {
     id: Date.now().toString(),
     deviceUid,
-    action: "call",
-    type: "CALL",
-    phoneNumber,
-    durationSeconds: normalizedDurationSeconds,
+    action: normalizedAction,
+    type: commandType,
+    phoneNumber: normalizedAction === "call" ? phoneNumber : null,
+    durationSeconds: normalizedAction === "call" ? normalizedDurationSeconds : null,
     status: "pending",
     scheduledAt: scheduledAtIso,
     isImmediate: scheduledAtIso === null,
