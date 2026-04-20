@@ -11,6 +11,7 @@ const commands = [];
 
 const RIYADH_TIMEZONE = "Asia/Riyadh";
 const RIYADH_UTC_OFFSET_MINUTES = 3 * 60;
+const DEVICE_NAME_MAX_LENGTH = 60;
 
 // Time strategy:
 // 1) Storage format: UTC ISO strings only (toISOString).
@@ -55,9 +56,35 @@ function formatUtcForRiyadhDisplay(dateValue) {
   });
 }
 
+function normalizeDeviceUid(value) {
+  if (typeof value !== "string") return "";
+  return value.trim();
+}
+
+function normalizeDeviceName(value) {
+  if (typeof value !== "string") return null;
+  const trimmed = value.trim();
+  if (!trimmed) return null;
+  return trimmed.slice(0, DEVICE_NAME_MAX_LENGTH);
+}
+
+function buildDefaultDeviceName(deviceUid) {
+  const sanitized = String(deviceUid || "")
+    .replace(/[^a-zA-Z0-9]/g, "")
+    .slice(-4)
+    .toUpperCase()
+    .padStart(4, "0");
+  return `Device-${sanitized}`;
+}
+
+function ensureDeviceName(device) {
+  return normalizeDeviceName(device?.deviceName) ?? buildDefaultDeviceName(device?.deviceUid);
+}
+
 function mapDeviceForResponse(device) {
   return {
     ...device,
+    deviceName: ensureDeviceName(device),
     lastSeen: formatUtcForRiyadhDisplay(device.lastSeen)
   };
 }
@@ -75,13 +102,19 @@ function mapCommandForResponse(command) {
 // تسجيل جهاز
 // =====================
 app.post("/devices/register", (req, res) => {
-  const { deviceUid } = req.body;
+  const normalizedDeviceUid = normalizeDeviceUid(req.body?.deviceUid);
+  const normalizedDeviceName = normalizeDeviceName(req.body?.deviceName);
 
-  let device = devices.find(d => d.deviceUid === deviceUid);
+  if (!normalizedDeviceUid) {
+    return res.status(400).json({ error: "deviceUid is required" });
+  }
+
+  let device = devices.find(d => d.deviceUid === normalizedDeviceUid);
 
   if (!device) {
     device = {
-      deviceUid,
+      deviceUid: normalizedDeviceUid,
+      deviceName: normalizedDeviceName ?? buildDefaultDeviceName(normalizedDeviceUid),
       online: true,
       lastSeen: toUtcISOString()
     };
@@ -89,6 +122,11 @@ app.post("/devices/register", (req, res) => {
   } else {
     device.online = true;
     device.lastSeen = toUtcISOString();
+    if (normalizedDeviceName) {
+      device.deviceName = normalizedDeviceName;
+    } else if (!normalizeDeviceName(device.deviceName)) {
+      device.deviceName = buildDefaultDeviceName(normalizedDeviceUid);
+    }
   }
 
   res.json({ success: true, device: mapDeviceForResponse(device) });
@@ -98,16 +136,23 @@ app.post("/devices/register", (req, res) => {
 // heartbeat
 // =====================
 app.post("/devices/heartbeat", (req, res) => {
-  const { deviceUid } = req.body;
+  const normalizedDeviceUid = normalizeDeviceUid(req.body?.deviceUid);
 
-  const device = devices.find(d => d.deviceUid === deviceUid);
+  if (!normalizedDeviceUid) {
+    return res.status(400).json({ error: "deviceUid is required" });
+  }
+
+  const device = devices.find(d => d.deviceUid === normalizedDeviceUid);
 
   if (device) {
     device.online = true;
     device.lastSeen = toUtcISOString();
+    if (!normalizeDeviceName(device.deviceName)) {
+      device.deviceName = buildDefaultDeviceName(normalizedDeviceUid);
+    }
   }
 
-  res.json({ success: true });
+  res.json({ success: true, device: device ? mapDeviceForResponse(device) : null });
 });
 
 // =====================
@@ -115,6 +160,26 @@ app.post("/devices/heartbeat", (req, res) => {
 // =====================
 app.get("/devices", (req, res) => {
   res.json(devices.map(mapDeviceForResponse));
+});
+
+app.post("/devices/rename", (req, res) => {
+  const normalizedDeviceUid = normalizeDeviceUid(req.body?.deviceUid);
+  const normalizedDeviceName = normalizeDeviceName(req.body?.deviceName);
+
+  if (!normalizedDeviceUid) {
+    return res.status(400).json({ error: "deviceUid is required" });
+  }
+  if (!normalizedDeviceName) {
+    return res.status(400).json({ error: "deviceName is required" });
+  }
+
+  const device = devices.find(d => d.deviceUid === normalizedDeviceUid);
+  if (!device) {
+    return res.status(404).json({ error: "Device not found" });
+  }
+
+  device.deviceName = normalizedDeviceName;
+  res.json({ success: true, device: mapDeviceForResponse(device) });
 });
 
 // =====================
