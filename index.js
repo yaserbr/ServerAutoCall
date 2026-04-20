@@ -121,17 +121,29 @@ app.get("/devices", (req, res) => {
 // إنشاء أمر اتصال
 // =====================
 app.post("/commands", (req, res) => {
-  const { deviceUid, action, type, phoneNumber, message, scheduledAt, durationSeconds } = req.body;
+  const {
+    deviceUid,
+    action,
+    type,
+    phoneNumber,
+    message,
+    scheduledAt,
+    durationSeconds,
+    enabled,
+    autoHangupSeconds
+  } = req.body;
   let scheduledAtIso = null;
   const actionToType = {
     call: "CALL",
     end: "END",
-    sms: "SMS"
+    sms: "SMS",
+    auto_answer: "AUTO_ANSWER"
   };
   const typeToAction = {
     CALL: "call",
     END: "end",
-    SMS: "sms"
+    SMS: "sms",
+    AUTO_ANSWER: "auto_answer"
   };
 
   const normalizedActionInput =
@@ -145,13 +157,13 @@ app.post("/commands", (req, res) => {
 
   if (normalizedActionInput && !actionToType[normalizedActionInput]) {
     return res.status(400).json({
-      error: "Invalid action. Only 'call', 'end', and 'sms' are supported."
+      error: "Invalid action. Only 'call', 'end', 'sms', and 'auto_answer' are supported."
     });
   }
 
   if (normalizedTypeInput && !typeToAction[normalizedTypeInput]) {
     return res.status(400).json({
-      error: "Invalid type. Only 'CALL', 'END', and 'SMS' are supported."
+      error: "Invalid type. Only 'CALL', 'END', 'SMS', and 'AUTO_ANSWER' are supported."
     });
   }
 
@@ -167,6 +179,7 @@ app.post("/commands", (req, res) => {
 
   const normalizedAction = normalizedActionInput ?? typeToAction[normalizedTypeInput] ?? "call";
   const commandType = normalizedTypeInput ?? actionToType[normalizedAction];
+  const isAutoAnswerCommand = normalizedAction === "auto_answer";
 
   const normalizedPhoneNumber =
     typeof phoneNumber === "string" ? phoneNumber.trim() : "";
@@ -177,10 +190,22 @@ app.post("/commands", (req, res) => {
     });
   }
 
+  if (isAutoAnswerCommand && normalizedPhoneNumber) {
+    return res.status(400).json({
+      error: "phoneNumber is not supported for AUTO_ANSWER commands"
+    });
+  }
+
   const normalizedMessage = typeof message === "string" ? message.trim() : "";
   if (normalizedAction === "sms" && !normalizedMessage) {
     return res.status(400).json({
       error: "message is required for SMS commands"
+    });
+  }
+
+  if (isAutoAnswerCommand && normalizedMessage) {
+    return res.status(400).json({
+      error: "message is not supported for AUTO_ANSWER commands"
     });
   }
 
@@ -197,6 +222,42 @@ app.post("/commands", (req, res) => {
     return res.status(400).json({
       error: "durationSeconds is only supported for CALL commands"
     });
+  }
+
+  let normalizedEnabled = null;
+  let normalizedAutoHangupSeconds = null;
+  if (isAutoAnswerCommand) {
+    if (typeof enabled !== "boolean") {
+      return res.status(400).json({
+        error: "enabled is required and must be a boolean for AUTO_ANSWER commands"
+      });
+    }
+
+    normalizedEnabled = enabled;
+    if (enabled === true && autoHangupSeconds !== undefined && autoHangupSeconds !== null) {
+      const parsedAutoHangupSeconds = Number(autoHangupSeconds);
+      if (!Number.isFinite(parsedAutoHangupSeconds) || parsedAutoHangupSeconds <= 0) {
+        return res.status(400).json({
+          error: "autoHangupSeconds must be a number greater than 0"
+        });
+      }
+
+      normalizedAutoHangupSeconds = Math.max(
+        1,
+        Math.min(600, Math.round(parsedAutoHangupSeconds))
+      );
+    }
+  } else {
+    if (enabled !== undefined && enabled !== null) {
+      return res.status(400).json({
+        error: "enabled is only supported for AUTO_ANSWER commands"
+      });
+    }
+    if (autoHangupSeconds !== undefined && autoHangupSeconds !== null) {
+      return res.status(400).json({
+        error: "autoHangupSeconds is only supported for AUTO_ANSWER commands"
+      });
+    }
   }
 
   if (scheduledAt) {
@@ -227,6 +288,11 @@ app.post("/commands", (req, res) => {
     phoneNumber: requiresPhoneNumber ? normalizedPhoneNumber : null,
     message: normalizedAction === "sms" ? normalizedMessage : null,
     durationSeconds: normalizedAction === "call" ? normalizedDurationSeconds : null,
+    enabled: isAutoAnswerCommand ? normalizedEnabled : null,
+    autoHangupSeconds:
+      isAutoAnswerCommand && normalizedEnabled === true
+        ? normalizedAutoHangupSeconds
+        : null,
     status: "pending",
     failureReason: null,
     scheduledAt: scheduledAtIso,

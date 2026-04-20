@@ -154,6 +154,70 @@
             background: #ffffff;
         }
 
+        .inline-toggle-row {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 12px;
+            padding: 10px 12px;
+            border-radius: 12px;
+            border: 1px solid rgba(255, 255, 255, 0.22);
+            background: rgba(11, 18, 32, 0.35);
+        }
+
+        .inline-toggle-row span {
+            color: var(--text);
+            font-weight: 600;
+            font-size: 0.92rem;
+        }
+
+        .switch {
+            position: relative;
+            display: inline-block;
+            width: 52px;
+            height: 30px;
+            flex-shrink: 0;
+        }
+
+        .switch input {
+            opacity: 0;
+            width: 0;
+            height: 0;
+            position: absolute;
+        }
+
+        .switch-slider {
+            position: absolute;
+            inset: 0;
+            cursor: pointer;
+            border-radius: 999px;
+            background: rgba(255, 255, 255, 0.25);
+            border: 1px solid rgba(255, 255, 255, 0.3);
+            transition: background-color 0.25s ease, border-color 0.25s ease;
+        }
+
+        .switch-slider::before {
+            content: "";
+            position: absolute;
+            height: 22px;
+            width: 22px;
+            left: 3px;
+            top: 3px;
+            border-radius: 50%;
+            background: #ffffff;
+            transition: transform 0.25s ease;
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.25);
+        }
+
+        .switch input:checked+.switch-slider {
+            background: rgba(46, 196, 182, 0.75);
+            border-color: rgba(103, 232, 249, 0.9);
+        }
+
+        .switch input:checked+.switch-slider::before {
+            transform: translateX(22px);
+        }
+
         .tab-panel {
             display: none;
         }
@@ -345,11 +409,13 @@
         <section class="grid">
             <article class="card full-width">
                 <h2>Command Center</h2>
-                <div class="segmented-control" role="tablist" aria-label="Call SMS Toggle">
+                <div class="segmented-control" role="tablist" aria-label="Call SMS Auto Answer Toggle">
                     <button id="callTabBtn" class="segmented-option active" role="tab" aria-selected="true"
                         onclick="setActionTab('call')">Call</button>
                     <button id="smsTabBtn" class="segmented-option" role="tab" aria-selected="false"
                         onclick="setActionTab('sms')">SMS</button>
+                    <button id="autoAnswerTabBtn" class="segmented-option" role="tab" aria-selected="false"
+                        onclick="setActionTab('auto_answer')">Auto Answer</button>
                 </div>
                 <div id="callTabPanel" class="tab-panel active">
                     <h2>Send Call</h2>
@@ -376,6 +442,25 @@
                     </div>
                     <div class="actions">
                         <button onclick="sendSms()">Send SMS</button>
+                    </div>
+                </div>
+                <div id="autoAnswerTabPanel" class="tab-panel">
+                    <h2>Auto Answer</h2>
+                    <div class="input-row">
+                        <select id="deviceSelectAutoAnswer"></select>
+                        <div class="inline-toggle-row">
+                            <span>Auto Answer (On / Off)</span>
+                            <label class="switch">
+                                <input id="autoAnswerEnabled" type="checkbox" checked />
+                                <span class="switch-slider"></span>
+                            </label>
+                        </div>
+                        <label class="field-label" for="autoAnswerHangupSeconds">Auto hangup seconds</label>
+                        <input id="autoAnswerHangupSeconds" type="text" inputmode="numeric" pattern="[0-9]*"
+                            placeholder="10" oninput="sanitizeDurationInput(event)" />
+                    </div>
+                    <div class="actions">
+                        <button onclick="sendAutoAnswer()">Apply Auto Answer</button>
                     </div>
                 </div>
             </article>
@@ -574,13 +659,20 @@
         function setActionTab(tab) {
             activeTab = tab;
             const isCall = activeTab === "call";
+            const isSms = activeTab === "sms";
+            const isAutoAnswer = activeTab === "auto_answer";
 
             document.getElementById("callTabPanel").classList.toggle("active", isCall);
-            document.getElementById("smsTabPanel").classList.toggle("active", !isCall);
+            document.getElementById("smsTabPanel").classList.toggle("active", isSms);
+            document.getElementById("autoAnswerTabPanel").classList.toggle("active", isAutoAnswer);
+
             document.getElementById("callTabBtn").classList.toggle("active", isCall);
-            document.getElementById("smsTabBtn").classList.toggle("active", !isCall);
+            document.getElementById("smsTabBtn").classList.toggle("active", isSms);
+            document.getElementById("autoAnswerTabBtn").classList.toggle("active", isAutoAnswer);
+
             document.getElementById("callTabBtn").setAttribute("aria-selected", String(isCall));
-            document.getElementById("smsTabBtn").setAttribute("aria-selected", String(!isCall));
+            document.getElementById("smsTabBtn").setAttribute("aria-selected", String(isSms));
+            document.getElementById("autoAnswerTabBtn").setAttribute("aria-selected", String(isAutoAnswer));
         }
 
         async function togglePanel(panelName) {
@@ -625,16 +717,21 @@
                 const data = await res.json();
                 const callSelect = document.getElementById("deviceSelect");
                 const smsSelect = document.getElementById("deviceSelectSms");
+                const autoAnswerSelect = document.getElementById("deviceSelectAutoAnswer");
                 const previousCallValue = callSelect.value;
                 const previousSmsValue = smsSelect.value;
+                const previousAutoAnswerValue = autoAnswerSelect.value;
 
                 populateDeviceSelect(callSelect, data, previousCallValue);
                 populateDeviceSelect(smsSelect, data, previousSmsValue);
+                populateDeviceSelect(autoAnswerSelect, data, previousAutoAnswerValue);
             } catch (error) {
                 const callSelect = document.getElementById("deviceSelect");
                 const smsSelect = document.getElementById("deviceSelectSms");
+                const autoAnswerSelect = document.getElementById("deviceSelectAutoAnswer");
                 populateDeviceSelect(callSelect, [], "");
                 populateDeviceSelect(smsSelect, [], "");
+                populateDeviceSelect(autoAnswerSelect, [], "");
             }
         }
 
@@ -784,6 +881,50 @@
                 if (!res.ok) throw new Error(data.error || "Failed to send SMS command");
 
                 alert("SMS command sent");
+                await loadCommands();
+            } catch (error) {
+                alert(error.message);
+            }
+        }
+
+        async function sendAutoAnswer() {
+            const deviceUid = document.getElementById("deviceSelectAutoAnswer").value;
+            const enabled = document.getElementById("autoAnswerEnabled").checked;
+            const rawHangupSeconds = document.getElementById("autoAnswerHangupSeconds").value.trim();
+            const parsedHangupSeconds = getValidDurationSeconds(rawHangupSeconds);
+
+            if (!deviceUid) {
+                alert("Please select a device first");
+                return;
+            }
+
+            const payload = {
+                deviceUid,
+                type: "AUTO_ANSWER",
+                enabled
+            };
+
+            if (enabled) {
+                if (parsedHangupSeconds === null) {
+                    alert("Please enter a valid auto hangup seconds value");
+                    return;
+                }
+                payload.autoHangupSeconds = parsedHangupSeconds;
+            }
+
+            try {
+                const res = await fetch(SERVER + "/commands", {
+                    method: "POST",
+                    headers: {
+                        "Content-Type": "application/json"
+                    },
+                    body: JSON.stringify(payload)
+                });
+
+                const data = await res.json();
+                if (!res.ok) throw new Error(data.error || "Failed to apply auto answer");
+
+                alert("Auto Answer command sent");
                 await loadCommands();
             } catch (error) {
                 alert(error.message);
