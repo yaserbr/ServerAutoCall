@@ -259,6 +259,64 @@
             font-size: 0.86rem;
         }
 
+        .table-wrapper {
+            border: 1px solid rgba(255, 255, 255, 0.16);
+            border-radius: 12px;
+            overflow: auto;
+            background: rgba(3, 8, 20, 0.45);
+        }
+
+        .data-table {
+            width: 100%;
+            border-collapse: collapse;
+            min-width: 700px;
+        }
+
+        #devicesPanel .data-table {
+            min-width: 420px;
+        }
+
+        .data-table th,
+        .data-table td {
+            text-align: left;
+            padding: 11px 14px;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+            font-size: 0.9rem;
+            white-space: nowrap;
+        }
+
+        .data-table th {
+            background: rgba(255, 255, 255, 0.1);
+            color: #f3f7ff;
+            font-size: 0.78rem;
+            letter-spacing: 0.06em;
+            text-transform: uppercase;
+            position: sticky;
+            top: 0;
+        }
+
+        .data-table tbody tr:nth-child(even) td {
+            background: rgba(255, 255, 255, 0.03);
+        }
+
+        .data-table tbody tr:hover td {
+            background: rgba(103, 232, 249, 0.09);
+        }
+
+        .table-empty {
+            margin: 0;
+            padding: 16px;
+            color: var(--muted);
+            font-size: 0.9rem;
+        }
+
+        .json-fallback {
+            display: none;
+            margin-top: 10px;
+            min-height: 0;
+            max-height: 190px;
+        }
+
         @media (max-width: 640px) {
             body {
                 padding: 14px;
@@ -327,7 +385,8 @@
                 <div class="actions">
                     <button onclick="loadDevices()">Refresh</button>
                 </div>
-                <pre id="devices"></pre>
+                <div id="devicesTable" class="table-wrapper"></div>
+                <pre id="devices" class="json-fallback"></pre>
             </article>
 
             <article id="commandsPanel" class="card full-width panel-hidden">
@@ -336,7 +395,8 @@
                     <button onclick="loadCommands()">Refresh</button>
                     <button onclick="clearCommands()">Clear Commands</button>
                 </div>
-                <pre id="commands"></pre>
+                <div id="commandsTable" class="table-wrapper"></div>
+                <pre id="commands" class="json-fallback"></pre>
             </article>
         </section>
     </main>
@@ -351,6 +411,165 @@
             devices: false,
             commands: false
         };
+        const prioritizeActiveStatuses = true;
+        const statusPriority = {
+            executing: 0,
+            pending: 1,
+            executed: 2,
+            failed: 3
+        };
+        const statusIcons = {
+            executed: "🟢",
+            failed: "🔴",
+            pending: "🟡",
+            executing: "🔵"
+        };
+
+        function escapeHtml(value) {
+            return String(value)
+                .replaceAll("&", "&amp;")
+                .replaceAll("<", "&lt;")
+                .replaceAll(">", "&gt;")
+                .replaceAll("\"", "&quot;")
+                .replaceAll("'", "&#39;");
+        }
+
+        function asDisplayValue(value) {
+            return value === null || value === undefined || value === "" ? "-" : String(value);
+        }
+
+        function parseDateValue(dateText) {
+            if (!dateText) return 0;
+
+            if (typeof dateText === "number") {
+                return Number.isFinite(dateText) ? dateText : 0;
+            }
+
+            if (typeof dateText !== "string") {
+                return 0;
+            }
+
+            const normalized = dateText.trim();
+            const localFormatMatch = normalized.match(/^(\d{2})\/(\d{2})\/(\d{4}),\s*(\d{2}):(\d{2}):(\d{2})$/);
+            if (localFormatMatch) {
+                const [, day, month, year, hour, minute, second] = localFormatMatch;
+                return new Date(
+                    Number(year),
+                    Number(month) - 1,
+                    Number(day),
+                    Number(hour),
+                    Number(minute),
+                    Number(second)
+                ).getTime();
+            }
+
+            const parsed = Date.parse(normalized);
+            return Number.isNaN(parsed) ? 0 : parsed;
+        }
+
+        function setRawFallback(id, value, showFallback) {
+            const pre = document.getElementById(id);
+            pre.innerText = JSON.stringify(value, null, 2);
+            pre.style.display = showFallback ? "block" : "none";
+        }
+
+        function renderDevicesTable(devices) {
+            const container = document.getElementById("devicesTable");
+            if (!Array.isArray(devices) || devices.length === 0) {
+                container.innerHTML = "<p class='table-empty'>No devices available.</p>";
+                return;
+            }
+
+            const rows = devices.map((device) => {
+                const uid = escapeHtml(asDisplayValue(device.deviceUid));
+                const lastSeen = escapeHtml(asDisplayValue(device.lastSeen));
+                const onlineIndicator = device.online ? "🟢" : "🔴";
+                return `
+                    <tr>
+                        <td>${uid}</td>
+                        <td>${lastSeen} ${onlineIndicator}</td>
+                    </tr>
+                `;
+            }).join("");
+
+            container.innerHTML = `
+                <table class="data-table">
+                    <thead>
+                        <tr>
+                            <th>Device UID</th>
+                            <th>Last Seen</th>
+                        </tr>
+                    </thead>
+                    <tbody>${rows}</tbody>
+                </table>
+            `;
+        }
+
+        function formatCommandStatus(status) {
+            const normalized = String(status || "").toLowerCase();
+            const fallbackStatus = normalized || "unknown";
+            const icon = statusIcons[normalized] || "⚪";
+            return `${fallbackStatus} ${icon}`;
+        }
+
+        function sortCommands(commands) {
+            return [...commands].sort((a, b) => {
+                const aStatus = String(a.status || "").toLowerCase();
+                const bStatus = String(b.status || "").toLowerCase();
+                const aPriority = aStatus in statusPriority ? statusPriority[aStatus] : Number.MAX_SAFE_INTEGER;
+                const bPriority = bStatus in statusPriority ? statusPriority[bStatus] : Number.MAX_SAFE_INTEGER;
+
+                if (prioritizeActiveStatuses && aPriority !== bPriority) {
+                    return aPriority - bPriority;
+                }
+
+                return parseDateValue(b.createdAt) - parseDateValue(a.createdAt);
+            });
+        }
+
+        function renderCommandsTable(commands) {
+            const container = document.getElementById("commandsTable");
+            if (!Array.isArray(commands) || commands.length === 0) {
+                container.innerHTML = "<p class='table-empty'>No commands available.</p>";
+                return;
+            }
+
+            const rows = sortCommands(commands).map((command) => {
+                const type = escapeHtml(asDisplayValue(command.type));
+                const phone = escapeHtml(asDisplayValue(command.phoneNumber));
+                const message = escapeHtml(asDisplayValue(command.message));
+                const status = escapeHtml(formatCommandStatus(command.status));
+                const createdAt = escapeHtml(asDisplayValue(command.createdAt));
+                const executedAt = escapeHtml(asDisplayValue(command.executedAt));
+
+                return `
+                    <tr>
+                        <td>${type}</td>
+                        <td>${phone}</td>
+                        <td>${message}</td>
+                        <td>${status}</td>
+                        <td>${createdAt}</td>
+                        <td>${executedAt}</td>
+                    </tr>
+                `;
+            }).join("");
+
+            container.innerHTML = `
+                <table class="data-table">
+                    <thead>
+                        <tr>
+                            <th>Type</th>
+                            <th>Phone</th>
+                            <th>Message</th>
+                            <th>Status</th>
+                            <th>Created At</th>
+                            <th>Executed At</th>
+                        </tr>
+                    </thead>
+                    <tbody>${rows}</tbody>
+                </table>
+            `;
+        }
 
         function setActionTab(tab) {
             activeTab = tab;
@@ -389,12 +608,13 @@
                 const res = await fetch(SERVER + "/devices");
                 if (!res.ok) throw new Error("Failed to load devices");
                 const data = await res.json();
-                document.getElementById("devices").innerText =
-                    JSON.stringify(data, null, 2);
+                renderDevicesTable(data);
+                setRawFallback("devices", data, false);
             } catch (error) {
-                document.getElementById("devices").innerText = JSON.stringify({
+                renderDevicesTable([]);
+                setRawFallback("devices", {
                     error: error.message
-                }, null, 2);
+                }, true);
             }
         }
 
@@ -447,12 +667,13 @@
                 const res = await fetch(SERVER + "/commands");
                 if (!res.ok) throw new Error("Failed to load commands");
                 const data = await res.json();
-                document.getElementById("commands").innerText =
-                    JSON.stringify(data, null, 2);
+                renderCommandsTable(data);
+                setRawFallback("commands", data, false);
             } catch (error) {
-                document.getElementById("commands").innerText = JSON.stringify({
+                renderCommandsTable([]);
+                setRawFallback("commands", {
                     error: error.message
-                }, null, 2);
+                }, true);
             }
         }
 
