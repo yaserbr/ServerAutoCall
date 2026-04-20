@@ -121,15 +121,67 @@ app.get("/devices", (req, res) => {
 // إنشاء أمر اتصال
 // =====================
 app.post("/commands", (req, res) => {
-  const { deviceUid, action, phoneNumber, scheduledAt, durationSeconds } = req.body;
+  const { deviceUid, action, type, phoneNumber, message, scheduledAt, durationSeconds } = req.body;
   let scheduledAtIso = null;
-  const normalizedAction =
+  const actionToType = {
+    call: "CALL",
+    end: "END",
+    sms: "SMS"
+  };
+  const typeToAction = {
+    CALL: "call",
+    END: "end",
+    SMS: "sms"
+  };
+
+  const normalizedActionInput =
     typeof action === "string" && action.trim()
       ? action.trim().toLowerCase()
-      : "call";
+      : null;
+  const normalizedTypeInput =
+    typeof type === "string" && type.trim()
+      ? type.trim().toUpperCase()
+      : null;
 
-  if (normalizedAction !== "call" && normalizedAction !== "end") {
-    return res.status(400).json({ error: "Invalid action. Only 'call' and 'end' are supported." });
+  if (normalizedActionInput && !actionToType[normalizedActionInput]) {
+    return res.status(400).json({
+      error: "Invalid action. Only 'call', 'end', and 'sms' are supported."
+    });
+  }
+
+  if (normalizedTypeInput && !typeToAction[normalizedTypeInput]) {
+    return res.status(400).json({
+      error: "Invalid type. Only 'CALL', 'END', and 'SMS' are supported."
+    });
+  }
+
+  if (
+    normalizedActionInput &&
+    normalizedTypeInput &&
+    actionToType[normalizedActionInput] !== normalizedTypeInput
+  ) {
+    return res.status(400).json({
+      error: "action and type mismatch"
+    });
+  }
+
+  const normalizedAction = normalizedActionInput ?? typeToAction[normalizedTypeInput] ?? "call";
+  const commandType = normalizedTypeInput ?? actionToType[normalizedAction];
+
+  const normalizedPhoneNumber =
+    typeof phoneNumber === "string" ? phoneNumber.trim() : "";
+  const requiresPhoneNumber = normalizedAction === "call" || normalizedAction === "sms";
+  if (requiresPhoneNumber && !normalizedPhoneNumber) {
+    return res.status(400).json({
+      error: "phoneNumber is required for CALL and SMS commands"
+    });
+  }
+
+  const normalizedMessage = typeof message === "string" ? message.trim() : "";
+  if (normalizedAction === "sms" && !normalizedMessage) {
+    return res.status(400).json({
+      error: "message is required for SMS commands"
+    });
   }
 
   let normalizedDurationSeconds = null;
@@ -139,6 +191,12 @@ app.post("/commands", (req, res) => {
       return res.status(400).json({ error: "durationSeconds must be a number greater than 0" });
     }
     normalizedDurationSeconds = parsedDuration;
+  }
+
+  if (normalizedAction !== "call" && durationSeconds !== undefined && durationSeconds !== null) {
+    return res.status(400).json({
+      error: "durationSeconds is only supported for CALL commands"
+    });
   }
 
   if (scheduledAt) {
@@ -161,15 +219,16 @@ app.post("/commands", (req, res) => {
     }
   }
 
-  const commandType = normalizedAction === "end" ? "END" : "CALL";
   const command = {
     id: Date.now().toString(),
     deviceUid,
     action: normalizedAction,
     type: commandType,
-    phoneNumber: normalizedAction === "call" ? phoneNumber : null,
+    phoneNumber: requiresPhoneNumber ? normalizedPhoneNumber : null,
+    message: normalizedAction === "sms" ? normalizedMessage : null,
     durationSeconds: normalizedAction === "call" ? normalizedDurationSeconds : null,
     status: "pending",
+    failureReason: null,
     scheduledAt: scheduledAtIso,
     isImmediate: scheduledAtIso === null,
     createdAt: toUtcISOString()
@@ -222,7 +281,7 @@ app.delete("/commands", (req, res) => {
 // =====================
 app.post("/commands/:id/status", (req, res) => {
   const { id } = req.params;
-  const { status } = req.body;
+  const { status, failureReason } = req.body;
 
   const command = commands.find(c => c.id === id);
 
@@ -230,15 +289,40 @@ app.post("/commands/:id/status", (req, res) => {
     return res.status(404).json({ error: "Command not found" });
   }
 
-  if (command.status !== "pending") {
+  const normalizedStatus =
+    typeof status === "string" ? status.trim().toLowerCase() : "";
+  const validStatuses = new Set(["pending", "executing", "executed", "failed"]);
+
+  if (!validStatuses.has(normalizedStatus)) {
+    return res.status(400).json({
+      error: "Invalid status. Only 'pending', 'executing', 'executed', and 'failed' are supported."
+    });
+  }
+
+  const allowedTransitions = {
+    pending: new Set(["pending", "executing", "executed", "failed"]),
+    executing: new Set(["executing", "executed", "failed"]),
+    executed: new Set(["executed"]),
+    failed: new Set(["failed"])
+  };
+
+  const canTransition = allowedTransitions[command.status]?.has(normalizedStatus);
+  if (!canTransition) {
     return res.json(mapCommandForResponse(command));
   }
 
-  command.status = status;
+  command.status = normalizedStatus;
 
-  if (status === "executed") {
+  if (normalizedStatus === "executed") {
     command.executedAt = toUtcISOString();
-
+    command.failureReason = null;
+  } else if (normalizedStatus === "failed") {
+    command.failureReason =
+      typeof failureReason === "string" && failureReason.trim()
+        ? failureReason.trim()
+        : "Command execution failed";
+  } else {
+    command.failureReason = null;
   }
 
   res.json(mapCommandForResponse(command));

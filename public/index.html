@@ -63,6 +63,13 @@
             font-size: 0.95rem;
         }
 
+        .header-controls {
+            margin-top: 14px;
+            display: flex;
+            gap: 10px;
+            flex-wrap: wrap;
+        }
+
         .grid {
             display: grid;
             grid-template-columns: repeat(auto-fit, minmax(290px, 1fr));
@@ -91,6 +98,76 @@
             gap: 10px;
             margin-bottom: 12px;
             flex-wrap: wrap;
+        }
+
+        .toggle-button {
+            opacity: 0.82;
+        }
+
+        .toggle-button.active {
+            opacity: 1;
+            box-shadow: 0 10px 24px rgba(46, 196, 182, 0.5);
+            transform: translateY(-1px);
+        }
+
+        .segmented-control {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            padding: 5px;
+            border-radius: 999px;
+            border: 1px solid rgba(255, 255, 255, 0.24);
+            background: rgba(255, 255, 255, 0.14);
+            backdrop-filter: blur(10px);
+            -webkit-backdrop-filter: blur(10px);
+            margin-bottom: 14px;
+        }
+
+        .segmented-option {
+            min-width: 110px;
+            border: 0;
+            border-radius: 999px;
+            padding: 9px 18px;
+            font-weight: 700;
+            color: rgba(230, 237, 247, 0.72);
+            background: transparent;
+            box-shadow: none;
+            transition: background-color 0.25s ease, color 0.25s ease, transform 0.2s ease, box-shadow 0.25s ease;
+        }
+
+        .segmented-option:hover {
+            transform: none;
+            box-shadow: none;
+            color: rgba(230, 237, 247, 0.95);
+            background: rgba(255, 255, 255, 0.1);
+        }
+
+        .segmented-option.active {
+            color: #0f172a;
+            background: #ffffff;
+            box-shadow: 0 8px 18px rgba(5, 10, 25, 0.22);
+        }
+
+        .segmented-option.active:hover {
+            transform: none;
+            box-shadow: 0 8px 18px rgba(5, 10, 25, 0.22);
+            background: #ffffff;
+        }
+
+        .tab-panel {
+            display: none;
+        }
+
+        .tab-panel.active {
+            display: block;
+        }
+
+        .panel-hidden {
+            display: none;
+        }
+
+        .full-width {
+            grid-column: 1 / -1;
         }
 
         button {
@@ -139,7 +216,8 @@
         }
 
         input,
-        select {
+        select,
+        textarea {
             width: 100%;
             border: 1px solid rgba(255, 255, 255, 0.22);
             border-radius: 12px;
@@ -155,9 +233,16 @@
         }
 
         input:focus,
-        select:focus {
+        select:focus,
+        textarea:focus {
             border-color: rgba(103, 232, 249, 0.75);
             box-shadow: 0 0 0 3px rgba(103, 232, 249, 0.18);
+        }
+
+        textarea {
+            min-height: 96px;
+            resize: vertical;
+            font-family: inherit;
         }
 
         pre {
@@ -192,11 +277,52 @@
     <main class="container">
         <section class="header">
             <h1>AutoCall Control Panel</h1>
-            <p>Simple glass UI for monitoring devices and sending call commands.</p>
+            <p>Simple glass UI for monitoring devices and sending CALL / SMS commands.</p>
+            <div class="header-controls">
+                <button id="toggleDevicesBtn" class="toggle-button" onclick="togglePanel('devices')">Devices</button>
+                <button id="toggleCommandsBtn" class="toggle-button" onclick="togglePanel('commands')">Commands</button>
+            </div>
         </section>
 
         <section class="grid">
-            <article class="card">
+            <article class="card full-width">
+                <h2>Command Center</h2>
+                <div class="segmented-control" role="tablist" aria-label="Call SMS Toggle">
+                    <button id="callTabBtn" class="segmented-option active" role="tab" aria-selected="true"
+                        onclick="setActionTab('call')">Call</button>
+                    <button id="smsTabBtn" class="segmented-option" role="tab" aria-selected="false"
+                        onclick="setActionTab('sms')">SMS</button>
+                </div>
+                <div id="callTabPanel" class="tab-panel active">
+                    <h2>Send Call</h2>
+                    <div class="input-row">
+                        <select id="deviceSelect"></select>
+                        <input id="phone" placeholder="phone number" />
+                        <label class="field-label" for="durationSeconds">Call duration (seconds)</label>
+                        <input id="durationSeconds" type="text" inputmode="numeric" pattern="[0-9]*"
+                            placeholder="18" oninput="sanitizeDurationInput(event)" />
+                        <input type="datetime-local" id="scheduleTime" />
+                    </div>
+                    <div class="actions">
+                        <button onclick="sendCall()">Call</button>
+                        <button class="danger-button" onclick="sendEndCall()">End Call</button>
+                    </div>
+                </div>
+                <div id="smsTabPanel" class="tab-panel">
+                    <h2>Send SMS</h2>
+                    <div class="input-row">
+                        <select id="deviceSelectSms"></select>
+                        <input id="smsPhone" placeholder="phone number" />
+                        <textarea id="smsMessage" placeholder="SMS message"></textarea>
+                        <input type="datetime-local" id="smsScheduleTime" />
+                    </div>
+                    <div class="actions">
+                        <button onclick="sendSms()">Send SMS</button>
+                    </div>
+                </div>
+            </article>
+
+            <article id="devicesPanel" class="card full-width panel-hidden">
                 <h2>Devices</h2>
                 <div class="actions">
                     <button onclick="loadDevices()">Refresh</button>
@@ -204,23 +330,7 @@
                 <pre id="devices"></pre>
             </article>
 
-            <article class="card">
-                <h2>Send Call</h2>
-                <div class="input-row">
-                    <select id="deviceSelect"></select>
-                    <input id="phone" placeholder="phone number" />
-                    <label class="field-label" for="durationSeconds">Call duration (seconds)</label>
-                    <input id="durationSeconds" type="text" inputmode="numeric" pattern="[0-9]*"
-                        placeholder="18" oninput="sanitizeDurationInput(event)" />
-                    <input type="datetime-local" id="scheduleTime" />
-                </div>
-                <div class="actions">
-                    <button onclick="sendCall()">Call</button>
-                    <button class="danger-button" onclick="sendEndCall()">End Call</button>
-                </div>
-            </article>
-
-            <article class="card">
+            <article id="commandsPanel" class="card full-width panel-hidden">
                 <h2>Commands</h2>
                 <div class="actions">
                     <button onclick="loadCommands()">Refresh</button>
@@ -236,6 +346,43 @@
             window.location.hostname === "localhost"
                 ? "http://localhost:4000"
                 : "https://serverautocall-production.up.railway.app";
+        let activeTab = "call";
+        const panelVisibility = {
+            devices: false,
+            commands: false
+        };
+
+        function setActionTab(tab) {
+            activeTab = tab;
+            const isCall = activeTab === "call";
+
+            document.getElementById("callTabPanel").classList.toggle("active", isCall);
+            document.getElementById("smsTabPanel").classList.toggle("active", !isCall);
+            document.getElementById("callTabBtn").classList.toggle("active", isCall);
+            document.getElementById("smsTabBtn").classList.toggle("active", !isCall);
+            document.getElementById("callTabBtn").setAttribute("aria-selected", String(isCall));
+            document.getElementById("smsTabBtn").setAttribute("aria-selected", String(!isCall));
+        }
+
+        async function togglePanel(panelName) {
+            const isDevices = panelName === "devices";
+            const panelId = isDevices ? "devicesPanel" : "commandsPanel";
+            const buttonId = isDevices ? "toggleDevicesBtn" : "toggleCommandsBtn";
+
+            panelVisibility[panelName] = !panelVisibility[panelName];
+            const isVisible = panelVisibility[panelName];
+
+            document.getElementById(panelId).classList.toggle("panel-hidden", !isVisible);
+            document.getElementById(buttonId).classList.toggle("active", isVisible);
+
+            if (isVisible) {
+                if (isDevices) {
+                    await loadDevices();
+                } else {
+                    await loadCommands();
+                }
+            }
+        }
 
         async function loadDevices() {
             try {
@@ -256,37 +403,42 @@
                 const res = await fetch(SERVER + "/devices");
                 if (!res.ok) throw new Error("Failed to load devices");
                 const data = await res.json();
-                const select = document.getElementById("deviceSelect");
-                const previousValue = select.value;
+                const callSelect = document.getElementById("deviceSelect");
+                const smsSelect = document.getElementById("deviceSelectSms");
+                const previousCallValue = callSelect.value;
+                const previousSmsValue = smsSelect.value;
 
-                select.innerHTML = "";
-
-                if (!Array.isArray(data) || data.length === 0) {
-                    const emptyOption = document.createElement("option");
-                    emptyOption.value = "";
-                    emptyOption.textContent = "No devices found";
-                    select.appendChild(emptyOption);
-                    return;
-                }
-
-                data.forEach((device) => {
-                    const option = document.createElement("option");
-                    option.value = device.deviceUid;
-                    option.textContent = `${device.deviceUid} ${device.online ? "🟢" : "🔴"}`;
-                    select.appendChild(option);
-                });
-
-                const hasPrevious = data.some((device) => device.deviceUid === previousValue);
-                if (hasPrevious) {
-                    select.value = previousValue;
-                }
+                populateDeviceSelect(callSelect, data, previousCallValue);
+                populateDeviceSelect(smsSelect, data, previousSmsValue);
             } catch (error) {
-                const select = document.getElementById("deviceSelect");
-                select.innerHTML = "";
-                const errorOption = document.createElement("option");
-                errorOption.value = "";
-                errorOption.textContent = "Error loading devices";
-                select.appendChild(errorOption);
+                const callSelect = document.getElementById("deviceSelect");
+                const smsSelect = document.getElementById("deviceSelectSms");
+                populateDeviceSelect(callSelect, [], "");
+                populateDeviceSelect(smsSelect, [], "");
+            }
+        }
+
+        function populateDeviceSelect(select, devices, previousValue) {
+            select.innerHTML = "";
+
+            if (!Array.isArray(devices) || devices.length === 0) {
+                const emptyOption = document.createElement("option");
+                emptyOption.value = "";
+                emptyOption.textContent = "No devices found";
+                select.appendChild(emptyOption);
+                return;
+            }
+
+            devices.forEach((device) => {
+                const option = document.createElement("option");
+                option.value = device.deviceUid;
+                option.textContent = `${device.deviceUid} ${device.online ? "🟢" : "🔴"}`;
+                select.appendChild(option);
+            });
+
+            const hasPrevious = devices.some((device) => device.deviceUid === previousValue);
+            if (hasPrevious) {
+                select.value = previousValue;
             }
         }
 
@@ -379,6 +531,38 @@
                 if (!res.ok) throw new Error(data.error || "Failed to send end command");
 
                 alert("End command sent");
+                await loadCommands();
+            } catch (error) {
+                alert(error.message);
+            }
+        }
+
+        async function sendSms() {
+            const deviceUid = document.getElementById("deviceSelectSms").value;
+            const phoneNumber = document.getElementById("smsPhone").value;
+            const message = document.getElementById("smsMessage").value;
+            const scheduledAt = document.getElementById("smsScheduleTime").value;
+            const payload = {
+                deviceUid,
+                type: "SMS",
+                phoneNumber,
+                message,
+                scheduledAt: scheduledAt || null
+            };
+
+            try {
+                const res = await fetch(SERVER + "/commands", {
+                    method: "POST",
+                    headers: {
+                        "Content-Type": "application/json"
+                    },
+                    body: JSON.stringify(payload)
+                });
+
+                const data = await res.json();
+                if (!res.ok) throw new Error(data.error || "Failed to send SMS command");
+
+                alert("SMS command sent");
                 await loadCommands();
             } catch (error) {
                 alert(error.message);
