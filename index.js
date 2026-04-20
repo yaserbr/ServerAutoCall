@@ -162,6 +162,26 @@ app.get("/devices", (req, res) => {
   res.json(devices.map(mapDeviceForResponse));
 });
 
+app.delete("/devices/:deviceUid", (req, res) => {
+  const normalizedDeviceUid = normalizeDeviceUid(req.params?.deviceUid);
+
+  if (!normalizedDeviceUid) {
+    return res.status(400).json({ error: "deviceUid is required" });
+  }
+
+  const deviceIndex = devices.findIndex(d => d.deviceUid === normalizedDeviceUid);
+  if (deviceIndex === -1) {
+    return res.status(404).json({ error: "Device not found" });
+  }
+
+  const [deletedDevice] = devices.splice(deviceIndex, 1);
+  res.json({
+    success: true,
+    message: "Device deleted",
+    device: mapDeviceForResponse(deletedDevice)
+  });
+});
+
 app.post("/devices/rename", (req, res) => {
   const normalizedDeviceUid = normalizeDeviceUid(req.body?.deviceUid);
   const normalizedDeviceName = normalizeDeviceName(req.body?.deviceName);
