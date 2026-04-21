@@ -9,8 +9,25 @@ const Device = require("./src/models/Device");
 const Command = require("./src/models/Command");
 
 const app = express();
+
+process.on("uncaughtException", (error) => {
+  console.error("[uncaughtException]", error);
+});
+
+process.on("unhandledRejection", (reason) => {
+  console.error("[unhandledRejection]", reason);
+});
+
 app.use(cors());
 app.use(express.json());
+app.use((req, res, next) => {
+  const start = Date.now();
+  res.on("finish", () => {
+    const durationMs = Date.now() - start;
+    console.log(`[HTTP] ${req.method} ${req.originalUrl} -> ${res.statusCode} (${durationMs}ms)`);
+  });
+  next();
+});
 
 const RIYADH_TIMEZONE = "Asia/Riyadh";
 const RIYADH_UTC_OFFSET_MINUTES = 3 * 60;
@@ -133,6 +150,14 @@ function handleServerError(res, error, contextLabel) {
   console.error(`[${contextLabel}]`, error);
   return res.status(500).json({ error: "Internal server error" });
 }
+
+app.get("/", (req, res) => {
+  return res.status(200).send("Server is running");
+});
+
+app.get("/health", (req, res) => {
+  return res.status(200).json({ ok: true });
+});
 
 // =====================
 // Register device
@@ -595,20 +620,22 @@ app.post("/commands/:id/status", async (req, res) => {
 });
 
 app.use(express.static("public"));
+app.use((error, req, res, next) => {
+  console.error("[ExpressError]", error);
+  if (res.headersSent) {
+    return next(error);
+  }
+  return res.status(500).json({ error: "Internal server error" });
+});
 
 const PORT = Number(process.env.PORT) || 4000;
 
-async function startServer() {
-  try {
-    await connectToDatabase();
+function startServer() {
+  app.listen(PORT, "0.0.0.0", () => {
+    console.log(`Server running on port ${PORT}`);
+  });
 
-    app.listen(PORT, () => {
-      console.log(`Server running on http://localhost:${PORT}`);
-    });
-  } catch (error) {
-    console.error("Server startup failed:", error.message);
-    process.exit(1);
-  }
+  connectToDatabase();
 }
 
 startServer();
