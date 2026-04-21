@@ -26,6 +26,8 @@ app.use((req, res, next) => {
 
 app.use(cors());
 app.use(express.json());
+app.use(express.urlencoded({ extended: true }));
+app.use(express.text({ type: ["text/plain"] }));
 app.use((req, res, next) => {
   const start = Date.now();
   res.on("finish", () => {
@@ -83,15 +85,96 @@ function formatUtcForRiyadhDisplay(dateValue) {
 }
 
 function normalizeDeviceUid(value) {
-  if (typeof value !== "string") return "";
-  return value.trim();
+  if (value === undefined || value === null) return "";
+  return String(value).trim();
 }
 
 function normalizeDeviceName(value) {
-  if (typeof value !== "string") return null;
-  const trimmed = value.trim();
+  if (value === undefined || value === null) return null;
+  const trimmed = String(value).trim();
   if (!trimmed) return null;
   return trimmed.slice(0, DEVICE_NAME_MAX_LENGTH);
+}
+
+function parseRequestBodyObject(body) {
+  if (!body) return {};
+
+  if (typeof body === "object") {
+    return body;
+  }
+
+  if (typeof body === "string") {
+    try {
+      const parsed = JSON.parse(body);
+      return parsed && typeof parsed === "object" ? parsed : {};
+    } catch (_error) {
+      return {};
+    }
+  }
+
+  return {};
+}
+
+function pickFirstDefinedValue(payload, keys) {
+  if (!payload || typeof payload !== "object") return undefined;
+  for (const key of keys) {
+    const value = payload[key];
+    if (value !== undefined && value !== null && String(value).trim() !== "") {
+      return value;
+    }
+  }
+  return undefined;
+}
+
+function extractDeviceRegistrationInput(body) {
+  const payload = parseRequestBodyObject(body);
+  const nestedDevicePayload =
+    payload.device && typeof payload.device === "object" ? payload.device : {};
+
+  const rawDeviceUid = pickFirstDefinedValue(payload, [
+    "deviceUid",
+    "deviceUID",
+    "uid",
+    "deviceId",
+    "id",
+    "installationId"
+  ]) ?? pickFirstDefinedValue(nestedDevicePayload, [
+    "deviceUid",
+    "deviceUID",
+    "uid",
+    "deviceId",
+    "id",
+    "installationId"
+  ]);
+
+  const rawDeviceName = pickFirstDefinedValue(payload, [
+    "deviceName",
+    "name",
+    "device_name",
+    "model"
+  ]) ?? pickFirstDefinedValue(nestedDevicePayload, [
+    "deviceName",
+    "name",
+    "device_name",
+    "model"
+  ]);
+
+  const rawPlatform = pickFirstDefinedValue(payload, [
+    "platform",
+    "os",
+    "osName"
+  ]) ?? pickFirstDefinedValue(nestedDevicePayload, [
+    "platform",
+    "os",
+    "osName"
+  ]);
+
+  return {
+    payload,
+    normalizedDeviceUid: normalizeDeviceUid(rawDeviceUid),
+    normalizedDeviceName: normalizeDeviceName(rawDeviceName),
+    normalizedPlatform: normalizeDeviceName(rawPlatform)
+  };
 }
 
 function buildDefaultDeviceName(deviceUid) {
@@ -121,6 +204,7 @@ function mapDeviceForResponse(device) {
   return {
     deviceUid: source.deviceUid,
     deviceName: ensureDeviceName(source),
+    platform: source.platform ?? null,
     online: Boolean(source.online),
     lastSeen: formatUtcForRiyadhDisplay(source.lastSeen)
   };
@@ -170,37 +254,93 @@ app.get("/health", (req, res) => {
 // =====================
 app.post("/devices/register", async (req, res) => {
   try {
-    const normalizedDeviceUid = normalizeDeviceUid(req.body?.deviceUid);
-    const normalizedDeviceName = normalizeDeviceName(req.body?.deviceName);
+    const { payload, normalizedDeviceUid, normalizedDeviceName, normalizedPlatform } =
+      extractDeviceRegistrationInput(req.body);
+    const requestInfo = {
+      contentType: req.headers["content-type"] ?? null,
+      userAgent: req.headers["user-agent"] ?? null,
+      keys: Object.keys(payload || {}),
+      body: payload
+    };
+    console.log("[DeviceRegister] Incoming request:", requestInfo);
 
     if (!normalizedDeviceUid) {
+      console.warn("[DeviceRegister] Validation failed: deviceUid is missing/empty", requestInfo);
       return res.status(400).json({ error: "deviceUid is required" });
     }
 
+    const now = new Date(toUtcISOString());
     let device = await Device.findOne({ deviceUid: normalizedDeviceUid });
+    const wasExisting = Boolean(device);
 
     if (!device) {
       device = new Device({
         deviceUid: normalizedDeviceUid,
         deviceName: normalizedDeviceName ?? buildDefaultDeviceName(normalizedDeviceUid),
+        platform: normalizedPlatform,
         online: true,
-        lastSeen: new Date(toUtcISOString())
+        lastSeen: now
       });
     } else {
       device.online = true;
-      device.lastSeen = new Date(toUtcISOString());
+      device.lastSeen = now;
 
       if (normalizedDeviceName) {
         device.deviceName = normalizedDeviceName;
       } else if (!normalizeDeviceName(device.deviceName)) {
         device.deviceName = buildDefaultDeviceName(normalizedDeviceUid);
       }
+
+      if (normalizedPlatform) {
+        device.platform = normalizedPlatform;
+      }
     }
 
-    await device.save();
+    try {
+      await device.save();
+    } catch (error) {
+      // Handles rare race condition when two register requests arrive simultaneously.
+      if (error?.code === 11000) {
+        console.warn("[DeviceRegister] Duplicate deviceUid on save, retrying as update:", {
+          deviceUid: normalizedDeviceUid,
+          error: error.message
+        });
+
+        const existingDevice = await Device.findOne({ deviceUid: normalizedDeviceUid });
+        if (!existingDevice) {
+          throw error;
+        }
+
+        existingDevice.online = true;
+        existingDevice.lastSeen = now;
+        if (normalizedDeviceName) {
+          existingDevice.deviceName = normalizedDeviceName;
+        } else if (!normalizeDeviceName(existingDevice.deviceName)) {
+          existingDevice.deviceName = buildDefaultDeviceName(normalizedDeviceUid);
+        }
+        if (normalizedPlatform) {
+          existingDevice.platform = normalizedPlatform;
+        }
+
+        await existingDevice.save();
+        device = existingDevice;
+      } else {
+        throw error;
+      }
+    }
+
+    console.log("[DeviceRegister] Registration success:", {
+      deviceUid: normalizedDeviceUid,
+      mode: wasExisting ? "updated_existing" : "created_new",
+      platform: device.platform ?? null
+    });
 
     return res.json({ success: true, device: mapDeviceForResponse(device) });
   } catch (error) {
+    console.error("[DeviceRegister] Registration failed:", {
+      error: error?.message,
+      stack: error?.stack
+    });
     return handleServerError(res, error, "POST /devices/register");
   }
 });
@@ -210,9 +350,16 @@ app.post("/devices/register", async (req, res) => {
 // =====================
 app.post("/devices/heartbeat", async (req, res) => {
   try {
-    const normalizedDeviceUid = normalizeDeviceUid(req.body?.deviceUid);
+    const { payload, normalizedDeviceUid } = extractDeviceRegistrationInput(req.body);
+    console.log("[DeviceHeartbeat] Incoming request:", {
+      contentType: req.headers["content-type"] ?? null,
+      userAgent: req.headers["user-agent"] ?? null,
+      keys: Object.keys(payload || {}),
+      body: payload
+    });
 
     if (!normalizedDeviceUid) {
+      console.warn("[DeviceHeartbeat] Validation failed: deviceUid is missing/empty");
       return res.status(400).json({ error: "deviceUid is required" });
     }
 
@@ -227,6 +374,13 @@ app.post("/devices/heartbeat", async (req, res) => {
       }
 
       await device.save();
+      console.log("[DeviceHeartbeat] Updated existing device:", {
+        deviceUid: normalizedDeviceUid
+      });
+    } else {
+      console.warn("[DeviceHeartbeat] Device not found, heartbeat ignored:", {
+        deviceUid: normalizedDeviceUid
+      });
     }
 
     return res.json({
@@ -631,7 +785,13 @@ app.use((error, req, res, next) => {
   if (res.headersSent) {
     return next(error);
   }
-  return res.status(500).json({ error: "Internal server error" });
+
+  if (error?.type === "entity.parse.failed") {
+    return res.status(400).json({ error: "Invalid JSON body" });
+  }
+
+  const statusCode = Number(error?.status || error?.statusCode) || 500;
+  return res.status(statusCode).json({ error: statusCode >= 500 ? "Internal server error" : error.message });
 });
 
 const PORT = Number(process.env.PORT) || 4000;

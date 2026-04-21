@@ -33,6 +33,11 @@ const deviceSchema = new mongoose.Schema(
       trim: true,
       maxlength: DEVICE_NAME_MAX_LENGTH
     },
+    platform: {
+      type: String,
+      default: null,
+      trim: true
+    },
     online: {
       type: Boolean,
       default: false
@@ -47,14 +52,13 @@ const deviceSchema = new mongoose.Schema(
   }
 );
 
-deviceSchema.pre("validate", function setDefaultDeviceName(next) {
+deviceSchema.pre("validate", function setDefaultDeviceName() {
   const normalized = normalizeDeviceName(this.deviceName);
   if (normalized) {
     this.deviceName = normalized;
   } else {
     this.deviceName = buildDefaultDeviceName(this.deviceUid);
   }
-  next();
 });
 
 module.exports = mongoose.model("Device", deviceSchema);
