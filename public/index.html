@@ -111,10 +111,11 @@
         }
 
         .segmented-control {
-            display: inline-flex;
+            display: flex;
             align-items: center;
             gap: 6px;
             padding: 5px;
+            width: 100%;
             border-radius: 999px;
             border: 1px solid rgba(255, 255, 255, 0.24);
             background: rgba(255, 255, 255, 0.14);
@@ -124,7 +125,8 @@
         }
 
         .segmented-option {
-            min-width: 110px;
+            flex: 1 1 0;
+            min-width: 0;
             border: 0;
             border-radius: 999px;
             padding: 9px 18px;
@@ -146,6 +148,7 @@
             color: #0f172a;
             background: #ffffff;
             box-shadow: 0 8px 18px rgba(5, 10, 25, 0.22);
+            animation: activeTabPop 0.26s ease;
         }
 
         .segmented-option.active:hover {
@@ -224,6 +227,52 @@
 
         .tab-panel.active {
             display: block;
+        }
+
+        .tab-panel.tab-enter-right {
+            animation: tabSlideInRight 0.32s cubic-bezier(0.22, 1, 0.36, 1);
+        }
+
+        .tab-panel.tab-enter-left {
+            animation: tabSlideInLeft 0.32s cubic-bezier(0.22, 1, 0.36, 1);
+        }
+
+        @keyframes tabSlideInRight {
+            from {
+                opacity: 0;
+                transform: translateX(22px) scale(0.99);
+            }
+
+            to {
+                opacity: 1;
+                transform: translateX(0) scale(1);
+            }
+        }
+
+        @keyframes tabSlideInLeft {
+            from {
+                opacity: 0;
+                transform: translateX(-22px) scale(0.99);
+            }
+
+            to {
+                opacity: 1;
+                transform: translateX(0) scale(1);
+            }
+        }
+
+        @keyframes activeTabPop {
+            0% {
+                transform: scale(0.98);
+            }
+
+            60% {
+                transform: scale(1.02);
+            }
+
+            100% {
+                transform: scale(1);
+            }
         }
 
         .panel-hidden {
@@ -444,6 +493,14 @@
                 padding: 14px;
             }
         }
+
+        @media (prefers-reduced-motion: reduce) {
+            .segmented-option,
+            .tab-panel {
+                transition: none !important;
+                animation: none !important;
+            }
+        }
     </style>
 </head>
 
@@ -560,6 +617,11 @@
             failed: "🔴",
             pending: "🟡",
             executing: "🔵"
+        };
+        const tabOrder = {
+            call: 0,
+            sms: 1,
+            auto_answer: 2
         };
 
         function escapeHtml(value) {
@@ -754,14 +816,30 @@
         }
 
         function setActionTab(tab) {
-            activeTab = tab;
+            const targetTab = tabOrder[tab] !== undefined ? tab : "call";
+            const previousTab = activeTab;
+            activeTab = targetTab;
             const isCall = activeTab === "call";
             const isSms = activeTab === "sms";
             const isAutoAnswer = activeTab === "auto_answer";
 
-            document.getElementById("callTabPanel").classList.toggle("active", isCall);
-            document.getElementById("smsTabPanel").classList.toggle("active", isSms);
-            document.getElementById("autoAnswerTabPanel").classList.toggle("active", isAutoAnswer);
+            const callPanel = document.getElementById("callTabPanel");
+            const smsPanel = document.getElementById("smsTabPanel");
+            const autoAnswerPanel = document.getElementById("autoAnswerTabPanel");
+            const panels = [callPanel, smsPanel, autoAnswerPanel];
+            panels.forEach((panel) => panel.classList.remove("tab-enter-left", "tab-enter-right"));
+
+            callPanel.classList.toggle("active", isCall);
+            smsPanel.classList.toggle("active", isSms);
+            autoAnswerPanel.classList.toggle("active", isAutoAnswer);
+
+            if (targetTab !== previousTab) {
+                const targetPanel = isCall ? callPanel : isSms ? smsPanel : autoAnswerPanel;
+                const movingForward = tabOrder[targetTab] > tabOrder[previousTab];
+                const animationClass = movingForward ? "tab-enter-right" : "tab-enter-left";
+                void targetPanel.offsetWidth;
+                targetPanel.classList.add(animationClass);
+            }
 
             document.getElementById("callTabBtn").classList.toggle("active", isCall);
             document.getElementById("smsTabBtn").classList.toggle("active", isSms);
