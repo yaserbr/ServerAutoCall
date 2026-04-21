@@ -5,6 +5,7 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>AutoCall</title>
+    <link rel="icon" type="image/png" href="/images/icon.png" />
     <style>
         :root {
             --bg-1: #0f172a;
@@ -16,6 +17,7 @@
             --glass: rgba(255, 255, 255, 0.12);
             --glass-border: rgba(255, 255, 255, 0.2);
             --shadow: 0 10px 35px rgba(0, 0, 0, 0.35);
+            --control-height: 48px;
         }
 
         * {
@@ -57,17 +59,26 @@
             letter-spacing: 0.4px;
         }
 
+        .header-title-row {
+            display: flex;
+            align-items: flex-start;
+            justify-content: space-between;
+            gap: 14px;
+        }
+
+        .header-logo {
+            width: 66px;
+            border-radius: 12px;
+            object-fit: cover;
+            border: 1px solid rgba(255, 255, 255, 0.3);
+            box-shadow: 0 8px 18px rgba(0, 0, 0, 0.25);
+            flex-shrink: 0;
+        }
+
         .header p {
             margin: 8px 0 0;
             color: var(--muted);
             font-size: 0.95rem;
-        }
-
-        .header-controls {
-            margin-top: 14px;
-            display: flex;
-            gap: 10px;
-            flex-wrap: wrap;
         }
 
         .grid {
@@ -106,8 +117,68 @@
 
         .toggle-button.active {
             opacity: 1;
+            color: #f8fafc;
+            background: linear-gradient(135deg, #475569, #334155);
+            box-shadow: 0 6px 16px rgba(15, 23, 42, 0.45);
+            transform: none;
+        }
+
+        .toggle-button.inactive {
+            opacity: 1;
             box-shadow: 0 10px 24px rgba(46, 196, 182, 0.5);
             transform: translateY(-1px);
+        }
+
+        .panel-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 12px;
+            margin-bottom: 12px;
+        }
+
+        .panel-header h2 {
+            margin: 0;
+        }
+
+        .panel-toggle-btn {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            padding: 9px 13px;
+            font-size: 0.85rem;
+        }
+
+        .toggle-icon {
+            position: relative;
+            width: 18px;
+            height: 12px;
+            display: inline-block;
+            border: 2px solid currentColor;
+            border-radius: 50% / 65%;
+            line-height: 1;
+        }
+
+        .toggle-icon::before {
+            content: "";
+            position: absolute;
+            width: 4px;
+            height: 4px;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            border-radius: 50%;
+            background: currentColor;
+        }
+
+        .toggle-button.active .toggle-icon::after {
+            content: "";
+            position: absolute;
+            left: -4px;
+            right: -4px;
+            top: 50%;
+            border-top: 2px solid currentColor;
+            transform: rotate(-24deg);
         }
 
         .segmented-control {
@@ -162,7 +233,8 @@
             align-items: center;
             justify-content: space-between;
             gap: 12px;
-            padding: 10px 12px;
+            height: var(--control-height);
+            padding: 0 12px;
             border-radius: 12px;
             border: 1px solid rgba(255, 255, 255, 0.22);
             background: rgba(11, 18, 32, 0.35);
@@ -279,6 +351,84 @@
             display: none;
         }
 
+        .panel-collapsible {
+            overflow: hidden;
+            max-height: 0;
+            opacity: 0;
+            transform: translateY(-8px);
+            pointer-events: none;
+            transition:
+                max-height 0.42s cubic-bezier(0.22, 1, 0.36, 1),
+                opacity 0.28s ease,
+                transform 0.28s ease;
+            will-change: max-height, opacity, transform;
+        }
+
+        .panel-collapsible.is-open {
+            opacity: 1;
+            transform: translateY(0);
+            pointer-events: auto;
+        }
+
+        .toast-container {
+            position: fixed;
+            top: 18px;
+            right: 18px;
+            z-index: 1200;
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+            width: min(360px, calc(100vw - 24px));
+            pointer-events: none;
+        }
+
+        .toast {
+            border-radius: 12px;
+            border: 1px solid rgba(255, 255, 255, 0.22);
+            background: rgba(12, 20, 36, 0.92);
+            color: #e6edf7;
+            padding: 11px 13px;
+            font-size: 0.9rem;
+            line-height: 1.45;
+            box-shadow: 0 12px 26px rgba(0, 0, 0, 0.35);
+            opacity: 0;
+            transform: translateY(-8px) scale(0.98);
+            animation: toastIn 0.22s ease forwards;
+        }
+
+        .toast.toast-success {
+            border-color: rgba(46, 196, 182, 0.65);
+            background: rgba(8, 44, 48, 0.94);
+        }
+
+        .toast.toast-error {
+            border-color: rgba(239, 68, 68, 0.7);
+            background: rgba(74, 20, 20, 0.94);
+        }
+
+        .toast.toast-info {
+            border-color: rgba(103, 232, 249, 0.65);
+            background: rgba(14, 41, 66, 0.94);
+        }
+
+        .toast.toast-out {
+            animation: toastOut 0.2s ease forwards;
+        }
+
+        @keyframes toastIn {
+            to {
+                opacity: 1;
+                transform: translateY(0) scale(1);
+            }
+        }
+
+        @keyframes toastOut {
+            to {
+                opacity: 0;
+                transform: translateY(-10px) scale(0.98);
+            }
+        }
+
         .full-width {
             grid-column: 1 / -1;
         }
@@ -321,6 +471,30 @@
             margin-bottom: 12px;
         }
 
+        .call-input-grid {
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+            align-items: end;
+        }
+
+        .field-group {
+            display: grid;
+            gap: 6px;
+        }
+
+        .sms-input-grid {
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+            align-items: end;
+        }
+
+        .sms-message-full {
+            grid-column: 1 / -1;
+        }
+
+        .auto-answer-input-grid {
+            grid-template-columns: repeat(3, minmax(0, 1fr));
+            align-items: end;
+        }
+
         .field-label {
             font-size: 0.84rem;
             color: var(--muted);
@@ -338,6 +512,11 @@
             background: rgba(11, 18, 32, 0.35);
             color: var(--text);
             outline: none;
+        }
+
+        input,
+        select {
+            height: var(--control-height);
         }
 
         input::placeholder {
@@ -492,9 +671,28 @@
                 border-radius: 16px;
                 padding: 14px;
             }
+
+            .header-title-row {
+                align-items: center;
+            }
+
+            .call-input-grid {
+                grid-template-columns: 1fr;
+            }
+
+            .sms-input-grid {
+                grid-template-columns: 1fr;
+            }
+
+            .auto-answer-input-grid {
+                grid-template-columns: 1fr;
+            }
+
+
         }
 
         @media (prefers-reduced-motion: reduce) {
+
             .segmented-option,
             .tab-panel {
                 transition: none !important;
@@ -507,11 +705,9 @@
 <body>
     <main class="container">
         <section class="header">
-            <h1>AutoCall Control Panel</h1>
-            <p>Simple glass UI for monitoring devices and sending CALL / SMS commands.</p>
-            <div class="header-controls">
-                <button id="toggleDevicesBtn" class="toggle-button" onclick="togglePanel('devices')">Devices</button>
-                <button id="toggleCommandsBtn" class="toggle-button" onclick="togglePanel('commands')">Commands</button>
+            <div class="header-title-row">
+                <h1>AutoCall Control Panel</h1>
+                <img class="header-logo" src="/images/icon.png" alt="AutoCall logo" />
             </div>
         </section>
 
@@ -528,12 +724,12 @@
                 </div>
                 <div id="callTabPanel" class="tab-panel active">
                     <h2>Send Call</h2>
-                    <div class="input-row">
+                    <div class="input-row call-input-grid">
                         <select id="deviceSelect"></select>
                         <input id="phone" placeholder="phone number" />
-                        <label class="field-label" for="durationSeconds">Call duration (seconds)</label>
-                        <input id="durationSeconds" type="text" inputmode="numeric" pattern="[0-9]*"
-                            placeholder="18" oninput="sanitizeDurationInput(event)" />
+                        <div class="field-group">
+                            <input id="durationSeconds" type="text" inputmode="numeric" pattern="[0-9]*" placeholder="Call duration (seconds)" oninput="sanitizeDurationInput(event)" />
+                        </div>
                         <input type="datetime-local" id="scheduleTime" />
                     </div>
                     <div class="actions">
@@ -543,11 +739,22 @@
                 </div>
                 <div id="smsTabPanel" class="tab-panel">
                     <h2>Send SMS</h2>
-                    <div class="input-row">
-                        <select id="deviceSelectSms"></select>
-                        <input id="smsPhone" placeholder="phone number" />
-                        <textarea id="smsMessage" placeholder="SMS message"></textarea>
-                        <input type="datetime-local" id="smsScheduleTime" />
+                    <div class="input-row sms-input-grid">
+                        <div class="field-group">
+                            <input id="smsPhone" placeholder="phone number" />
+                        </div>
+                        <div class="field-group">
+                            <select id="deviceSelectSms"></select>
+                        </div>
+                        <div class="field-group">
+                            <input type="datetime-local" id="smsScheduleTime" />
+                        </div>
+                        <div class="field-group">
+                            <input id="smsNotes" placeholder="optional notes" />
+                        </div>
+                        <div class="field-group sms-message-full">
+                            <textarea id="smsMessage" placeholder="SMS message"></textarea>
+                        </div>
                     </div>
                     <div class="actions">
                         <button onclick="sendSms()">Send SMS</button>
@@ -555,8 +762,10 @@
                 </div>
                 <div id="autoAnswerTabPanel" class="tab-panel">
                     <h2>Auto Answer</h2>
-                    <div class="input-row">
+                    <div class="input-row auto-answer-input-grid">
                         <select id="deviceSelectAutoAnswer"></select>
+                        <input id="autoAnswerHangupSeconds" type="text" inputmode="numeric" pattern="[0-9]*"
+                            placeholder="Auto hangup seconds" oninput="sanitizeDurationInput(event)" />
                         <div class="inline-toggle-row">
                             <span>Auto Answer (On / Off)</span>
                             <label class="switch">
@@ -564,9 +773,6 @@
                                 <span class="switch-slider"></span>
                             </label>
                         </div>
-                        <label class="field-label" for="autoAnswerHangupSeconds">Auto hangup seconds</label>
-                        <input id="autoAnswerHangupSeconds" type="text" inputmode="numeric" pattern="[0-9]*"
-                            placeholder="10" oninput="sanitizeDurationInput(event)" />
                     </div>
                     <div class="actions">
                         <button onclick="sendAutoAnswer()">Apply Auto Answer</button>
@@ -574,26 +780,45 @@
                 </div>
             </article>
 
-            <article id="devicesPanel" class="card full-width panel-hidden">
-                <h2>Devices</h2>
-                <div class="actions">
-                    <button onclick="loadDevices()">Refresh</button>
+            <article id="devicesPanel" class="card full-width">
+                <div class="panel-header">
+                    <h2>Devices</h2>
+                    <button id="toggleDevicesBtn" class="toggle-button panel-toggle-btn inactive"
+                        onclick="togglePanel('devices')">
+                        <span id="toggleDevicesIcon" class="toggle-icon" aria-hidden="true"></span>
+                        <span id="toggleDevicesLabel">Show</span>
+                    </button>
                 </div>
-                <div id="devicesTable" class="table-wrapper"></div>
-                <pre id="devices" class="json-fallback"></pre>
+                <div id="devicesPanelContent" class="panel-collapsible">
+                    <div class="actions">
+                        <button onclick="loadDevices()">Refresh</button>
+                    </div>
+                    <div id="devicesTable" class="table-wrapper"></div>
+                    <pre id="devices" class="json-fallback"></pre>
+                </div>
             </article>
 
-            <article id="commandsPanel" class="card full-width panel-hidden">
-                <h2>Commands</h2>
-                <div class="actions">
-                    <button onclick="loadCommands()">Refresh</button>
-                    <button onclick="clearCommands()">Clear Commands</button>
+            <article id="commandsPanel" class="card full-width">
+                <div class="panel-header">
+                    <h2>Commands</h2>
+                    <button id="toggleCommandsBtn" class="toggle-button panel-toggle-btn inactive"
+                        onclick="togglePanel('commands')">
+                        <span id="toggleCommandsIcon" class="toggle-icon" aria-hidden="true"></span>
+                        <span id="toggleCommandsLabel">Show</span>
+                    </button>
                 </div>
-                <div id="commandsTable" class="table-wrapper"></div>
-                <pre id="commands" class="json-fallback"></pre>
+                <div id="commandsPanelContent" class="panel-collapsible">
+                    <div class="actions">
+                        <button onclick="loadCommands()">Refresh</button>
+                        <button onclick="clearCommands()">Clear Commands</button>
+                    </div>
+                    <div id="commandsTable" class="table-wrapper"></div>
+                    <pre id="commands" class="json-fallback"></pre>
+                </div>
             </article>
         </section>
     </main>
+    <div id="toastContainer" class="toast-container" aria-live="polite" aria-atomic="true"></div>
 
     <script>
         const SERVER =
@@ -635,6 +860,23 @@
 
         function asDisplayValue(value) {
             return value === null || value === undefined || value === "" ? "-" : String(value);
+        }
+
+        function showToast(message, type = "info") {
+            const container = document.getElementById("toastContainer");
+            if (!container) return;
+
+            const toast = document.createElement("div");
+            toast.className = `toast toast-${type}`;
+            toast.textContent = String(message || "");
+            container.appendChild(toast);
+
+            setTimeout(() => {
+                toast.classList.add("toast-out");
+                setTimeout(() => {
+                    toast.remove();
+                }, 220);
+            }, 5000);
         }
 
         function parseDateValue(dateText) {
@@ -779,21 +1021,25 @@
             }
 
             const rows = sortCommands(commands).map((command) => {
+                const device = escapeHtml(asDisplayValue(command.deviceUid));
                 const type = escapeHtml(asDisplayValue(command.type));
                 const phone = escapeHtml(asDisplayValue(command.phoneNumber));
                 const message = escapeHtml(asDisplayValue(command.message));
+                const notes = escapeHtml(asDisplayValue(command.notes));
                 const status = escapeHtml(formatCommandStatus(command.status));
                 const createdAt = escapeHtml(asDisplayValue(command.createdAt));
                 const executedAt = escapeHtml(asDisplayValue(command.executedAt));
 
                 return `
                     <tr>
+                        <td>${device}</td>
                         <td>${type}</td>
                         <td>${phone}</td>
                         <td>${message}</td>
                         <td>${status}</td>
                         <td>${createdAt}</td>
                         <td>${executedAt}</td>
+                        <td>${notes}</td>
                     </tr>
                 `;
             }).join("");
@@ -802,12 +1048,14 @@
                 <table class="data-table">
                     <thead>
                         <tr>
+                            <th>Device</th>
                             <th>Type</th>
                             <th>Phone</th>
                             <th>Message</th>
                             <th>Status</th>
                             <th>Created At</th>
                             <th>Executed At</th>
+                            <th>Notes</th>
                         </tr>
                     </thead>
                     <tbody>${rows}</tbody>
@@ -850,16 +1098,57 @@
             document.getElementById("autoAnswerTabBtn").setAttribute("aria-selected", String(isAutoAnswer));
         }
 
+        function updatePanelToggleUI(panelName) {
+            const isDevices = panelName === "devices";
+            const buttonId = isDevices ? "toggleDevicesBtn" : "toggleCommandsBtn";
+            const labelId = isDevices ? "toggleDevicesLabel" : "toggleCommandsLabel";
+            const isVisible = panelVisibility[panelName];
+
+            const button = document.getElementById(buttonId);
+            const label = document.getElementById(labelId);
+
+            button.classList.toggle("active", isVisible);
+            button.classList.toggle("inactive", !isVisible);
+            label.textContent = isVisible ? "Hide" : "Show";
+        }
+
+        function setPanelContentVisibility(contentElement, isVisible) {
+            if (!contentElement) return;
+
+            if (isVisible) {
+                contentElement.classList.add("is-open");
+                contentElement.style.maxHeight = "0px";
+                requestAnimationFrame(() => {
+                    contentElement.style.maxHeight = `${contentElement.scrollHeight}px`;
+                });
+
+                const handleOpenEnd = (event) => {
+                    if (event.propertyName !== "max-height") return;
+                    if (contentElement.classList.contains("is-open")) {
+                        contentElement.style.maxHeight = "none";
+                    }
+                    contentElement.removeEventListener("transitionend", handleOpenEnd);
+                };
+                contentElement.addEventListener("transitionend", handleOpenEnd);
+            } else {
+                const currentHeight = contentElement.scrollHeight;
+                contentElement.style.maxHeight = `${currentHeight}px`;
+                void contentElement.offsetHeight;
+                contentElement.classList.remove("is-open");
+                contentElement.style.maxHeight = "0px";
+            }
+        }
+
         async function togglePanel(panelName) {
             const isDevices = panelName === "devices";
-            const panelId = isDevices ? "devicesPanel" : "commandsPanel";
-            const buttonId = isDevices ? "toggleDevicesBtn" : "toggleCommandsBtn";
+            const contentId = isDevices ? "devicesPanelContent" : "commandsPanelContent";
 
             panelVisibility[panelName] = !panelVisibility[panelName];
             const isVisible = panelVisibility[panelName];
 
-            document.getElementById(panelId).classList.toggle("panel-hidden", !isVisible);
-            document.getElementById(buttonId).classList.toggle("active", isVisible);
+            const contentElement = document.getElementById(contentId);
+            setPanelContentVisibility(contentElement, isVisible);
+            updatePanelToggleUI(panelName);
 
             if (isVisible) {
                 if (isDevices) {
@@ -891,7 +1180,7 @@
 
             const deviceName = input.value.trim();
             if (!deviceName) {
-                alert("Please enter a device name");
+                showToast("Please enter a device name", "error");
                 return;
             }
 
@@ -913,18 +1202,15 @@
                 await loadDevices();
                 await loadDevicesToSelect();
             } catch (error) {
-                alert(error.message);
+                showToast(error.message, "error");
             }
         }
 
         async function deleteDevice(deviceUid) {
             if (!deviceUid) {
-                alert("Invalid device UID");
+                showToast("Invalid device UID", "error");
                 return;
             }
-
-            const isConfirmed = window.confirm("Are you sure you want to delete this device?");
-            if (!isConfirmed) return;
 
             try {
                 const res = await fetch(SERVER + "/devices/" + encodeURIComponent(deviceUid), {
@@ -934,10 +1220,11 @@
                 const data = await res.json();
                 if (!res.ok) throw new Error(data.error || "Failed to delete device");
 
+                showToast("Device delete command executed", "success");
                 await loadDevices();
                 await loadDevicesToSelect();
             } catch (error) {
-                alert(error.message || "Failed to delete device");
+                showToast(error.message || "Failed to delete device", "error");
             }
         }
 
@@ -1054,10 +1341,10 @@
                 const data = await res.json();
                 if (!res.ok) throw new Error(data.error || "Failed to send command");
 
-                alert("Command sent");
+                showToast("Command sent", "success");
                 await loadCommands();
             } catch (error) {
-                alert(error.message);
+                showToast(error.message, "error");
             }
         }
 
@@ -1080,10 +1367,10 @@
                 const data = await res.json();
                 if (!res.ok) throw new Error(data.error || "Failed to send end command");
 
-                alert("End command sent");
+                showToast("End command sent", "success");
                 await loadCommands();
             } catch (error) {
-                alert(error.message);
+                showToast(error.message, "error");
             }
         }
 
@@ -1092,12 +1379,14 @@
             const phoneNumber = document.getElementById("smsPhone").value;
             const message = document.getElementById("smsMessage").value;
             const scheduledAt = document.getElementById("smsScheduleTime").value;
+            const notes = document.getElementById("smsNotes").value.trim();
             const payload = {
                 deviceUid,
                 type: "SMS",
                 phoneNumber,
                 message,
-                scheduledAt: scheduledAt || null
+                scheduledAt: scheduledAt || null,
+                notes: notes || null
             };
 
             try {
@@ -1112,10 +1401,10 @@
                 const data = await res.json();
                 if (!res.ok) throw new Error(data.error || "Failed to send SMS command");
 
-                alert("SMS command sent");
+                showToast("SMS command sent", "success");
                 await loadCommands();
             } catch (error) {
-                alert(error.message);
+                showToast(error.message, "error");
             }
         }
 
@@ -1126,7 +1415,7 @@
             const parsedHangupSeconds = getValidDurationSeconds(rawHangupSeconds);
 
             if (!deviceUid) {
-                alert("Please select a device first");
+                showToast("Please select a device first", "error");
                 return;
             }
 
@@ -1138,7 +1427,7 @@
 
             if (enabled) {
                 if (parsedHangupSeconds === null) {
-                    alert("Please enter a valid auto hangup seconds value");
+                    showToast("Please enter a valid auto hangup seconds value", "error");
                     return;
                 }
                 payload.autoHangupSeconds = parsedHangupSeconds;
@@ -1156,17 +1445,14 @@
                 const data = await res.json();
                 if (!res.ok) throw new Error(data.error || "Failed to apply auto answer");
 
-                alert("Auto Answer command sent");
+                showToast("Auto Answer command sent", "success");
                 await loadCommands();
             } catch (error) {
-                alert(error.message);
+                showToast(error.message, "error");
             }
         }
 
         async function clearCommands() {
-            const isConfirmed = window.confirm("Are you sure you want to clear all commands?");
-            if (!isConfirmed) return;
-
             try {
                 const res = await fetch(SERVER + "/commands", {
                     method: "DELETE"
@@ -1175,16 +1461,18 @@
                 const data = await res.json();
                 if (!res.ok) throw new Error(data.error || "Failed to clear commands");
 
-                alert(data.message || "All commands cleared");
+                showToast(data.message || "All commands cleared", "success");
                 await loadCommands();
             } catch (error) {
-                alert(error.message);
+                showToast(error.message, "error");
             }
         }
 
         loadDevicesToSelect();
         loadDevices();
         loadCommands();
+        updatePanelToggleUI("devices");
+        updatePanelToggleUI("commands");
         setInterval(loadDevicesToSelect, 10000);
     </script>
 </body>
