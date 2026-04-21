@@ -3,6 +3,7 @@ require("dotenv").config();
 const express = require("express");
 const cors = require("cors");
 const mongoose = require("mongoose");
+const path = require("path");
 
 const { connectToDatabase } = require("./src/config/db");
 const Device = require("./src/models/Device");
@@ -157,7 +158,7 @@ function handleServerError(res, error, contextLabel) {
 }
 
 app.get("/", (req, res) => {
-  return res.status(200).send("Server is running");
+  return res.sendFile(path.join(__dirname, "public", "index.html"));
 });
 
 app.get("/health", (req, res) => {
