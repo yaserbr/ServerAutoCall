@@ -1,6 +1,14 @@
 const mongoose = require("mongoose");
 
 const DEVICE_NAME_MAX_LENGTH = 60;
+const DEVICE_UID_LENGTH = 5;
+const DEVICE_UID_REGEX = new RegExp(`^[a-z0-9]{${DEVICE_UID_LENGTH}}$`);
+
+function normalizeDeviceUid(value) {
+  if (value === undefined || value === null) return "";
+  const normalized = String(value).trim().toLowerCase();
+  return DEVICE_UID_REGEX.test(normalized) ? normalized : "";
+}
 
 function normalizeDeviceName(value) {
   if (typeof value !== "string") return null;
@@ -25,6 +33,10 @@ const deviceSchema = new mongoose.Schema(
       required: true,
       unique: true,
       trim: true,
+      lowercase: true,
+      minlength: DEVICE_UID_LENGTH,
+      maxlength: DEVICE_UID_LENGTH,
+      match: DEVICE_UID_REGEX,
       index: true
     },
     deviceName: {
@@ -53,6 +65,7 @@ const deviceSchema = new mongoose.Schema(
 );
 
 deviceSchema.pre("validate", function setDefaultDeviceName() {
+  this.deviceUid = normalizeDeviceUid(this.deviceUid);
   const normalized = normalizeDeviceName(this.deviceName);
   if (normalized) {
     this.deviceName = normalized;

@@ -40,6 +40,9 @@ app.use((req, res, next) => {
 const RIYADH_TIMEZONE = "Asia/Riyadh";
 const RIYADH_UTC_OFFSET_MINUTES = 3 * 60;
 const DEVICE_NAME_MAX_LENGTH = 60;
+const DEVICE_UID_LENGTH = 5;
+const DEVICE_UID_REGEX = new RegExp(`^[a-z0-9]{${DEVICE_UID_LENGTH}}$`);
+const DEVICE_UID_FORMAT_ERROR = `deviceUid must be exactly ${DEVICE_UID_LENGTH} lowercase letters or digits`;
 
 // Time strategy:
 // 1) Storage format: UTC timestamps in MongoDB.
@@ -86,7 +89,8 @@ function formatUtcForRiyadhDisplay(dateValue) {
 
 function normalizeDeviceUid(value) {
   if (value === undefined || value === null) return "";
-  return String(value).trim();
+  const normalized = String(value).trim().toLowerCase();
+  return DEVICE_UID_REGEX.test(normalized) ? normalized : "";
 }
 
 function normalizeDeviceName(value) {
@@ -266,7 +270,7 @@ app.post("/devices/register", async (req, res) => {
 
     if (!normalizedDeviceUid) {
       console.warn("[DeviceRegister] Validation failed: deviceUid is missing/empty", requestInfo);
-      return res.status(400).json({ error: "deviceUid is required" });
+      return res.status(400).json({ error: DEVICE_UID_FORMAT_ERROR });
     }
 
     const now = new Date(toUtcISOString());
@@ -360,7 +364,7 @@ app.post("/devices/heartbeat", async (req, res) => {
 
     if (!normalizedDeviceUid) {
       console.warn("[DeviceHeartbeat] Validation failed: deviceUid is missing/empty");
-      return res.status(400).json({ error: "deviceUid is required" });
+      return res.status(400).json({ error: DEVICE_UID_FORMAT_ERROR });
     }
 
     const device = await Device.findOne({ deviceUid: normalizedDeviceUid });
@@ -397,7 +401,7 @@ app.post("/devices/heartbeat", async (req, res) => {
 // =====================
 app.get("/devices", async (req, res) => {
   try {
-    const devices = await Device.find({});
+    const devices = await Device.find({ deviceUid: { $regex: DEVICE_UID_REGEX } });
     return res.json(devices.map(mapDeviceForResponse));
   } catch (error) {
     return handleServerError(res, error, "GET /devices");
@@ -409,7 +413,7 @@ app.delete("/devices/:deviceUid", async (req, res) => {
     const normalizedDeviceUid = normalizeDeviceUid(req.params?.deviceUid);
 
     if (!normalizedDeviceUid) {
-      return res.status(400).json({ error: "deviceUid is required" });
+      return res.status(400).json({ error: DEVICE_UID_FORMAT_ERROR });
     }
 
     const deletedDevice = await Device.findOneAndDelete({
@@ -436,7 +440,7 @@ app.post("/devices/rename", async (req, res) => {
     const normalizedDeviceName = normalizeDeviceName(req.body?.deviceName);
 
     if (!normalizedDeviceUid) {
-      return res.status(400).json({ error: "deviceUid is required" });
+      return res.status(400).json({ error: DEVICE_UID_FORMAT_ERROR });
     }
     if (!normalizedDeviceName) {
       return res.status(400).json({ error: "deviceName is required" });
@@ -476,7 +480,7 @@ app.post("/commands", async (req, res) => {
 
     const normalizedDeviceUid = normalizeDeviceUid(deviceUid);
     if (!normalizedDeviceUid) {
-      return res.status(400).json({ error: "deviceUid is required" });
+      return res.status(400).json({ error: DEVICE_UID_FORMAT_ERROR });
     }
 
     let scheduledAtDate = null;
@@ -682,7 +686,13 @@ app.get("/commands", async (req, res) => {
     const last24HoursCutoff = new Date(Date.now() - 24 * 60 * 60 * 1000);
     const filter = {};
     if (deviceUid) {
-      filter.deviceUid = deviceUid;
+      const normalizedDeviceUid = normalizeDeviceUid(deviceUid);
+      if (!normalizedDeviceUid) {
+        return res.status(400).json({ error: DEVICE_UID_FORMAT_ERROR });
+      }
+      filter.deviceUid = normalizedDeviceUid;
+    } else {
+      filter.deviceUid = { $regex: DEVICE_UID_REGEX };
     }
 
     if (status) {
@@ -799,12 +809,34 @@ app.use((error, req, res, next) => {
 
 const PORT = Number(process.env.PORT) || 4000;
 
-function startServer() {
+async function cleanupLegacyDeviceUidData() {
+  if (mongoose.connection.readyState !== 1) {
+    return;
+  }
+
+  const invalidUidFilter = { deviceUid: { $not: DEVICE_UID_REGEX } };
+  const [devicesCleanupResult, commandsCleanupResult] = await Promise.all([
+    Device.deleteMany(invalidUidFilter),
+    Command.deleteMany(invalidUidFilter)
+  ]);
+
+  const deletedDevices = Number(devicesCleanupResult?.deletedCount || 0);
+  const deletedCommands = Number(commandsCleanupResult?.deletedCount || 0);
+  if (deletedDevices > 0 || deletedCommands > 0) {
+    console.warn("[DeviceUidCleanup] Removed legacy rows with invalid deviceUid:", {
+      deletedDevices,
+      deletedCommands
+    });
+  }
+}
+
+async function startServer() {
   app.listen(PORT, "0.0.0.0", () => {
     console.log(`Server running on port ${PORT}`);
   });
 
-  connectToDatabase();
+  await connectToDatabase();
+  await cleanupLegacyDeviceUidData();
 }
 
 startServer();

@@ -1,11 +1,24 @@
 const mongoose = require("mongoose");
 
+const DEVICE_UID_LENGTH = 5;
+const DEVICE_UID_REGEX = new RegExp(`^[a-z0-9]{${DEVICE_UID_LENGTH}}$`);
+
+function normalizeDeviceUid(value) {
+  if (value === undefined || value === null) return "";
+  const normalized = String(value).trim().toLowerCase();
+  return DEVICE_UID_REGEX.test(normalized) ? normalized : "";
+}
+
 const commandSchema = new mongoose.Schema(
   {
     deviceUid: {
       type: String,
       required: true,
       trim: true,
+      lowercase: true,
+      minlength: DEVICE_UID_LENGTH,
+      maxlength: DEVICE_UID_LENGTH,
+      match: DEVICE_UID_REGEX,
       index: true
     },
     action: {
@@ -73,6 +86,10 @@ const commandSchema = new mongoose.Schema(
     versionKey: false
   }
 );
+
+commandSchema.pre("validate", function normalizeUidBeforeValidation() {
+  this.deviceUid = normalizeDeviceUid(this.deviceUid);
+});
 
 commandSchema.index({ deviceUid: 1, status: 1 });
 commandSchema.index({ isImmediate: -1, scheduledAt: 1, createdAt: -1 });
