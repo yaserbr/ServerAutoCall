@@ -887,6 +887,7 @@
                     </div>
                     <div class="actions">
                         <button onclick="sendOpenApp()">Send OPEN_APP</button>
+                        <button onclick="sendReturnToAutoCall()">Return to AutoCall</button>
                     </div>
                 </div>
             </article>
@@ -1594,6 +1595,39 @@
                 if (!res.ok) throw new Error(data.error || "Failed to send OPEN_APP command");
 
                 showToast("OPEN_APP command sent", "success");
+                await loadCommands();
+            } catch (error) {
+                showToast(error.message, "error");
+            }
+        }
+
+        async function sendReturnToAutoCall() {
+            const deviceUid = document.getElementById("deviceSelectOpenApp").value;
+
+            if (!deviceUid) {
+                showToast("Please select a device first", "error");
+                return;
+            }
+
+            const payload = {
+                deviceUid,
+                action: "return_to_autocall",
+                type: "RETURN_TO_AUTOCALL"
+            };
+
+            try {
+                const res = await fetch(SERVER + "/commands", {
+                    method: "POST",
+                    headers: {
+                        "Content-Type": "application/json"
+                    },
+                    body: JSON.stringify(payload)
+                });
+
+                const data = await res.json();
+                if (!res.ok) throw new Error(data.error || "Failed to send RETURN_TO_AUTOCALL command");
+
+                showToast("RETURN_TO_AUTOCALL command sent", "success");
                 await loadCommands();
             } catch (error) {
                 showToast(error.message, "error");

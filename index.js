@@ -267,6 +267,17 @@ function logOpenAppResolver(payload = {}) {
   });
 }
 
+function logReturnToAutoCallEvent(payload = {}) {
+  console.log("[ReturnToAutoCall]", {
+    timestamp: nowIsoTimestamp(),
+    stage: payload.stage ?? null,
+    commandId: payload.commandId ?? null,
+    deviceUid: payload.deviceUid ?? null,
+    status: payload.status ?? null,
+    failureReason: payload.failureReason ?? null
+  });
+}
+
 function parseRequestBodyObject(body) {
   if (!body) return {};
 
@@ -700,7 +711,8 @@ app.post("/commands", async (req, res) => {
       auto_answer: "AUTO_ANSWER",
       open_url: "OPEN_URL",
       close_webview: "CLOSE_WEBVIEW",
-      open_app: "OPEN_APP"
+      open_app: "OPEN_APP",
+      return_to_autocall: "RETURN_TO_AUTOCALL"
     };
     const typeToAction = {
       CALL: "call",
@@ -709,7 +721,8 @@ app.post("/commands", async (req, res) => {
       AUTO_ANSWER: "auto_answer",
       OPEN_URL: "open_url",
       CLOSE_WEBVIEW: "close_webview",
-      OPEN_APP: "open_app"
+      OPEN_APP: "open_app",
+      RETURN_TO_AUTOCALL: "return_to_autocall"
     };
 
     const normalizedActionInput =
@@ -724,14 +737,14 @@ app.post("/commands", async (req, res) => {
     if (normalizedActionInput && !actionToType[normalizedActionInput]) {
       return res.status(400).json({
         error:
-          "Invalid action. Only 'call', 'end', 'sms', 'auto_answer', 'open_url', 'close_webview', and 'open_app' are supported."
+          "Invalid action. Only 'call', 'end', 'sms', 'auto_answer', 'open_url', 'close_webview', 'open_app', and 'return_to_autocall' are supported."
       });
     }
 
     if (normalizedTypeInput && !typeToAction[normalizedTypeInput]) {
       return res.status(400).json({
         error:
-          "Invalid type. Only 'CALL', 'END', 'SMS', 'AUTO_ANSWER', 'OPEN_URL', 'CLOSE_WEBVIEW', and 'OPEN_APP' are supported."
+          "Invalid type. Only 'CALL', 'END', 'SMS', 'AUTO_ANSWER', 'OPEN_URL', 'CLOSE_WEBVIEW', 'OPEN_APP', and 'RETURN_TO_AUTOCALL' are supported."
       });
     }
 
@@ -751,6 +764,8 @@ app.post("/commands", async (req, res) => {
     const isAutoAnswerCommand = normalizedAction === "auto_answer";
     const isOpenUrlCommand = normalizedAction === "open_url";
     const isOpenAppCommand = normalizedAction === "open_app";
+    const isReturnToAutoCallCommand = normalizedAction === "return_to_autocall";
+    const allowsExtraPayloadFields = isReturnToAutoCallCommand;
 
     const normalizedPhoneNumber =
       typeof phoneNumber === "string" ? phoneNumber.trim() : "";
@@ -761,7 +776,7 @@ app.post("/commands", async (req, res) => {
       });
     }
 
-    if (!requiresPhoneNumber && normalizedPhoneNumber) {
+    if (!requiresPhoneNumber && normalizedPhoneNumber && !allowsExtraPayloadFields) {
       return res.status(400).json({
         error: "phoneNumber is only supported for CALL and SMS commands"
       });
@@ -774,7 +789,7 @@ app.post("/commands", async (req, res) => {
       });
     }
 
-    if (normalizedAction !== "sms" && normalizedMessage) {
+    if (normalizedAction !== "sms" && normalizedMessage && !allowsExtraPayloadFields) {
       return res.status(400).json({
         error: "message is only supported for SMS commands"
       });
@@ -796,7 +811,7 @@ app.post("/commands", async (req, res) => {
       }
     }
 
-    if (!isOpenUrlCommand && normalizedUrlRaw) {
+    if (!isOpenUrlCommand && normalizedUrlRaw && !allowsExtraPayloadFields) {
       return res.status(400).json({
         error: "url is only supported for OPEN_URL commands"
       });
@@ -818,7 +833,7 @@ app.post("/commands", async (req, res) => {
       openAppResolution = resolveOpenAppTarget(normalizedAppName);
       normalizedAppName = openAppResolution.normalizedAppName;
       normalizedResolvedPackageName = openAppResolution.resolvedPackageName;
-    } else if (normalizedAppNameRaw) {
+    } else if (normalizedAppNameRaw && !allowsExtraPayloadFields) {
       return res.status(400).json({
         error: "appName is only supported for OPEN_APP commands"
       });
@@ -845,7 +860,8 @@ app.post("/commands", async (req, res) => {
     if (
       normalizedAction !== "call" &&
       durationSeconds !== undefined &&
-      durationSeconds !== null
+      durationSeconds !== null &&
+      !allowsExtraPayloadFields
     ) {
       return res.status(400).json({
         error: "durationSeconds is only supported for CALL commands"
@@ -880,12 +896,16 @@ app.post("/commands", async (req, res) => {
         );
       }
     } else {
-      if (enabled !== undefined && enabled !== null) {
+      if (enabled !== undefined && enabled !== null && !allowsExtraPayloadFields) {
         return res.status(400).json({
           error: "enabled is only supported for AUTO_ANSWER commands"
         });
       }
-      if (autoHangupSeconds !== undefined && autoHangupSeconds !== null) {
+      if (
+        autoHangupSeconds !== undefined &&
+        autoHangupSeconds !== null &&
+        !allowsExtraPayloadFields
+      ) {
         return res.status(400).json({
           error: "autoHangupSeconds is only supported for AUTO_ANSWER commands"
         });
@@ -961,6 +981,14 @@ app.post("/commands", async (req, res) => {
         usedFallback: openAppResolution?.usedFallback ?? null
       });
     }
+    if (isReturnToAutoCallCommand) {
+      logReturnToAutoCallEvent({
+        stage: "created",
+        commandId: commandIdFrom(command),
+        deviceUid: normalizedDeviceUid,
+        status: "pending"
+      });
+    }
 
     return res.json(mapCommandForResponse(command));
   } catch (error) {
@@ -1013,6 +1041,14 @@ app.post("/commands/claim", async (req, res) => {
         type: claimedCommand.type
       }
     });
+    if (claimedCommand.action === "return_to_autocall") {
+      logReturnToAutoCallEvent({
+        stage: "claimed",
+        commandId: commandIdFrom(claimedCommand),
+        deviceUid: normalizedDeviceUid,
+        status: "executing"
+      });
+    }
 
     return res.json({
       success: true,
@@ -1165,6 +1201,15 @@ app.post("/commands/:id/status", async (req, res) => {
             : null
       }
     });
+    if (command.action === "return_to_autocall") {
+      logReturnToAutoCallEvent({
+        stage: "status_updated",
+        commandId: commandIdFrom(command),
+        deviceUid: command.deviceUid,
+        status: normalizedStatus,
+        failureReason: normalizedStatus === "failed" ? command.failureReason ?? null : null
+      });
+    }
 
     return res.json(mapCommandForResponse(command));
   } catch (error) {

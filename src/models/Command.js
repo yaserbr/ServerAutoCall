@@ -24,12 +24,30 @@ const commandSchema = new mongoose.Schema(
     action: {
       type: String,
       required: true,
-      enum: ["call", "end", "sms", "auto_answer", "open_url", "close_webview", "open_app"]
+      enum: [
+        "call",
+        "end",
+        "sms",
+        "auto_answer",
+        "open_url",
+        "close_webview",
+        "open_app",
+        "return_to_autocall"
+      ]
     },
     type: {
       type: String,
       required: true,
-      enum: ["CALL", "END", "SMS", "AUTO_ANSWER", "OPEN_URL", "CLOSE_WEBVIEW", "OPEN_APP"]
+      enum: [
+        "CALL",
+        "END",
+        "SMS",
+        "AUTO_ANSWER",
+        "OPEN_URL",
+        "CLOSE_WEBVIEW",
+        "OPEN_APP",
+        "RETURN_TO_AUTOCALL"
+      ]
     },
     phoneNumber: {
       type: String,
