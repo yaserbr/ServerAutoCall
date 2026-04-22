@@ -43,6 +43,8 @@ const DEVICE_NAME_MAX_LENGTH = 60;
 const DEVICE_UID_LENGTH = 5;
 const DEVICE_UID_REGEX = new RegExp(`^[a-z0-9]{${DEVICE_UID_LENGTH}}$`);
 const DEVICE_UID_FORMAT_ERROR = `deviceUid must be exactly ${DEVICE_UID_LENGTH} lowercase letters or digits`;
+const COMMAND_FETCH_WINDOW_MS = 24 * 60 * 60 * 1000;
+const COMMAND_CLAIM_SORT = { isImmediate: -1, scheduledAt: 1, createdAt: 1, _id: 1 };
 
 // Time strategy:
 // 1) Storage format: UTC timestamps in MongoDB.
@@ -238,6 +240,43 @@ function mapCommandForResponse(command) {
     createdAt: formatUtcForRiyadhDisplay(source.createdAt),
     executedAt: formatUtcForRiyadhDisplay(source.executedAt)
   };
+}
+
+function nowIsoTimestamp() {
+  return new Date(toUtcISOString()).toISOString();
+}
+
+function commandIdFrom(commandOrObject) {
+  const source = toPlainObject(commandOrObject);
+  if (!source) return null;
+  return source._id ? String(source._id) : null;
+}
+
+function getCommandFetchCutoffDate() {
+  return new Date(Date.now() - COMMAND_FETCH_WINDOW_MS);
+}
+
+function buildDuePendingCommandFilter(deviceUid) {
+  return {
+    deviceUid,
+    status: "pending",
+    createdAt: { $gte: getCommandFetchCutoffDate() },
+    $or: [{ scheduledAt: null }, { scheduledAt: { $lte: new Date(toUtcISOString()) } }]
+  };
+}
+
+function logCommandLifecycle(eventName, payload = {}) {
+  console.log("[CommandLifecycle]", {
+    event: eventName,
+    timestamp: nowIsoTimestamp(),
+    commandId: payload.commandId ?? null,
+    deviceUid: payload.deviceUid ?? null,
+    oldStatus: payload.oldStatus ?? null,
+    newStatus: payload.newStatus ?? null,
+    count: payload.count ?? null,
+    ids: payload.ids ?? null,
+    details: payload.details ?? null
+  });
 }
 
 function handleServerError(res, error, contextLabel) {
@@ -670,9 +709,76 @@ app.post("/commands", async (req, res) => {
       createdAt: new Date(toUtcISOString())
     });
 
+    logCommandLifecycle("created", {
+      commandId: commandIdFrom(command),
+      deviceUid: normalizedDeviceUid,
+      oldStatus: null,
+      newStatus: "pending",
+      details: {
+        action: normalizedAction,
+        type: commandType,
+        scheduledAt: scheduledAtDate ? scheduledAtDate.toISOString() : null
+      }
+    });
+
     return res.json(mapCommandForResponse(command));
   } catch (error) {
     return handleServerError(res, error, "POST /commands");
+  }
+});
+
+// =====================
+// Claim next command (atomic pending -> executing)
+// =====================
+app.post("/commands/claim", async (req, res) => {
+  try {
+    const normalizedDeviceUid = normalizeDeviceUid(req.body?.deviceUid);
+    if (!normalizedDeviceUid) {
+      return res.status(400).json({ error: DEVICE_UID_FORMAT_ERROR });
+    }
+
+    const claimFilter = buildDuePendingCommandFilter(normalizedDeviceUid);
+    const claimedCommand = await Command.findOneAndUpdate(
+      claimFilter,
+      {
+        $set: {
+          status: "executing",
+          failureReason: null,
+          executedAt: null
+        }
+      },
+      {
+        sort: COMMAND_CLAIM_SORT,
+        new: true
+      }
+    );
+
+    if (!claimedCommand) {
+      logCommandLifecycle("claim_none", {
+        deviceUid: normalizedDeviceUid,
+        oldStatus: "pending",
+        newStatus: null
+      });
+      return res.json({ success: true, command: null });
+    }
+
+    logCommandLifecycle("claimed", {
+      commandId: commandIdFrom(claimedCommand),
+      deviceUid: normalizedDeviceUid,
+      oldStatus: "pending",
+      newStatus: "executing",
+      details: {
+        action: claimedCommand.action,
+        type: claimedCommand.type
+      }
+    });
+
+    return res.json({
+      success: true,
+      command: mapCommandForResponse(claimedCommand)
+    });
+  } catch (error) {
+    return handleServerError(res, error, "POST /commands/claim");
   }
 });
 
@@ -683,7 +789,7 @@ app.get("/commands", async (req, res) => {
   try {
     const { deviceUid, status } = req.query;
 
-    const last24HoursCutoff = new Date(Date.now() - 24 * 60 * 60 * 1000);
+    const last24HoursCutoff = getCommandFetchCutoffDate();
     const filter = {};
     if (deviceUid) {
       const normalizedDeviceUid = normalizeDeviceUid(deviceUid);
@@ -712,6 +818,14 @@ app.get("/commands", async (req, res) => {
       if (aImmediate && bImmediate) return 0;
 
       return new Date(a.scheduledAt).getTime() - new Date(b.scheduledAt).getTime();
+    });
+
+    logCommandLifecycle("fetched", {
+      deviceUid: typeof filter.deviceUid === "string" ? filter.deviceUid : null,
+      oldStatus: null,
+      newStatus: status ?? null,
+      count: sortedResult.length,
+      ids: sortedResult.map((command) => commandIdFrom(command))
     });
 
     return res.json(sortedResult.map(mapCommandForResponse));
@@ -745,6 +859,11 @@ app.post("/commands/:id/status", async (req, res) => {
       : null;
 
     if (!command) {
+      logCommandLifecycle("status_update_missing_command", {
+        commandId: id,
+        oldStatus: null,
+        newStatus: status ?? null
+      });
       return res.status(404).json({ error: "Command not found" });
     }
 
@@ -767,9 +886,16 @@ app.post("/commands/:id/status", async (req, res) => {
 
     const canTransition = allowedTransitions[command.status]?.has(normalizedStatus);
     if (!canTransition) {
+      logCommandLifecycle("status_transition_ignored", {
+        commandId: commandIdFrom(command),
+        deviceUid: command.deviceUid,
+        oldStatus: command.status,
+        newStatus: normalizedStatus
+      });
       return res.json(mapCommandForResponse(command));
     }
 
+    const previousStatus = command.status;
     command.status = normalizedStatus;
 
     if (normalizedStatus === "executed") {
@@ -785,6 +911,19 @@ app.post("/commands/:id/status", async (req, res) => {
     }
 
     await command.save();
+
+    logCommandLifecycle("status_updated", {
+      commandId: commandIdFrom(command),
+      deviceUid: command.deviceUid,
+      oldStatus: previousStatus,
+      newStatus: normalizedStatus,
+      details: {
+        failureReason:
+          normalizedStatus === "failed"
+            ? command.failureReason ?? null
+            : null
+      }
+    });
 
     return res.json(mapCommandForResponse(command));
   } catch (error) {
