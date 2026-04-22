@@ -14,9 +14,10 @@
             --accent-soft: #67e8f9;
             --text: #e6edf7;
             --muted: #a8b5c9;
-            --glass: rgba(255, 255, 255, 0.12);
+            --glass: linear-gradient(145deg, rgba(255, 255, 255, 0.11), rgba(255, 255, 255, 0.03));
             --glass-border: rgba(255, 255, 255, 0.2);
-            --shadow: 0 10px 35px rgba(0, 0, 0, 0.35);
+            --glass-shadow: 0 14px 36px rgba(4, 8, 26, 0.42);
+            --glass-blur: blur(14px) saturate(135%);
             --control-height: 48px;
         }
 
@@ -46,17 +47,54 @@
         .header {
             background: var(--glass);
             border: 1px solid var(--glass-border);
-            box-shadow: var(--shadow);
+            border-bottom: 1px solid rgba(255, 255, 255, 0.22);
+            box-shadow: var(--glass-shadow);
             border-radius: 20px;
             padding: 18px 20px;
-            backdrop-filter: blur(14px);
-            -webkit-backdrop-filter: blur(14px);
+            backdrop-filter: var(--glass-blur);
+            -webkit-backdrop-filter: var(--glass-blur);
+            position: sticky;
+            top: 12px;
+            z-index: 40;
+            overflow: hidden;
+            isolation: isolate;
+        }
+
+        .header::before {
+            content: "";
+            position: absolute;
+            inset: 0;
+            pointer-events: none;
+            background: radial-gradient(circle at 8% 0%, rgba(255, 255, 255, 0.38), rgba(255, 255, 255, 0) 58%);
+            opacity: 0.7;
+            z-index: 0;
+        }
+
+        .header::after {
+            content: "";
+            position: absolute;
+            left: -16%;
+            right: -16%;
+            bottom: 0;
+            height: 1px;
+            pointer-events: none;
+            background: linear-gradient(90deg,
+                    rgba(255, 255, 255, 0) 0%,
+                    rgba(255, 255, 255, 0.78) 24%,
+                    rgba(255, 255, 255, 0.32) 58%,
+                    rgba(255, 255, 255, 0) 100%);
+            opacity: 0.34;
+            transform: translateX(-12%);
+            animation: glassThreadShift 5.8s ease-in-out infinite;
+            z-index: 1;
         }
 
         .header h1 {
             margin: 0;
             font-size: 1.5rem;
             letter-spacing: 0.4px;
+            position: relative;
+            z-index: 2;
         }
 
         .header-title-row {
@@ -64,6 +102,8 @@
             align-items: flex-start;
             justify-content: space-between;
             gap: 14px;
+            position: relative;
+            z-index: 2;
         }
 
         .header-logo {
@@ -92,9 +132,9 @@
             border: 1px solid var(--glass-border);
             border-radius: 20px;
             padding: 18px;
-            box-shadow: var(--shadow);
-            backdrop-filter: blur(14px);
-            -webkit-backdrop-filter: blur(14px);
+            box-shadow: var(--glass-shadow);
+            backdrop-filter: var(--glass-blur);
+            -webkit-backdrop-filter: var(--glass-blur);
         }
 
         .card h2 {
@@ -188,10 +228,11 @@
             padding: 5px;
             width: 100%;
             border-radius: 999px;
-            border: 1px solid rgba(255, 255, 255, 0.24);
-            background: rgba(255, 255, 255, 0.14);
-            backdrop-filter: blur(10px);
-            -webkit-backdrop-filter: blur(10px);
+            border: 1px solid rgba(255, 255, 255, 0.22);
+            background: var(--glass);
+            box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.14);
+            backdrop-filter: var(--glass-blur);
+            -webkit-backdrop-filter: var(--glass-blur);
             margin-bottom: 14px;
         }
 
@@ -347,6 +388,20 @@
             }
         }
 
+        @keyframes glassThreadShift {
+            0% {
+                transform: translateX(-12%);
+            }
+
+            50% {
+                transform: translateX(12%);
+            }
+
+            100% {
+                transform: translateX(-12%);
+            }
+        }
+
         .panel-hidden {
             display: none;
         }
@@ -476,6 +531,11 @@
             align-items: end;
         }
 
+        .call-input-grid-3 {
+            grid-template-columns: minmax(0, 2fr) minmax(0, 3fr) minmax(0, 5fr);
+            align-items: end;
+        }
+
         .field-group {
             display: grid;
             gap: 6px;
@@ -491,7 +551,7 @@
         }
 
         .auto-answer-input-grid {
-            grid-template-columns: repeat(3, minmax(0, 1fr));
+            grid-template-columns: repeat(2, minmax(0, 1fr));
             align-items: end;
         }
 
@@ -661,6 +721,15 @@
             max-height: 190px;
         }
 
+        @media (max-width: 768px) {
+            .header,
+            .card,
+            .segmented-control {
+                backdrop-filter: blur(12px) saturate(128%);
+                -webkit-backdrop-filter: blur(12px) saturate(128%);
+            }
+        }
+
         @media (max-width: 640px) {
             body {
                 padding: 14px;
@@ -677,6 +746,10 @@
             }
 
             .call-input-grid {
+                grid-template-columns: 1fr;
+            }
+
+            .call-input-grid-3 {
                 grid-template-columns: 1fr;
             }
 
@@ -727,10 +800,11 @@
                     <div class="input-row call-input-grid">
                         <select id="deviceSelect"></select>
                         <input id="phone" placeholder="phone number" />
-                        <div class="field-group">
-                            <input id="durationSeconds" type="text" inputmode="numeric" pattern="[0-9]*" placeholder="Call duration (seconds)" oninput="sanitizeDurationInput(event)" />
-                        </div>
+                    </div>
+                    <div class="input-row call-input-grid-3">
+                        <input id="durationSeconds" type="text" inputmode="numeric" pattern="[0-9]*" placeholder="Call duration (seconds)" oninput="sanitizeDurationInput(event)" />
                         <input type="datetime-local" id="scheduleTime" />
+                        <input id="callNotes" placeholder="optional notes" />
                     </div>
                     <div class="actions">
                         <button onclick="sendCall()">Call</button>
@@ -764,8 +838,6 @@
                     <h2>Auto Answer</h2>
                     <div class="input-row auto-answer-input-grid">
                         <select id="deviceSelectAutoAnswer"></select>
-                        <input id="autoAnswerHangupSeconds" type="text" inputmode="numeric" pattern="[0-9]*"
-                            placeholder="Auto hangup seconds" oninput="sanitizeDurationInput(event)" />
                         <div class="inline-toggle-row">
                             <span>Auto Answer (On / Off)</span>
                             <label class="switch">
@@ -773,6 +845,9 @@
                                 <span class="switch-slider"></span>
                             </label>
                         </div>
+                        <input id="autoAnswerHangupSeconds" type="text" inputmode="numeric" pattern="[0-9]*"
+                            placeholder="Auto hangup seconds" oninput="sanitizeDurationInput(event)" />
+                        <input id="autoAnswerNotes" placeholder="optional notes" />
                     </div>
                     <div class="actions">
                         <button onclick="sendAutoAnswer()">Apply Auto Answer</button>
@@ -848,6 +923,21 @@
             sms: 1,
             auto_answer: 2
         };
+        const deviceNameByUid = new Map();
+
+        function rememberDevices(devices) {
+            deviceNameByUid.clear();
+            if (!Array.isArray(devices)) return;
+
+            devices.forEach((device) => {
+                const rawUid = typeof device?.deviceUid === "string" ? device.deviceUid.trim().toLowerCase() : "";
+                const rawName = typeof device?.deviceName === "string" ? device.deviceName.trim() : "";
+                if (!rawUid) return;
+                if (rawName) {
+                    deviceNameByUid.set(rawUid, rawName);
+                }
+            });
+        }
 
         function escapeHtml(value) {
             return String(value)
@@ -1021,7 +1111,16 @@
             }
 
             const rows = sortCommands(commands).map((command) => {
-                const device = escapeHtml(asDisplayValue(command.deviceUid));
+                const normalizedUid =
+                    typeof command.deviceUid === "string" ? command.deviceUid.trim().toLowerCase() : "";
+                const resolvedName =
+                    (typeof command.deviceName === "string" && command.deviceName.trim()) ||
+                    deviceNameByUid.get(normalizedUid) ||
+                    "-";
+                const device = `
+                    <div class="device-name-line">${escapeHtml(asDisplayValue(resolvedName))}</div>
+                    <div class="device-uid-line">${escapeHtml(asDisplayValue(command.deviceUid))}</div>
+                `;
                 const type = escapeHtml(asDisplayValue(command.type));
                 const phone = escapeHtml(asDisplayValue(command.phoneNumber));
                 const message = escapeHtml(asDisplayValue(command.message));
@@ -1033,10 +1132,10 @@
                     <tr>
                         <td>${device}</td>
                         <td>${type}</td>
-                        <td>${phone}</td>
-                        <td>${message}</td>
                         <td>${status}</td>
                         <td>${createdAt}</td>
+                        <td>${phone}</td>
+                        <td>${message}</td>
                         <td>${notes}</td>
                     </tr>
                 `;
@@ -1048,10 +1147,10 @@
                         <tr>
                             <th>Device</th>
                             <th>Type</th>
-                            <th>Phone</th>
-                            <th>Message</th>
                             <th>Status</th>
                             <th>Created At</th>
+                            <th>Phone</th>
+                            <th>Message</th>
                             <th>Notes</th>
                         </tr>
                     </thead>
@@ -1161,6 +1260,7 @@
                 const res = await fetch(SERVER + "/devices");
                 if (!res.ok) throw new Error("Failed to load devices");
                 const data = await res.json();
+                rememberDevices(data);
                 renderDevicesTable(data);
                 setRawFallback("devices", data, false);
             } catch (error) {
@@ -1237,6 +1337,7 @@
                 const previousSmsValue = smsSelect.value;
                 const previousAutoAnswerValue = autoAnswerSelect.value;
 
+                rememberDevices(data);
                 populateDeviceSelect(callSelect, data, previousCallValue);
                 populateDeviceSelect(smsSelect, data, previousSmsValue);
                 populateDeviceSelect(autoAnswerSelect, data, previousAutoAnswerValue);
@@ -1308,12 +1409,14 @@
             const scheduledAt = document.getElementById("scheduleTime").value;
             const durationRaw = document.getElementById("durationSeconds").value.trim();
             const durationSeconds = getValidDurationSeconds(durationRaw);
+            const notes = document.getElementById("callNotes").value.trim();
 
             const payload = {
                 deviceUid,
                 action: "call",
                 phoneNumber,
-                scheduledAt: scheduledAt || null
+                scheduledAt: scheduledAt || null,
+                notes: notes || null
             };
 
             if (durationSeconds !== null) {
@@ -1410,6 +1513,7 @@
             const enabled = document.getElementById("autoAnswerEnabled").checked;
             const rawHangupSeconds = document.getElementById("autoAnswerHangupSeconds").value.trim();
             const parsedHangupSeconds = getValidDurationSeconds(rawHangupSeconds);
+            const notes = document.getElementById("autoAnswerNotes").value.trim();
 
             if (!deviceUid) {
                 showToast("Please select a device first", "error");
@@ -1419,7 +1523,8 @@
             const payload = {
                 deviceUid,
                 type: "AUTO_ANSWER",
-                enabled
+                enabled,
+                notes: notes || null
             };
 
             if (enabled) {
