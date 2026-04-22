@@ -102,6 +102,23 @@ function normalizeDeviceName(value) {
   return trimmed.slice(0, DEVICE_NAME_MAX_LENGTH);
 }
 
+function normalizeHttpUrl(value) {
+  if (typeof value !== "string") return null;
+  const trimmed = value.trim();
+  if (!trimmed) return null;
+
+  try {
+    const parsed = new URL(trimmed);
+    const protocol = parsed.protocol.toLowerCase();
+    if (protocol !== "http:" && protocol !== "https:") {
+      return null;
+    }
+    return parsed.toString();
+  } catch (_error) {
+    return null;
+  }
+}
+
 function parseRequestBodyObject(body) {
   if (!body) return {};
 
@@ -226,6 +243,7 @@ function mapCommandForResponse(command) {
     type: source.type,
     phoneNumber: source.phoneNumber ?? null,
     message: source.message ?? null,
+    url: source.url ?? null,
     notes: source.notes ?? null,
     durationSeconds: source.durationSeconds ?? null,
     enabled: source.enabled ?? null,
@@ -510,6 +528,7 @@ app.post("/commands", async (req, res) => {
       type,
       phoneNumber,
       message,
+      url,
       notes,
       scheduledAt,
       durationSeconds,
@@ -527,13 +546,17 @@ app.post("/commands", async (req, res) => {
       call: "CALL",
       end: "END",
       sms: "SMS",
-      auto_answer: "AUTO_ANSWER"
+      auto_answer: "AUTO_ANSWER",
+      open_url: "OPEN_URL",
+      close_webview: "CLOSE_WEBVIEW"
     };
     const typeToAction = {
       CALL: "call",
       END: "end",
       SMS: "sms",
-      AUTO_ANSWER: "auto_answer"
+      AUTO_ANSWER: "auto_answer",
+      OPEN_URL: "open_url",
+      CLOSE_WEBVIEW: "close_webview"
     };
 
     const normalizedActionInput =
@@ -547,13 +570,15 @@ app.post("/commands", async (req, res) => {
 
     if (normalizedActionInput && !actionToType[normalizedActionInput]) {
       return res.status(400).json({
-        error: "Invalid action. Only 'call', 'end', 'sms', and 'auto_answer' are supported."
+        error:
+          "Invalid action. Only 'call', 'end', 'sms', 'auto_answer', 'open_url', and 'close_webview' are supported."
       });
     }
 
     if (normalizedTypeInput && !typeToAction[normalizedTypeInput]) {
       return res.status(400).json({
-        error: "Invalid type. Only 'CALL', 'END', 'SMS', and 'AUTO_ANSWER' are supported."
+        error:
+          "Invalid type. Only 'CALL', 'END', 'SMS', 'AUTO_ANSWER', 'OPEN_URL', and 'CLOSE_WEBVIEW' are supported."
       });
     }
 
@@ -571,20 +596,20 @@ app.post("/commands", async (req, res) => {
       normalizedActionInput ?? typeToAction[normalizedTypeInput] ?? "call";
     const commandType = normalizedTypeInput ?? actionToType[normalizedAction];
     const isAutoAnswerCommand = normalizedAction === "auto_answer";
+    const isOpenUrlCommand = normalizedAction === "open_url";
 
     const normalizedPhoneNumber =
       typeof phoneNumber === "string" ? phoneNumber.trim() : "";
-    const requiresPhoneNumber =
-      normalizedAction === "call" || normalizedAction === "sms";
+    const requiresPhoneNumber = normalizedAction === "call" || normalizedAction === "sms";
     if (requiresPhoneNumber && !normalizedPhoneNumber) {
       return res.status(400).json({
         error: "phoneNumber is required for CALL and SMS commands"
       });
     }
 
-    if (isAutoAnswerCommand && normalizedPhoneNumber) {
+    if (!requiresPhoneNumber && normalizedPhoneNumber) {
       return res.status(400).json({
-        error: "phoneNumber is not supported for AUTO_ANSWER commands"
+        error: "phoneNumber is only supported for CALL and SMS commands"
       });
     }
 
@@ -595,9 +620,31 @@ app.post("/commands", async (req, res) => {
       });
     }
 
-    if (isAutoAnswerCommand && normalizedMessage) {
+    if (normalizedAction !== "sms" && normalizedMessage) {
       return res.status(400).json({
-        error: "message is not supported for AUTO_ANSWER commands"
+        error: "message is only supported for SMS commands"
+      });
+    }
+
+    const normalizedUrlRaw = typeof url === "string" ? url.trim() : "";
+    const normalizedUrl = normalizedUrlRaw ? normalizeHttpUrl(normalizedUrlRaw) : null;
+    if (isOpenUrlCommand) {
+      if (!normalizedUrlRaw) {
+        return res.status(400).json({
+          error: "url is required for OPEN_URL commands"
+        });
+      }
+
+      if (!normalizedUrl) {
+        return res.status(400).json({
+          error: "url must be a valid http:// or https:// URL"
+        });
+      }
+    }
+
+    if (!isOpenUrlCommand && normalizedUrlRaw) {
+      return res.status(400).json({
+        error: "url is only supported for OPEN_URL commands"
       });
     }
 
@@ -695,6 +742,7 @@ app.post("/commands", async (req, res) => {
       type: commandType,
       phoneNumber: requiresPhoneNumber ? normalizedPhoneNumber : null,
       message: normalizedAction === "sms" ? normalizedMessage : null,
+      url: isOpenUrlCommand ? normalizedUrl : null,
       notes: normalizedNotes,
       durationSeconds: normalizedAction === "call" ? normalizedDurationSeconds : null,
       enabled: isAutoAnswerCommand ? normalizedEnabled : null,
@@ -717,6 +765,7 @@ app.post("/commands", async (req, res) => {
       details: {
         action: normalizedAction,
         type: commandType,
+        url: isOpenUrlCommand ? normalizedUrl : null,
         scheduledAt: scheduledAtDate ? scheduledAtDate.toISOString() : null
       }
     });
