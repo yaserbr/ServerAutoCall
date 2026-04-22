@@ -679,6 +679,7 @@ app.get("/commands", async (req, res) => {
   try {
     const { deviceUid, status } = req.query;
 
+    const last24HoursCutoff = new Date(Date.now() - 24 * 60 * 60 * 1000);
     const filter = {};
     if (deviceUid) {
       filter.deviceUid = deviceUid;
@@ -687,6 +688,8 @@ app.get("/commands", async (req, res) => {
     if (status) {
       filter.status = status;
     }
+
+    filter.createdAt = { $gte: last24HoursCutoff };
 
     const result = await Command.find(filter);
 

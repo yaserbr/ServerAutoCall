@@ -1028,7 +1028,6 @@
                 const notes = escapeHtml(asDisplayValue(command.notes));
                 const status = escapeHtml(formatCommandStatus(command.status));
                 const createdAt = escapeHtml(asDisplayValue(command.createdAt));
-                const executedAt = escapeHtml(asDisplayValue(command.executedAt));
 
                 return `
                     <tr>
@@ -1038,7 +1037,6 @@
                         <td>${message}</td>
                         <td>${status}</td>
                         <td>${createdAt}</td>
-                        <td>${executedAt}</td>
                         <td>${notes}</td>
                     </tr>
                 `;
@@ -1054,7 +1052,6 @@
                             <th>Message</th>
                             <th>Status</th>
                             <th>Created At</th>
-                            <th>Executed At</th>
                             <th>Notes</th>
                         </tr>
                     </thead>
