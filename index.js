@@ -479,6 +479,12 @@ function isAuthEnabled() {
   return Boolean(getJwtSecret());
 }
 
+function getAdminSetupKey() {
+  return typeof process.env.ADMIN_SETUP_KEY === "string"
+    ? process.env.ADMIN_SETUP_KEY.trim()
+    : "";
+}
+
 function normalizeUsername(value) {
   if (typeof value !== "string") return "";
   return value.trim().toLowerCase();
@@ -523,6 +529,16 @@ app.get("/health", (req, res) => {
 
 app.post("/auth/register", async (req, res) => {
   try {
+    const adminSetupKey = getAdminSetupKey();
+    const providedSetupKey =
+      typeof req.headers?.["x-admin-setup-key"] === "string"
+        ? req.headers["x-admin-setup-key"].trim()
+        : "";
+
+    if (!adminSetupKey || !providedSetupKey || providedSetupKey !== adminSetupKey) {
+      return res.status(403).json({ error: "Registration is disabled" });
+    }
+
     if (!isAuthEnabled()) {
       return respondAuthDisabled(res);
     }

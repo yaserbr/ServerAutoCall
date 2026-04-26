@@ -106,6 +106,71 @@
             z-index: 2;
         }
 
+        .header-title-main {
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+            min-width: 0;
+        }
+
+        .download-apk-btn {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            width: fit-content;
+            border-radius: 12px;
+            padding: 9px 13px;
+            border: 1px solid rgba(103, 232, 249, 0.42);
+            background: rgba(11, 18, 32, 0.42);
+            color: #eaf7ff;
+            font-size: 0.88rem;
+            font-weight: 700;
+            text-decoration: none;
+            box-shadow: 0 8px 20px rgba(5, 10, 25, 0.3);
+            transition: transform 0.15s ease, box-shadow 0.2s ease, border-color 0.2s ease;
+        }
+
+        .download-apk-btn:hover {
+            transform: translateY(-1px);
+            box-shadow: 0 12px 24px rgba(5, 10, 25, 0.4);
+            border-color: rgba(103, 232, 249, 0.7);
+        }
+
+        .download-apk-btn:hover .download-apk-icon {
+            animation: downloadIconBounce 0.55s ease;
+        }
+
+        .download-apk-icon {
+            width: 20px;
+            height: 20px;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            border-radius: 999px;
+            border: 1px solid rgba(103, 232, 249, 0.45);
+            background: rgba(103, 232, 249, 0.15);
+            line-height: 1;
+            font-size: 0.8rem;
+        }
+
+        @keyframes downloadIconBounce {
+            0% {
+                transform: translateY(0);
+            }
+
+            35% {
+                transform: translateY(-3px);
+            }
+
+            60% {
+                transform: translateY(1px);
+            }
+
+            100% {
+                transform: translateY(0);
+            }
+        }
+
         .header-logo {
             width: 66px;
             border-radius: 12px;
@@ -764,6 +829,15 @@
                 align-items: center;
             }
 
+            .header-title-main {
+                gap: 8px;
+            }
+
+            .download-apk-btn {
+                width: 100%;
+                justify-content: center;
+            }
+
             .call-input-grid {
                 grid-template-columns: 1fr;
             }
@@ -798,7 +872,17 @@
     <main class="container">
         <section class="header">
             <div class="header-title-row">
-                <h1>AutoCall Control Panel</h1>
+                <div class="header-title-main">
+                    <h1>AutoCall Control Panel</h1>
+                    <a
+                        class="download-apk-btn"
+                        href="https://github.com/yaserbr/AutoCall/releases/download/firstR/application-6ed7d3e5-b282-402d-95ff-c500d40fe7ab.apk"
+                        target="_blank"
+                        rel="noopener noreferrer">
+                        <span class="download-apk-icon">&#8595;</span>
+                        <span>Download APK</span>
+                    </a>
+                </div>
                 <img class="header-logo" src="/images/icon.png" alt="AutoCall logo" />
             </div>
             <div id="sessionInfo" class="session-info panel-hidden">
@@ -809,7 +893,7 @@
 
         <section id="authSection" class="grid">
             <article class="card full-width">
-                <h2>Login / Register</h2>
+                <h2>Login</h2>
                 <div class="input-row call-input-grid">
                     <div class="field-group">
                         <label class="field-label" for="authUsername">Username</label>
@@ -822,7 +906,6 @@
                 </div>
                 <div class="actions">
                     <button onclick="login()">Login</button>
-                    <button onclick="register()">Register</button>
                 </div>
             </article>
         </section>
@@ -1247,44 +1330,6 @@
                 showToast("Logged in successfully", "success");
             } catch (error) {
                 showToast(error.message || "Login failed", "error");
-            }
-        }
-
-        async function register() {
-            const username = normalizeUsername(document.getElementById("authUsername")?.value || "");
-            const password = String(document.getElementById("authPassword")?.value || "");
-
-            if (!username || !password) {
-                showToast("Username and password are required", "error");
-                return;
-            }
-
-            try {
-                const response = await apiFetch("/auth/register", {
-                    method: "POST",
-                    headers: {
-                        "Content-Type": "application/json"
-                    },
-                    body: JSON.stringify({ username, password })
-                });
-                const payload = await response.json();
-                if (!response.ok) {
-                    throw new Error(parseApiErrorMessage(payload, "Registration failed"));
-                }
-
-                const token = typeof payload.accessToken === "string" ? payload.accessToken : "";
-                if (!token) {
-                    throw new Error("Registration failed: missing access token");
-                }
-
-                setAuthenticatedUser(token, payload.user ?? null, true);
-                await loadDevicesToSelect();
-                await loadDevices();
-                await loadCommands();
-                startDevicesSelectRefresh();
-                showToast("Account created and logged in", "success");
-            } catch (error) {
-                showToast(error.message || "Registration failed", "error");
             }
         }
 
