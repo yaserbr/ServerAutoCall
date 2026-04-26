@@ -1785,20 +1785,10 @@
             }
         }
 
-        async function clearCommands() {
-            try {
-                const res = await fetch(SERVER + "/commands", {
-                    method: "DELETE"
-                });
-
-                const data = await res.json();
-                if (!res.ok) throw new Error(data.error || "Failed to clear commands");
-
-                showToast(data.message || "All commands cleared", "success");
-                await loadCommands();
-            } catch (error) {
-                showToast(error.message, "error");
-            }
+        function clearCommands() {
+            renderCommandsTable([]);
+            setRawFallback("commands", [], false);
+            showToast("Commands cleared", "success");
         }
 
         loadDevicesToSelect();
