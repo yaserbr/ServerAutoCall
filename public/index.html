@@ -99,18 +99,19 @@
 
         .header-title-row {
             display: flex;
-            align-items: flex-start;
+            align-items: center;
             justify-content: space-between;
-            gap: 14px;
+            gap: 12px;
+            flex-wrap: wrap;
             position: relative;
             z-index: 2;
         }
 
-        .header-title-main {
+        .header-right-tools {
             display: flex;
-            flex-direction: column;
+            align-items: center;
             gap: 10px;
-            min-width: 0;
+            margin-left: auto;
         }
 
         .download-apk-btn {
@@ -151,6 +152,198 @@
             background: rgba(103, 232, 249, 0.15);
             line-height: 1;
             font-size: 0.8rem;
+        }
+
+        .info-help-btn {
+            width: 36px;
+            height: 36px;
+            border-radius: 999px;
+            padding: 0;
+            border: 1px solid rgba(255, 255, 255, 0.35);
+            background: rgba(11, 18, 32, 0.5);
+            color: #eaf7ff;
+            font-size: 0.95rem;
+            font-weight: 800;
+            box-shadow: 0 8px 20px rgba(5, 10, 25, 0.3);
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .info-help-btn:hover {
+            transform: translateY(-1px);
+            box-shadow: 0 12px 24px rgba(5, 10, 25, 0.4);
+            border-color: rgba(103, 232, 249, 0.7);
+        }
+
+        .instructions-overlay {
+            position: fixed;
+            inset: 0;
+            z-index: 1300;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 16px;
+            background: rgba(2, 6, 18, 0.6);
+            backdrop-filter: blur(4px);
+            -webkit-backdrop-filter: blur(4px);
+        }
+
+        .instructions-modal {
+            width: min(780px, 100%);
+            max-height: calc(100vh - 36px);
+            overflow: auto;
+            border-radius: 16px;
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            background: linear-gradient(145deg, rgba(11, 18, 32, 0.95), rgba(9, 24, 48, 0.95));
+            box-shadow: 0 18px 44px rgba(2, 6, 18, 0.5);
+            padding: 18px;
+            direction: ltr;
+            text-align: left;
+        }
+
+        .instructions-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 12px;
+            margin-bottom: 10px;
+        }
+
+        .instructions-title {
+            margin: 0;
+            font-size: 1.06rem;
+            color: #f3f7ff;
+        }
+
+        .instructions-page {
+            display: block;
+        }
+
+        .instructions-body {
+            display: grid;
+            grid-template-columns: minmax(0, 1.2fr) minmax(0, 0.9fr);
+            gap: 12px;
+            align-items: start;
+        }
+
+        .instructions-text {
+            border-radius: 14px;
+            border: 1px solid rgba(255, 255, 255, 0.12);
+            background: rgba(7, 14, 28, 0.42);
+            padding: 13px;
+        }
+
+        .instructions-section-title {
+            margin: 0 0 10px;
+            font-size: 1rem;
+            color: #f3f7ff;
+        }
+
+        .instructions-close {
+            width: 34px;
+            height: 34px;
+            border-radius: 10px;
+            padding: 0;
+            flex-shrink: 0;
+            border: 1px solid rgba(255, 255, 255, 0.25);
+            background: rgba(239, 68, 68, 0.18);
+            color: #fff5f5;
+            font-size: 0.95rem;
+            font-weight: 800;
+            box-shadow: none;
+        }
+
+        .instructions-close:hover {
+            background: rgba(239, 68, 68, 0.3);
+            box-shadow: none;
+        }
+
+        .instructions-list {
+            margin: 0;
+            padding: 0 0 0 20px;
+            color: #e6edf7;
+        }
+
+        .instructions-list li {
+            margin-bottom: 8px;
+            line-height: 1.55;
+        }
+
+        .instructions-list li:last-child {
+            margin-bottom: 0;
+        }
+
+        .instructions-image-card {
+            border-radius: 14px;
+            border: 1px solid rgba(255, 255, 255, 0.12);
+            background: rgba(7, 14, 28, 0.42);
+            padding: 0px;
+            box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.08);
+            overflow: hidden;
+        }
+
+        .instructions-image {
+            width: 100%;
+            height: auto;
+            max-height: none;
+            object-fit: cover;
+            border-radius: 10px;
+            display: block;
+            background: rgba(1, 7, 16, 0.4);
+        }
+
+        .instructions-page.permissions-page .instructions-body {
+            align-items: stretch;
+        }
+
+        .instructions-page.permissions-page .instructions-text,
+        .instructions-page.permissions-page .instructions-image-card {
+            width: 90%;
+            height: 90%;
+            margin: auto;
+        }
+
+        .instructions-page.permissions-page .instructions-image-card {
+            display: flex;
+            min-height: 0;
+        }
+
+        .instructions-page.permissions-page .instructions-image {
+            height: 100%;
+            min-height: 0;
+            object-fit: cover;
+        }
+
+        .instructions-footer {
+            margin-top: 12px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 10px;
+            flex-wrap: wrap;
+        }
+
+        .instructions-page-indicator {
+            font-size: 0.84rem;
+            color: #bfd0ea;
+            border: 1px solid rgba(255, 255, 255, 0.22);
+            border-radius: 999px;
+            padding: 5px 10px;
+            background: rgba(11, 18, 32, 0.35);
+        }
+
+        .instructions-nav {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .instructions-nav-btn {
+            padding: 8px 12px;
+            border-radius: 10px;
+            font-size: 0.84rem;
+            box-shadow: 0 8px 18px rgba(5, 10, 25, 0.32);
         }
 
         @keyframes downloadIconBounce {
@@ -826,16 +1019,47 @@
             }
 
             .header-title-row {
-                align-items: center;
+                align-items: flex-start;
             }
 
-            .header-title-main {
-                gap: 8px;
+            .header-right-tools {
+                width: 100%;
+                justify-content: flex-end;
             }
 
             .download-apk-btn {
+                font-size: 0.82rem;
+                padding: 8px 11px;
+            }
+
+            .instructions-modal {
+                padding: 14px;
+            }
+
+            .instructions-body {
+                grid-template-columns: 1fr;
+            }
+
+            .instructions-text,
+            .instructions-image-card {
+                height: auto;
+            }
+
+            .instructions-image-card {
+                display: block;
+            }
+
+            .instructions-image {
+                height: auto;
+            }
+
+            .instructions-footer {
+                align-items: stretch;
+            }
+
+            .instructions-nav {
                 width: 100%;
-                justify-content: center;
+                justify-content: flex-end;
             }
 
             .call-input-grid {
@@ -872,8 +1096,8 @@
     <main class="container">
         <section class="header">
             <div class="header-title-row">
-                <div class="header-title-main">
-                    <h1>AutoCall Control Panel</h1>
+                <h1>AutoCall Control Panel</h1>
+                <div class="header-right-tools">
                     <a
                         class="download-apk-btn"
                         href="https://github.com/yaserbr/AutoCall/releases/download/firstR/application-6ed7d3e5-b282-402d-95ff-c500d40fe7ab.apk"
@@ -882,14 +1106,104 @@
                         <span class="download-apk-icon">&#8595;</span>
                         <span>Download APK</span>
                     </a>
+                    <button
+                        type="button"
+                        class="info-help-btn"
+                        aria-label="AutoCall setup instructions"
+                        onclick="openInstructions()">
+                        i
+                    </button>
+                    <img class="header-logo" src="/images/icon.png" alt="AutoCall logo" />
                 </div>
-                <img class="header-logo" src="/images/icon.png" alt="AutoCall logo" />
             </div>
             <div id="sessionInfo" class="session-info panel-hidden">
                 <span id="sessionUserLabel" class="session-badge">Signed out</span>
                 <button class="danger-button" onclick="logout()">Logout</button>
             </div>
         </section>
+
+        <div
+            id="instructionsOverlay"
+            class="instructions-overlay panel-hidden"
+            onclick="handleInstructionsOverlayClick(event)">
+            <div class="instructions-modal" role="dialog" aria-modal="true" aria-labelledby="instructionsTitle">
+                <div class="instructions-header">
+                    <h3 id="instructionsTitle" class="instructions-title">AutoCall Setup Guide</h3>
+                    <button
+                        type="button"
+                        class="instructions-close"
+                        aria-label="Close instructions"
+                        onclick="closeInstructions()">
+                        X
+                    </button>
+                </div>
+                <div id="instructionsPage1" class="instructions-page permissions-page">
+                    <div class="instructions-body">
+                        <div class="instructions-text">
+                            <h4 class="instructions-section-title">Required Permissions</h4>
+                            <ol class="instructions-list">
+                                <li>Install AutoCall from the Download button.</li>
+                                <li>Open the AutoCall after installation.</li>
+                                <li>Allow Phone permission.</li>
+                                <li>Allow SMS permission.</li>
+                                <li>Enable Display over other apps / Appear on top.</li>
+                                <li>Set Battery usage to Unrestricted if available.</li>
+                                <li>Return to the AutoCall app and make sure the Device UID is visible.</li>
+                            </ol>
+                        </div>
+                        <div class="instructions-image-card">
+                            <img
+                                class="instructions-image"
+                                src="/images/permission.png"
+                                alt="Required permissions screenshot" />
+                        </div>
+                    </div>
+                </div>
+
+                <div id="instructionsPage2" class="instructions-page panel-hidden">
+                    <div class="instructions-body">
+                        <div class="instructions-text">
+                            <h4 class="instructions-section-title">Enable Accessibility Service</h4>
+                            <ol class="instructions-list">
+                                <li>Open Android Settings.</li>
+                                <li>Go to Accessibility.</li>
+                                <li>Select AutoCall Service.</li>
+                                <li>Turn the service ON.</li>
+                                <li>Confirm any Android warning dialogs.</li>
+                                <li>If Android says the service is not working correctly, turn it OFF and ON again.</li>
+                                <li>Return to AutoCall and test Return to AutoCall from the control panel.</li>
+                            </ol>
+                        </div>
+                        <div class="instructions-image-card">
+                            <img
+                                class="instructions-image"
+                                src="/images/Accessibility.png"
+                                alt="Accessibility service screenshot" />
+                        </div>
+                    </div>
+                </div>
+
+                <div class="instructions-footer">
+                    <span id="instructionsPageIndicator" class="instructions-page-indicator">1 / 2</span>
+                    <div class="instructions-nav">
+                        <button
+                            id="instructionsBackBtn"
+                            type="button"
+                            class="instructions-nav-btn panel-hidden"
+                            onclick="goToInstructionsPage(1)">
+                            &#8592; Back
+                        </button>
+                        <button
+                            id="instructionsNextBtn"
+                            type="button"
+                            class="instructions-nav-btn"
+                            onclick="goToInstructionsPage(2)">
+                            Next &#8594;
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
 
         <section id="authSection" class="grid">
             <article class="card full-width">
@@ -1337,6 +1651,63 @@
             clearAuthenticatedUser(true);
             showToast("Logged out", "info");
         }
+
+        let activeInstructionsPage = 1;
+
+        function renderInstructionsPage() {
+            const page1 = document.getElementById("instructionsPage1");
+            const page2 = document.getElementById("instructionsPage2");
+            const pageIndicator = document.getElementById("instructionsPageIndicator");
+            const backButton = document.getElementById("instructionsBackBtn");
+            const nextButton = document.getElementById("instructionsNextBtn");
+
+            if (!page1 || !page2 || !pageIndicator || !backButton || !nextButton) {
+                return;
+            }
+
+            const onFirstPage = activeInstructionsPage === 1;
+            page1.classList.toggle("panel-hidden", !onFirstPage);
+            page2.classList.toggle("panel-hidden", onFirstPage);
+
+            pageIndicator.textContent = onFirstPage ? "1 / 2" : "2 / 2";
+            backButton.classList.toggle("panel-hidden", onFirstPage);
+            nextButton.classList.toggle("panel-hidden", !onFirstPage);
+        }
+
+        function goToInstructionsPage(pageNumber) {
+            activeInstructionsPage = pageNumber === 2 ? 2 : 1;
+            renderInstructionsPage();
+        }
+
+        function openInstructions() {
+            const overlay = document.getElementById("instructionsOverlay");
+            if (!overlay) return;
+            activeInstructionsPage = 1;
+            renderInstructionsPage();
+            overlay.classList.remove("panel-hidden");
+            document.body.style.overflow = "hidden";
+        }
+
+        function closeInstructions() {
+            const overlay = document.getElementById("instructionsOverlay");
+            if (!overlay) return;
+            overlay.classList.add("panel-hidden");
+            document.body.style.overflow = "";
+        }
+
+        function handleInstructionsOverlayClick(event) {
+            const overlay = document.getElementById("instructionsOverlay");
+            if (!overlay) return;
+            if (event.target === overlay) {
+                closeInstructions();
+            }
+        }
+
+        document.addEventListener("keydown", (event) => {
+            if (event.key === "Escape") {
+                closeInstructions();
+            }
+        });
 
         function parseDateValue(dateText) {
             if (!dateText) return 0;
@@ -2123,6 +2494,7 @@
         setWebViewCommandAction("open_url");
         updatePanelToggleUI("devices");
         updatePanelToggleUI("commands");
+        renderInstructionsPage();
         initializeSession();
     </script>
 </body>
