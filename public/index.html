@@ -121,6 +121,25 @@
             font-size: 0.95rem;
         }
 
+        .session-info {
+            margin-top: 12px;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            position: relative;
+            z-index: 2;
+        }
+
+        .session-badge {
+            padding: 7px 11px;
+            border-radius: 999px;
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            background: rgba(12, 20, 36, 0.45);
+            color: var(--text);
+            font-size: 0.86rem;
+            line-height: 1;
+        }
+
         .grid {
             display: grid;
             grid-template-columns: repeat(auto-fit, minmax(290px, 1fr));
@@ -782,9 +801,33 @@
                 <h1>AutoCall Control Panel</h1>
                 <img class="header-logo" src="/images/icon.png" alt="AutoCall logo" />
             </div>
+            <div id="sessionInfo" class="session-info panel-hidden">
+                <span id="sessionUserLabel" class="session-badge">Signed out</span>
+                <button class="danger-button" onclick="logout()">Logout</button>
+            </div>
         </section>
 
-        <section class="grid">
+        <section id="authSection" class="grid">
+            <article class="card full-width">
+                <h2>Login / Register</h2>
+                <div class="input-row call-input-grid">
+                    <div class="field-group">
+                        <label class="field-label" for="authUsername">Username</label>
+                        <input id="authUsername" type="text" placeholder="your_username" />
+                    </div>
+                    <div class="field-group">
+                        <label class="field-label" for="authPassword">Password</label>
+                        <input id="authPassword" type="password" placeholder="••••••••" />
+                    </div>
+                </div>
+                <div class="actions">
+                    <button onclick="login()">Login</button>
+                    <button onclick="register()">Register</button>
+                </div>
+            </article>
+        </section>
+
+        <section id="appSection" class="grid panel-hidden">
             <article class="card full-width">
                 <h2>Command Center</h2>
                 <div class="segmented-control" role="tablist" aria-label="Call SMS Auto Answer Open App WebView Toggle">
@@ -937,8 +980,12 @@
             window.location.hostname === "localhost"
                 ? "http://localhost:4000"
                 : "https://serverautocall-production.up.railway.app";
+        const AUTH_TOKEN_STORAGE_KEY = "autocall.accessToken";
         let activeTab = "call";
         let activeWebViewAction = "open_url";
+        let authToken = "";
+        let authenticatedUser = null;
+        let refreshDevicesIntervalId = null;
         const panelVisibility = {
             devices: false,
             commands: false
@@ -964,6 +1011,11 @@
             webview: 4
         };
         const deviceNameByUid = new Map();
+
+        function normalizeUsername(value) {
+            if (typeof value !== "string") return "";
+            return value.trim().toLowerCase();
+        }
 
         function rememberDevices(devices) {
             deviceNameByUid.clear();
@@ -1007,6 +1059,238 @@
                     toast.remove();
                 }, 220);
             }, 5000);
+        }
+
+        function parseApiErrorMessage(payload, fallbackMessage) {
+            if (payload && typeof payload.error === "string" && payload.error.trim()) {
+                return payload.error.trim();
+            }
+            return fallbackMessage;
+        }
+
+        function setAuthenticatedUser(accessToken, user, persistToken = true) {
+            authToken = typeof accessToken === "string" ? accessToken.trim() : "";
+            authenticatedUser = user && typeof user === "object" ? user : null;
+
+            if (persistToken && authToken) {
+                localStorage.setItem(AUTH_TOKEN_STORAGE_KEY, authToken);
+            }
+
+            const authSection = document.getElementById("authSection");
+            const appSection = document.getElementById("appSection");
+            const sessionInfo = document.getElementById("sessionInfo");
+            const sessionUserLabel = document.getElementById("sessionUserLabel");
+
+            const displayName =
+                (typeof authenticatedUser?.username === "string" && authenticatedUser.username.trim()) ||
+                "Signed in";
+
+            if (sessionUserLabel) {
+                sessionUserLabel.textContent = displayName;
+            }
+            if (authSection) {
+                authSection.classList.add("panel-hidden");
+            }
+            if (appSection) {
+                appSection.classList.remove("panel-hidden");
+            }
+            if (sessionInfo) {
+                sessionInfo.classList.remove("panel-hidden");
+            }
+        }
+
+        function clearAuthenticatedUser(removeStoredToken = true) {
+            authToken = "";
+            authenticatedUser = null;
+            deviceNameByUid.clear();
+            stopDevicesSelectRefresh();
+
+            const authSection = document.getElementById("authSection");
+            const appSection = document.getElementById("appSection");
+            const sessionInfo = document.getElementById("sessionInfo");
+            const sessionUserLabel = document.getElementById("sessionUserLabel");
+
+            if (sessionUserLabel) {
+                sessionUserLabel.textContent = "Signed out";
+            }
+            if (authSection) {
+                authSection.classList.remove("panel-hidden");
+            }
+            if (appSection) {
+                appSection.classList.add("panel-hidden");
+            }
+            if (sessionInfo) {
+                sessionInfo.classList.add("panel-hidden");
+            }
+
+            renderDevicesTable([]);
+            renderCommandsTable([]);
+            setRawFallback("devices", [], false);
+            setRawFallback("commands", [], false);
+
+            if (removeStoredToken) {
+                localStorage.removeItem(AUTH_TOKEN_STORAGE_KEY);
+            }
+        }
+
+        function stopDevicesSelectRefresh() {
+            if (refreshDevicesIntervalId) {
+                clearInterval(refreshDevicesIntervalId);
+                refreshDevicesIntervalId = null;
+            }
+        }
+
+        function startDevicesSelectRefresh() {
+            stopDevicesSelectRefresh();
+            refreshDevicesIntervalId = setInterval(() => {
+                void loadDevicesToSelect();
+            }, 10000);
+        }
+
+        async function apiFetch(path, options = {}) {
+            const isAuthRoute = path.startsWith("/auth/");
+            const headers = {
+                ...(options.headers || {})
+            };
+
+            if (!isAuthRoute) {
+                if (!authToken) {
+                    throw new Error("Please login first");
+                }
+                headers.Authorization = `Bearer ${authToken}`;
+            }
+
+            const response = await fetch(SERVER + path, {
+                ...options,
+                headers
+            });
+
+            if (!isAuthRoute && response.status === 401) {
+                clearAuthenticatedUser(true);
+                throw new Error("Session expired. Please login again.");
+            }
+
+            return response;
+        }
+
+        async function fetchCurrentUserProfile(token) {
+            const response = await fetch(SERVER + "/auth/me", {
+                headers: {
+                    Authorization: `Bearer ${token}`
+                }
+            });
+
+            if (!response.ok) {
+                return null;
+            }
+
+            const payload = await response.json();
+            return payload?.user ?? null;
+        }
+
+        async function initializeSession() {
+            const storedToken = localStorage.getItem(AUTH_TOKEN_STORAGE_KEY);
+            if (!storedToken) {
+                clearAuthenticatedUser(false);
+                return;
+            }
+
+            try {
+                const user = await fetchCurrentUserProfile(storedToken);
+                if (!user) {
+                    clearAuthenticatedUser(true);
+                    return;
+                }
+
+                setAuthenticatedUser(storedToken, user, false);
+                await loadDevicesToSelect();
+                await loadDevices();
+                await loadCommands();
+                startDevicesSelectRefresh();
+            } catch (_error) {
+                clearAuthenticatedUser(true);
+            }
+        }
+
+        async function login() {
+            const username = normalizeUsername(document.getElementById("authUsername")?.value || "");
+            const password = String(document.getElementById("authPassword")?.value || "");
+
+            if (!username || !password) {
+                showToast("Username and password are required", "error");
+                return;
+            }
+
+            try {
+                const response = await apiFetch("/auth/login", {
+                    method: "POST",
+                    headers: {
+                        "Content-Type": "application/json"
+                    },
+                    body: JSON.stringify({ username, password })
+                });
+                const payload = await response.json();
+                if (!response.ok) {
+                    throw new Error(parseApiErrorMessage(payload, "Login failed"));
+                }
+
+                const token = typeof payload.accessToken === "string" ? payload.accessToken : "";
+                if (!token) {
+                    throw new Error("Login failed: missing access token");
+                }
+
+                setAuthenticatedUser(token, payload.user ?? null, true);
+                await loadDevicesToSelect();
+                await loadDevices();
+                await loadCommands();
+                startDevicesSelectRefresh();
+                showToast("Logged in successfully", "success");
+            } catch (error) {
+                showToast(error.message || "Login failed", "error");
+            }
+        }
+
+        async function register() {
+            const username = normalizeUsername(document.getElementById("authUsername")?.value || "");
+            const password = String(document.getElementById("authPassword")?.value || "");
+
+            if (!username || !password) {
+                showToast("Username and password are required", "error");
+                return;
+            }
+
+            try {
+                const response = await apiFetch("/auth/register", {
+                    method: "POST",
+                    headers: {
+                        "Content-Type": "application/json"
+                    },
+                    body: JSON.stringify({ username, password })
+                });
+                const payload = await response.json();
+                if (!response.ok) {
+                    throw new Error(parseApiErrorMessage(payload, "Registration failed"));
+                }
+
+                const token = typeof payload.accessToken === "string" ? payload.accessToken : "";
+                if (!token) {
+                    throw new Error("Registration failed: missing access token");
+                }
+
+                setAuthenticatedUser(token, payload.user ?? null, true);
+                await loadDevicesToSelect();
+                await loadDevices();
+                await loadCommands();
+                startDevicesSelectRefresh();
+                showToast("Account created and logged in", "success");
+            } catch (error) {
+                showToast(error.message || "Registration failed", "error");
+            }
+        }
+
+        function logout() {
+            clearAuthenticatedUser(true);
+            showToast("Logged out", "info");
         }
 
         function parseDateValue(dateText) {
@@ -1321,7 +1605,7 @@
 
         async function loadDevices() {
             try {
-                const res = await fetch(SERVER + "/devices");
+                const res = await apiFetch("/devices");
                 if (!res.ok) throw new Error("Failed to load devices");
                 const data = await res.json();
                 rememberDevices(data);
@@ -1346,7 +1630,7 @@
             }
 
             try {
-                const res = await fetch(SERVER + "/devices/rename", {
+                const res = await apiFetch("/devices/rename", {
                     method: "POST",
                     headers: {
                         "Content-Type": "application/json"
@@ -1374,7 +1658,7 @@
             }
 
             try {
-                const res = await fetch(SERVER + "/devices/" + encodeURIComponent(deviceUid), {
+                const res = await apiFetch("/devices/" + encodeURIComponent(deviceUid), {
                     method: "DELETE"
                 });
 
@@ -1391,7 +1675,7 @@
 
         async function loadDevicesToSelect() {
             try {
-                const res = await fetch(SERVER + "/devices");
+                const res = await apiFetch("/devices");
                 if (!res.ok) throw new Error("Failed to load devices");
                 const data = await res.json();
                 const callSelect = document.getElementById("deviceSelect");
@@ -1452,7 +1736,7 @@
 
         async function loadCommands() {
             try {
-                const res = await fetch(SERVER + "/commands");
+                const res = await apiFetch("/commands");
                 if (!res.ok) throw new Error("Failed to load commands");
                 const data = await res.json();
                 renderCommandsTable(data);
@@ -1542,7 +1826,7 @@
             }
 
             try {
-                const res = await fetch(SERVER + "/commands", {
+                const res = await apiFetch("/commands", {
                     method: "POST",
                     headers: {
                         "Content-Type": "application/json"
@@ -1583,7 +1867,7 @@
             };
 
             try {
-                const res = await fetch(SERVER + "/commands", {
+                const res = await apiFetch("/commands", {
                     method: "POST",
                     headers: {
                         "Content-Type": "application/json"
@@ -1616,7 +1900,7 @@
             };
 
             try {
-                const res = await fetch(SERVER + "/commands", {
+                const res = await apiFetch("/commands", {
                     method: "POST",
                     headers: {
                         "Content-Type": "application/json"
@@ -1661,7 +1945,7 @@
             });
 
             try {
-                const res = await fetch(SERVER + "/commands", {
+                const res = await apiFetch("/commands", {
                     method: "POST",
                     headers: {
                         "Content-Type": "application/json"
@@ -1687,7 +1971,7 @@
             };
 
             try {
-                const res = await fetch(SERVER + "/commands", {
+                const res = await apiFetch("/commands", {
                     method: "POST",
                     headers: {
                         "Content-Type": "application/json"
@@ -1721,7 +2005,7 @@
             };
 
             try {
-                const res = await fetch(SERVER + "/commands", {
+                const res = await apiFetch("/commands", {
                     method: "POST",
                     headers: {
                         "Content-Type": "application/json"
@@ -1767,7 +2051,7 @@
             }
 
             try {
-                const res = await fetch(SERVER + "/commands", {
+                const res = await apiFetch("/commands", {
                     method: "POST",
                     headers: {
                         "Content-Type": "application/json"
@@ -1791,13 +2075,10 @@
             showToast("Commands cleared", "success");
         }
 
-        loadDevicesToSelect();
-        loadDevices();
-        loadCommands();
         setWebViewCommandAction("open_url");
         updatePanelToggleUI("devices");
         updatePanelToggleUI("commands");
-        setInterval(loadDevicesToSelect, 10000);
+        initializeSession();
     </script>
 </body>
 

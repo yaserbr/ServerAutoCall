@@ -4,10 +4,14 @@ const express = require("express");
 const cors = require("cors");
 const mongoose = require("mongoose");
 const path = require("path");
+const bcrypt = require("bcrypt");
+const jwt = require("jsonwebtoken");
 
 const { connectToDatabase } = require("./src/config/db");
 const Device = require("./src/models/Device");
 const Command = require("./src/models/Command");
+const User = require("./src/models/User");
+const { requireAuth } = require("./src/middleware/requireAuth");
 
 const app = express();
 
@@ -44,6 +48,8 @@ const DEVICE_UID_LENGTH = 5;
 const DEVICE_UID_REGEX = new RegExp(`^[a-z0-9]{${DEVICE_UID_LENGTH}}$`);
 const DEVICE_UID_FORMAT_ERROR = `deviceUid must be exactly ${DEVICE_UID_LENGTH} lowercase letters or digits`;
 const COMMAND_FETCH_WINDOW_MS = 24 * 60 * 60 * 1000;
+const BCRYPT_SALT_ROUNDS = 10;
+const JWT_ACCESS_EXPIRES_IN = process.env.JWT_ACCESS_EXPIRES_IN || "7d";
 const COMMAND_CLAIM_SORT = { isImmediate: -1, scheduledAt: 1, createdAt: 1, _id: 1 };
 const OPEN_APP_PACKAGE_REGEX = /^[a-zA-Z0-9_]+(\.[a-zA-Z0-9_]+)+$/;
 const OPEN_APP_ALIAS_DEFINITIONS = [
@@ -463,12 +469,149 @@ function handleServerError(res, error, contextLabel) {
   return res.status(500).json({ error: "Internal server error" });
 }
 
+function getJwtSecret() {
+  return typeof process.env.JWT_SECRET === "string"
+    ? process.env.JWT_SECRET.trim()
+    : "";
+}
+
+function isAuthEnabled() {
+  return Boolean(getJwtSecret());
+}
+
+function normalizeUsername(value) {
+  if (typeof value !== "string") return "";
+  return value.trim().toLowerCase();
+}
+
+function mapUserForResponse(user) {
+  const source = toPlainObject(user);
+  return {
+    id: source?._id ? String(source._id) : null,
+    username: source?.username ?? null,
+    createdAt: source?.createdAt ?? null
+  };
+}
+
+function signAccessToken(user) {
+  const jwtSecret = getJwtSecret();
+  if (!jwtSecret) return "";
+
+  return jwt.sign(
+    {
+      sub: String(user._id),
+      username: user.username
+    },
+    jwtSecret,
+    { expiresIn: JWT_ACCESS_EXPIRES_IN }
+  );
+}
+
+function respondAuthDisabled(res) {
+  return res.status(503).json({
+    error: "Authentication is disabled: JWT_SECRET is not configured"
+  });
+}
+
 app.get("/", (req, res) => {
   return res.sendFile(path.join(__dirname, "public", "index.html"));
 });
 
 app.get("/health", (req, res) => {
   return res.status(200).json({ ok: true });
+});
+
+app.post("/auth/register", async (req, res) => {
+  try {
+    if (!isAuthEnabled()) {
+      return respondAuthDisabled(res);
+    }
+
+    const payload = parseRequestBodyObject(req.body);
+    const username = normalizeUsername(payload.username);
+    const password = typeof payload.password === "string" ? payload.password : "";
+
+    if (!username || !password) {
+      return res.status(400).json({ error: "username and password are required" });
+    }
+
+    const existingUser = await User.findOne({ username });
+    if (existingUser) {
+      return res.status(409).json({ error: "username already in use" });
+    }
+
+    const passwordHash = await bcrypt.hash(password, BCRYPT_SALT_ROUNDS);
+    const user = await User.create({
+      username,
+      passwordHash
+    });
+
+    const accessToken = signAccessToken(user);
+    if (!accessToken) {
+      return respondAuthDisabled(res);
+    }
+
+    return res.status(201).json({
+      accessToken,
+      user: mapUserForResponse(user)
+    });
+  } catch (error) {
+    if (error?.code === 11000) {
+      return res.status(409).json({ error: "username already in use" });
+    }
+    return handleServerError(res, error, "POST /auth/register");
+  }
+});
+
+app.post("/auth/login", async (req, res) => {
+  try {
+    if (!isAuthEnabled()) {
+      return respondAuthDisabled(res);
+    }
+
+    const payload = parseRequestBodyObject(req.body);
+    const username = normalizeUsername(payload.username);
+    const password = typeof payload.password === "string" ? payload.password : "";
+
+    if (!username || !password) {
+      return res.status(400).json({ error: "username and password are required" });
+    }
+
+    const user = await User.findOne({ username });
+    if (!user) {
+      return res.status(401).json({ error: "invalid username or password" });
+    }
+
+    const passwordMatches = await bcrypt.compare(password, user.passwordHash);
+    if (!passwordMatches) {
+      return res.status(401).json({ error: "invalid username or password" });
+    }
+
+    const accessToken = signAccessToken(user);
+    if (!accessToken) {
+      return respondAuthDisabled(res);
+    }
+
+    return res.json({
+      accessToken,
+      user: mapUserForResponse(user)
+    });
+  } catch (error) {
+    return handleServerError(res, error, "POST /auth/login");
+  }
+});
+
+app.get("/auth/me", requireAuth, async (req, res) => {
+  try {
+    const user = await User.findById(req.user.id);
+    if (!user) {
+      return res.status(401).json({ error: "Unauthorized" });
+    }
+
+    return res.json({ user: mapUserForResponse(user) });
+  } catch (error) {
+    return handleServerError(res, error, "GET /auth/me");
+  }
 });
 
 // =====================
@@ -617,7 +760,7 @@ app.post("/devices/heartbeat", async (req, res) => {
 // =====================
 // Get devices
 // =====================
-app.get("/devices", async (req, res) => {
+app.get("/devices", requireAuth, async (req, res) => {
   try {
     const devices = await Device.find({ deviceUid: { $regex: DEVICE_UID_REGEX } });
     return res.json(devices.map(mapDeviceForResponse));
@@ -626,7 +769,7 @@ app.get("/devices", async (req, res) => {
   }
 });
 
-app.delete("/devices/:deviceUid", async (req, res) => {
+app.delete("/devices/:deviceUid", requireAuth, async (req, res) => {
   try {
     const normalizedDeviceUid = normalizeDeviceUid(req.params?.deviceUid);
 
@@ -652,7 +795,7 @@ app.delete("/devices/:deviceUid", async (req, res) => {
   }
 });
 
-app.post("/devices/rename", async (req, res) => {
+app.post("/devices/rename", requireAuth, async (req, res) => {
   try {
     const normalizedDeviceUid = normalizeDeviceUid(req.body?.deviceUid);
     const normalizedDeviceName = normalizeDeviceName(req.body?.deviceName);
@@ -681,7 +824,7 @@ app.post("/devices/rename", async (req, res) => {
 // =====================
 // Create command
 // =====================
-app.post("/commands", async (req, res) => {
+app.post("/commands", requireAuth, async (req, res) => {
   try {
     const {
       deviceUid,
@@ -1062,7 +1205,7 @@ app.post("/commands/claim", async (req, res) => {
 // =====================
 // Get commands
 // =====================
-app.get("/commands", async (req, res) => {
+app.get("/commands", requireAuth, async (req, res) => {
   try {
     const { deviceUid, status } = req.query;
 
@@ -1111,7 +1254,7 @@ app.get("/commands", async (req, res) => {
   }
 });
 
-app.delete("/commands", async (req, res) => {
+app.delete("/commands", requireAuth, async (req, res) => {
   try {
     await Command.deleteMany({});
     return res.json({
@@ -1234,6 +1377,16 @@ app.use((error, req, res, next) => {
 
 const PORT = Number(process.env.PORT) || 4000;
 
+function warnIfJwtSecretMissing() {
+  if (isAuthEnabled()) {
+    return;
+  }
+
+  console.warn(
+    "[Auth] JWT_SECRET is missing. Web auth routes (/auth/*) and protected web endpoints are disabled and will return a clear error until JWT_SECRET is configured."
+  );
+}
+
 async function cleanupLegacyDeviceUidData() {
   if (mongoose.connection.readyState !== 1) {
     return;
@@ -1256,6 +1409,8 @@ async function cleanupLegacyDeviceUidData() {
 }
 
 async function startServer() {
+  warnIfJwtSecretMissing();
+
   app.listen(PORT, "0.0.0.0", () => {
     console.log(`Server running on port ${PORT}`);
   });
