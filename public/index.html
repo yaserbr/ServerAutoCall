@@ -37,6 +37,20 @@
             padding: 24px;
         }
 
+        .site-footer {
+            margin-top: 28px;
+            padding-bottom: 12px;
+            text-align: center;
+        }
+
+        .site-footer-text {
+            margin: 0;
+            color: var(--muted);
+            opacity: 0.78;
+            font-size: clamp(12px, 1.8vw, 14px);
+            letter-spacing: 0.2px;
+        }
+
         .container {
             max-width: 1050px;
             margin: 0 auto;
@@ -1342,6 +1356,16 @@
                     </button>
                 </div>
                 <div id="devicesPanelContent" class="panel-collapsible">
+                    <div class="input-row call-input-grid">
+                        <div class="field-group">
+                            <label class="field-label" for="claimDeviceUidInput">Claim Device UID</label>
+                            <input id="claimDeviceUidInput" type="text" maxlength="5" placeholder="abc12" />
+                        </div>
+                        <div class="field-group">
+                            <label class="field-label" for="claimDeviceBtn">Claim</label>
+                            <button id="claimDeviceBtn" type="button" onclick="claimDevice()">Claim Device</button>
+                        </div>
+                    </div>
                     <div class="actions">
                         <button onclick="loadDevices()">Refresh</button>
                     </div>
@@ -1370,6 +1394,9 @@
             </article>
         </section>
     </main>
+    <footer class="site-footer">
+        <p id="8v6t4j" class="site-footer-text">Made with ❤️ by Yaser Badr Al-Rashid</p>
+    </footer>
     <div id="toastContainer" class="toast-container" aria-live="polite" aria-atomic="true"></div>
 
     <script>
@@ -1410,6 +1437,11 @@
         const deviceNameByUid = new Map();
 
         function normalizeUsername(value) {
+            if (typeof value !== "string") return "";
+            return value.trim().toLowerCase();
+        }
+
+        function normalizeDeviceUidInput(value) {
             if (typeof value !== "string") return "";
             return value.trim().toLowerCase();
         }
@@ -2032,6 +2064,42 @@
                 setRawFallback("devices", {
                     error: error.message
                 }, true);
+            }
+        }
+
+        async function claimDevice() {
+            const claimInput = document.getElementById("claimDeviceUidInput");
+            const deviceUid = normalizeDeviceUidInput(claimInput?.value || "");
+            if (!deviceUid) {
+                showToast("Please enter a valid device UID", "error");
+                return;
+            }
+
+            try {
+                const res = await apiFetch("/devices/claim", {
+                    method: "POST",
+                    headers: {
+                        "Content-Type": "application/json"
+                    },
+                    body: JSON.stringify({
+                        deviceUid
+                    })
+                });
+
+                const data = await res.json();
+                if (!res.ok) {
+                    throw new Error(parseApiErrorMessage(data, "Failed to claim device"));
+                }
+
+                if (claimInput) {
+                    claimInput.value = "";
+                }
+
+                showToast("Device claimed successfully", "success");
+                await loadDevices();
+                await loadDevicesToSelect();
+            } catch (error) {
+                showToast(error.message || "Failed to claim device", "error");
             }
         }
 

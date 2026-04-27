@@ -54,6 +54,16 @@ const deviceSchema = new mongoose.Schema(
       type: Boolean,
       default: false
     },
+    ownerUserId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "User",
+      default: null,
+      index: true
+    },
+    claimedAt: {
+      type: Date,
+      default: null
+    },
     lastSeen: {
       type: Date,
       default: null

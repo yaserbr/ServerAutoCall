@@ -30,7 +30,6 @@ app.use((req, res, next) => {
 
 app.use(cors());
 app.use(express.json());
-app.use(express.urlencoded({ extended: true }));
 app.use(express.text({ type: ["text/plain"] }));
 app.use((req, res, next) => {
   const start = Date.now();
@@ -427,6 +426,28 @@ function mapCommandForResponse(command) {
   };
 }
 
+function normalizeAuthUserId(value) {
+  if (typeof value !== "string") return "";
+  const normalized = value.trim();
+  return mongoose.isValidObjectId(normalized) ? normalized : "";
+}
+
+function isSameObjectId(left, right) {
+  if (left === undefined || left === null) return false;
+  if (right === undefined || right === null) return false;
+  return String(left) === String(right);
+}
+
+function isDeviceOwnedByUser(device, userId) {
+  return Boolean(device?.ownerUserId) && isSameObjectId(device.ownerUserId, userId);
+}
+
+function parseIncludeUnclaimedQueryValue(value) {
+  if (value === true) return true;
+  if (typeof value !== "string") return false;
+  return value.trim().toLowerCase() === "true";
+}
+
 function nowIsoTimestamp() {
   return new Date(toUtcISOString()).toISOString();
 }
@@ -778,33 +799,149 @@ app.post("/devices/heartbeat", async (req, res) => {
 // =====================
 app.get("/devices", requireAuth, async (req, res) => {
   try {
-    const devices = await Device.find({ deviceUid: { $regex: DEVICE_UID_REGEX } });
+    const currentUserId = normalizeAuthUserId(req.user?.id);
+    if (!currentUserId) {
+      return res.status(401).json({ error: "Unauthorized" });
+    }
+
+    const includeUnclaimed = parseIncludeUnclaimedQueryValue(req.query?.unclaimed);
+    const devices = await Device.find({
+      deviceUid: { $regex: DEVICE_UID_REGEX },
+      ...(includeUnclaimed
+        ? { $or: [{ ownerUserId: currentUserId }, { ownerUserId: null }] }
+        : { ownerUserId: currentUserId })
+    });
+
     return res.json(devices.map(mapDeviceForResponse));
   } catch (error) {
     return handleServerError(res, error, "GET /devices");
   }
 });
 
-app.delete("/devices/:deviceUid", requireAuth, async (req, res) => {
+app.post("/devices/claim", requireAuth, async (req, res) => {
   try {
-    const normalizedDeviceUid = normalizeDeviceUid(req.params?.deviceUid);
+    const payload = parseRequestBodyObject(req.body);
+    const normalizedDeviceUid = normalizeDeviceUid(payload?.deviceUid);
+    const currentUserId = normalizeAuthUserId(req.user?.id);
 
+    if (!currentUserId) {
+      return res.status(401).json({ error: "Unauthorized" });
+    }
     if (!normalizedDeviceUid) {
       return res.status(400).json({ error: DEVICE_UID_FORMAT_ERROR });
     }
 
-    const deletedDevice = await Device.findOneAndDelete({
-      deviceUid: normalizedDeviceUid
-    });
-
-    if (!deletedDevice) {
+    const existingDevice = await Device.findOne({ deviceUid: normalizedDeviceUid });
+    if (!existingDevice) {
       return res.status(404).json({ error: "Device not found" });
     }
+
+    if (!existingDevice.ownerUserId) {
+      const claimedAt = new Date(toUtcISOString());
+      const claimedDevice = await Device.findOneAndUpdate(
+        { deviceUid: normalizedDeviceUid, ownerUserId: null },
+        {
+          $set: {
+            ownerUserId: currentUserId,
+            claimedAt
+          }
+        },
+        { new: true }
+      );
+
+      if (claimedDevice) {
+        return res.json({ success: true, device: mapDeviceForResponse(claimedDevice) });
+      }
+
+      const refreshedDevice = await Device.findOne({ deviceUid: normalizedDeviceUid });
+      if (!refreshedDevice) {
+        return res.status(404).json({ error: "Device not found" });
+      }
+
+      if (isDeviceOwnedByUser(refreshedDevice, currentUserId)) {
+        return res.json({ success: true, device: mapDeviceForResponse(refreshedDevice) });
+      }
+
+      return res.status(409).json({ error: "Device already claimed by another user" });
+    }
+
+    if (isDeviceOwnedByUser(existingDevice, currentUserId)) {
+      return res.json({ success: true, device: mapDeviceForResponse(existingDevice) });
+    }
+
+    return res.status(409).json({ error: "Device already claimed by another user" });
+  } catch (error) {
+    return handleServerError(res, error, "POST /devices/claim");
+  }
+});
+
+app.post("/devices/unclaim", requireAuth, async (req, res) => {
+  try {
+    const payload = parseRequestBodyObject(req.body);
+    const normalizedDeviceUid = normalizeDeviceUid(payload?.deviceUid);
+    const currentUserId = normalizeAuthUserId(req.user?.id);
+
+    if (!currentUserId) {
+      return res.status(401).json({ error: "Unauthorized" });
+    }
+    if (!normalizedDeviceUid) {
+      return res.status(400).json({ error: DEVICE_UID_FORMAT_ERROR });
+    }
+
+    const device = await Device.findOne({ deviceUid: normalizedDeviceUid });
+    if (!device) {
+      return res.status(404).json({ error: "Device not found" });
+    }
+
+    if (!device.ownerUserId) {
+      return res.json({ success: true, device: mapDeviceForResponse(device) });
+    }
+
+    if (!isDeviceOwnedByUser(device, currentUserId)) {
+      return res.status(403).json({ error: "Forbidden" });
+    }
+
+    device.ownerUserId = null;
+    device.claimedAt = null;
+    await device.save();
+
+    return res.json({ success: true, device: mapDeviceForResponse(device) });
+  } catch (error) {
+    return handleServerError(res, error, "POST /devices/unclaim");
+  }
+});
+
+app.delete("/devices/:deviceUid", requireAuth, async (req, res) => {
+  try {
+    const normalizedDeviceUid = normalizeDeviceUid(req.params?.deviceUid);
+    const currentUserId = normalizeAuthUserId(req.user?.id);
+
+    if (!currentUserId) {
+      return res.status(401).json({ error: "Unauthorized" });
+    }
+    if (!normalizedDeviceUid) {
+      return res.status(400).json({ error: DEVICE_UID_FORMAT_ERROR });
+    }
+
+    const device = await Device.findOne({ deviceUid: normalizedDeviceUid });
+    if (!device) {
+      return res.status(404).json({ error: "Device not found" });
+    }
+
+    if (!device.ownerUserId) {
+      return res.status(403).json({ error: "Device is not claimed" });
+    }
+
+    if (!isDeviceOwnedByUser(device, currentUserId)) {
+      return res.status(403).json({ error: "Forbidden" });
+    }
+
+    await device.deleteOne();
 
     return res.json({
       success: true,
       message: "Device deleted",
-      device: mapDeviceForResponse(deletedDevice)
+      device: mapDeviceForResponse(device)
     });
   } catch (error) {
     return handleServerError(res, error, "DELETE /devices/:deviceUid");
@@ -813,9 +950,14 @@ app.delete("/devices/:deviceUid", requireAuth, async (req, res) => {
 
 app.post("/devices/rename", requireAuth, async (req, res) => {
   try {
-    const normalizedDeviceUid = normalizeDeviceUid(req.body?.deviceUid);
-    const normalizedDeviceName = normalizeDeviceName(req.body?.deviceName);
+    const payload = parseRequestBodyObject(req.body);
+    const normalizedDeviceUid = normalizeDeviceUid(payload?.deviceUid);
+    const normalizedDeviceName = normalizeDeviceName(payload?.deviceName);
+    const currentUserId = normalizeAuthUserId(req.user?.id);
 
+    if (!currentUserId) {
+      return res.status(401).json({ error: "Unauthorized" });
+    }
     if (!normalizedDeviceUid) {
       return res.status(400).json({ error: DEVICE_UID_FORMAT_ERROR });
     }
@@ -826,6 +968,14 @@ app.post("/devices/rename", requireAuth, async (req, res) => {
     const device = await Device.findOne({ deviceUid: normalizedDeviceUid });
     if (!device) {
       return res.status(404).json({ error: "Device not found" });
+    }
+
+    if (!device.ownerUserId) {
+      return res.status(403).json({ error: "Device is not claimed" });
+    }
+
+    if (!isDeviceOwnedByUser(device, currentUserId)) {
+      return res.status(403).json({ error: "Forbidden" });
     }
 
     device.deviceName = normalizedDeviceName;
@@ -857,9 +1007,29 @@ app.post("/commands", requireAuth, async (req, res) => {
       autoHangupSeconds
     } = req.body;
 
+    console.log("[USSD TEST]", phoneNumber);
+
     const normalizedDeviceUid = normalizeDeviceUid(deviceUid);
     if (!normalizedDeviceUid) {
       return res.status(400).json({ error: DEVICE_UID_FORMAT_ERROR });
+    }
+
+    const currentUserId = normalizeAuthUserId(req.user?.id);
+    if (!currentUserId) {
+      return res.status(401).json({ error: "Unauthorized" });
+    }
+
+    const targetDevice = await Device.findOne({ deviceUid: normalizedDeviceUid });
+    if (!targetDevice) {
+      return res.status(404).json({ error: "Device not found" });
+    }
+
+    if (!targetDevice.ownerUserId) {
+      return res.status(403).json({ error: "Device is not claimed" });
+    }
+
+    if (!isDeviceOwnedByUser(targetDevice, currentUserId)) {
+      return res.status(403).json({ error: "Forbidden" });
     }
 
     let scheduledAtDate = null;
@@ -926,16 +1096,16 @@ app.post("/commands", requireAuth, async (req, res) => {
     const isReturnToAutoCallCommand = normalizedAction === "return_to_autocall";
     const allowsExtraPayloadFields = isReturnToAutoCallCommand;
 
-    const normalizedPhoneNumber =
-      typeof phoneNumber === "string" ? phoneNumber.trim() : "";
+    const receivedPhoneNumber =
+      typeof phoneNumber === "string" ? phoneNumber : "";
     const requiresPhoneNumber = normalizedAction === "call" || normalizedAction === "sms";
-    if (requiresPhoneNumber && !normalizedPhoneNumber) {
+    if (requiresPhoneNumber && !receivedPhoneNumber) {
       return res.status(400).json({
         error: "phoneNumber is required for CALL and SMS commands"
       });
     }
 
-    if (!requiresPhoneNumber && normalizedPhoneNumber && !allowsExtraPayloadFields) {
+    if (!requiresPhoneNumber && receivedPhoneNumber && !allowsExtraPayloadFields) {
       return res.status(400).json({
         error: "phoneNumber is only supported for CALL and SMS commands"
       });
@@ -1095,7 +1265,7 @@ app.post("/commands", requireAuth, async (req, res) => {
       deviceUid: normalizedDeviceUid,
       action: normalizedAction,
       type: commandType,
-      phoneNumber: requiresPhoneNumber ? normalizedPhoneNumber : null,
+      phoneNumber: requiresPhoneNumber ? receivedPhoneNumber : null,
       message: normalizedAction === "sms" ? normalizedMessage : null,
       url: isOpenUrlCommand ? normalizedUrl : null,
       appName: isOpenAppCommand ? normalizedAppName : null,
@@ -1224,6 +1394,10 @@ app.post("/commands/claim", async (req, res) => {
 app.get("/commands", requireAuth, async (req, res) => {
   try {
     const { deviceUid, status } = req.query;
+    const currentUserId = normalizeAuthUserId(req.user?.id);
+    if (!currentUserId) {
+      return res.status(401).json({ error: "Unauthorized" });
+    }
 
     const last24HoursCutoff = getCommandFetchCutoffDate();
     const filter = {};
@@ -1232,9 +1406,32 @@ app.get("/commands", requireAuth, async (req, res) => {
       if (!normalizedDeviceUid) {
         return res.status(400).json({ error: DEVICE_UID_FORMAT_ERROR });
       }
+
+      const targetDevice = await Device.findOne({ deviceUid: normalizedDeviceUid });
+      if (!targetDevice) {
+        return res.status(404).json({ error: "Device not found" });
+      }
+
+      if (!targetDevice.ownerUserId) {
+        return res.status(403).json({ error: "Device is not claimed" });
+      }
+
+      if (!isDeviceOwnedByUser(targetDevice, currentUserId)) {
+        return res.status(403).json({ error: "Forbidden" });
+      }
+
       filter.deviceUid = normalizedDeviceUid;
     } else {
-      filter.deviceUid = { $regex: DEVICE_UID_REGEX };
+      const ownedDeviceUids = await Device.find({
+        ownerUserId: currentUserId,
+        deviceUid: { $regex: DEVICE_UID_REGEX }
+      }).distinct("deviceUid");
+
+      if (!ownedDeviceUids.length) {
+        return res.json([]);
+      }
+
+      filter.deviceUid = { $in: ownedDeviceUids };
     }
 
     if (status) {
@@ -1272,10 +1469,30 @@ app.get("/commands", requireAuth, async (req, res) => {
 
 app.delete("/commands", requireAuth, async (req, res) => {
   try {
-    await Command.deleteMany({});
+    const currentUserId = normalizeAuthUserId(req.user?.id);
+    if (!currentUserId) {
+      return res.status(401).json({ error: "Unauthorized" });
+    }
+
+    const ownedDeviceUids = await Device.find({
+      ownerUserId: currentUserId,
+      deviceUid: { $regex: DEVICE_UID_REGEX }
+    }).distinct("deviceUid");
+
+    if (!ownedDeviceUids.length) {
+      return res.json({
+        success: true,
+        message: "All your commands cleared",
+        deletedCount: 0
+      });
+    }
+
+    const deletionResult = await Command.deleteMany({ deviceUid: { $in: ownedDeviceUids } });
+
     return res.json({
       success: true,
-      message: "All commands cleared"
+      message: "All your commands cleared",
+      deletedCount: Number(deletionResult?.deletedCount || 0)
     });
   } catch (error) {
     return handleServerError(res, error, "DELETE /commands");
