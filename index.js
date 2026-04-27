@@ -179,6 +179,29 @@ function parseDownloadSizeMb(value) {
   return parsed;
 }
 
+function hasPresentValue(value) {
+  if (value === undefined || value === null) return false;
+  if (typeof value === "string" && value.trim() === "") return false;
+  return true;
+}
+
+function addIfPresent(obj, key, value) {
+  if (!obj || typeof obj !== "object") return;
+  if (hasPresentValue(value)) {
+    obj[key] = value;
+  }
+}
+
+function unsetIfPresent(document, key) {
+  if (!document || typeof document.get !== "function" || typeof document.set !== "function") {
+    return;
+  }
+
+  if (document.get(key) !== undefined) {
+    document.set(key, undefined);
+  }
+}
+
 function normalizeOpenAppAliasKey(value) {
   if (typeof value !== "string") return "";
   return value
@@ -1161,16 +1184,16 @@ app.post("/commands", requireAuth, async (req, res) => {
     const isDownloadDataCommand = normalizedAction === "download_data";
     const allowsExtraPayloadFields = isReturnToAutoCallCommand;
 
-    const receivedPhoneNumber =
-      typeof phoneNumber === "string" ? phoneNumber : "";
+    const receivedPhoneNumberRaw = typeof phoneNumber === "string" ? phoneNumber : "";
+    const normalizedPhoneNumber = receivedPhoneNumberRaw.trim();
     const requiresPhoneNumber = normalizedAction === "call" || normalizedAction === "sms";
-    if (requiresPhoneNumber && !receivedPhoneNumber) {
+    if (requiresPhoneNumber && !normalizedPhoneNumber) {
       return res.status(400).json({
         error: "phoneNumber is required for CALL and SMS commands"
       });
     }
 
-    if (!requiresPhoneNumber && receivedPhoneNumber && !allowsExtraPayloadFields) {
+    if (!requiresPhoneNumber && normalizedPhoneNumber && !allowsExtraPayloadFields) {
       return res.status(400).json({
         error: "phoneNumber is only supported for CALL and SMS commands"
       });
@@ -1233,10 +1256,9 @@ app.post("/commands", requireAuth, async (req, res) => {
       });
     }
 
-    const normalizedNotes =
-      typeof notes === "string" && notes.trim() ? notes.trim() : null;
+    const normalizedNotes = typeof notes === "string" ? notes.trim() : "";
 
-    let normalizedDurationSeconds = null;
+    let normalizedDurationSeconds;
     if (
       normalizedAction === "call" &&
       durationSeconds !== undefined &&
@@ -1262,7 +1284,7 @@ app.post("/commands", requireAuth, async (req, res) => {
       });
     }
 
-    let normalizedDownloadSizeMb = null;
+    let normalizedDownloadSizeMb;
     if (isDownloadDataCommand) {
       const parsedDownloadSizeMb = parseDownloadSizeMb(downloadSizeMb);
       if (parsedDownloadSizeMb === null) {
@@ -1281,8 +1303,8 @@ app.post("/commands", requireAuth, async (req, res) => {
       });
     }
 
-    let normalizedEnabled = null;
-    let normalizedAutoHangupSeconds = null;
+    let normalizedEnabled;
+    let normalizedAutoHangupSeconds;
     if (isAutoAnswerCommand) {
       if (typeof enabled !== "boolean") {
         return res.status(400).json({
@@ -1345,30 +1367,39 @@ app.post("/commands", requireAuth, async (req, res) => {
       }
     }
 
-    const command = await Command.create({
+    const commandData = {
       deviceUid: normalizedDeviceUid,
       action: normalizedAction,
       type: commandType,
-      phoneNumber: requiresPhoneNumber ? receivedPhoneNumber : null,
-      message: normalizedAction === "sms" ? normalizedMessage : null,
-      url: isOpenUrlCommand ? normalizedUrl : null,
-      appName: isOpenAppCommand ? normalizedAppName : null,
-      resolvedPackageName: isOpenAppCommand ? normalizedResolvedPackageName : null,
-      notes: normalizedNotes,
-      durationSeconds: normalizedAction === "call" ? normalizedDurationSeconds : null,
-      downloadSizeMb: isDownloadDataCommand ? normalizedDownloadSizeMb : null,
-      downloadDurationSeconds: null,
-      enabled: isAutoAnswerCommand ? normalizedEnabled : null,
-      autoHangupSeconds:
-        isAutoAnswerCommand && normalizedEnabled === true
-          ? normalizedAutoHangupSeconds
-          : null,
       status: "pending",
-      failureReason: null,
-      scheduledAt: scheduledAtDate,
       isImmediate: scheduledAtDate === null,
       createdAt: new Date(toUtcISOString())
-    });
+    };
+
+    addIfPresent(commandData, "scheduledAt", scheduledAtDate);
+    addIfPresent(commandData, "notes", normalizedNotes);
+
+    if (normalizedAction === "call") {
+      addIfPresent(commandData, "phoneNumber", normalizedPhoneNumber);
+      addIfPresent(commandData, "durationSeconds", normalizedDurationSeconds);
+    } else if (normalizedAction === "sms") {
+      addIfPresent(commandData, "phoneNumber", normalizedPhoneNumber);
+      addIfPresent(commandData, "message", normalizedMessage);
+    } else if (normalizedAction === "open_url") {
+      addIfPresent(commandData, "url", normalizedUrl);
+    } else if (normalizedAction === "open_app") {
+      addIfPresent(commandData, "appName", normalizedAppName);
+      addIfPresent(commandData, "resolvedPackageName", normalizedResolvedPackageName);
+    } else if (normalizedAction === "auto_answer") {
+      addIfPresent(commandData, "enabled", normalizedEnabled);
+      if (normalizedEnabled === true) {
+        addIfPresent(commandData, "autoHangupSeconds", normalizedAutoHangupSeconds);
+      }
+    } else if (normalizedAction === "download_data") {
+      addIfPresent(commandData, "downloadSizeMb", normalizedDownloadSizeMb);
+    }
+
+    const command = await Command.create(commandData);
 
     logCommandLifecycle("created", {
       commandId: commandIdFrom(command),
@@ -1427,10 +1458,12 @@ app.post("/commands/claim", async (req, res) => {
       claimFilter,
       {
         $set: {
-          status: "executing",
-          failureReason: null,
-          executedAt: null,
-          downloadDurationSeconds: null
+          status: "executing"
+        },
+        $unset: {
+          failureReason: 1,
+          executedAt: 1,
+          downloadDurationSeconds: 1
         }
       },
       {
@@ -1654,22 +1687,23 @@ app.post("/commands/:id/status", async (req, res) => {
           });
         }
         command.downloadDurationSeconds = Math.round(parsedDownloadDurationSeconds);
+      } else {
+        unsetIfPresent(command, "downloadDurationSeconds");
       }
       command.executedAt = new Date(toUtcISOString());
-      command.failureReason = null;
+      unsetIfPresent(command, "failureReason");
     } else if (normalizedStatus === "failed") {
-      command.failureReason =
-        typeof failureReason === "string" && failureReason.trim()
-          ? failureReason.trim()
-          : "Command execution failed";
-      if (isDownloadDataCommand) {
-        command.downloadDurationSeconds = null;
+      const normalizedFailureReason =
+        typeof failureReason === "string" ? failureReason.trim() : "";
+      if (normalizedFailureReason) {
+        command.failureReason = normalizedFailureReason;
+      } else {
+        unsetIfPresent(command, "failureReason");
       }
+      unsetIfPresent(command, "downloadDurationSeconds");
     } else {
-      command.failureReason = null;
-      if (isDownloadDataCommand) {
-        command.downloadDurationSeconds = null;
-      }
+      unsetIfPresent(command, "failureReason");
+      unsetIfPresent(command, "downloadDurationSeconds");
     }
 
     await command.save();

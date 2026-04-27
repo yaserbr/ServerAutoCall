@@ -52,48 +52,37 @@ const commandSchema = new mongoose.Schema(
       ]
     },
     phoneNumber: {
-      type: String,
-      default: null
+      type: String
     },
     message: {
-      type: String,
-      default: null
+      type: String
     },
     url: {
-      type: String,
-      default: null
+      type: String
     },
     appName: {
-      type: String,
-      default: null
+      type: String
     },
     resolvedPackageName: {
-      type: String,
-      default: null
+      type: String
     },
     notes: {
-      type: String,
-      default: null
+      type: String
     },
     durationSeconds: {
-      type: Number,
-      default: null
+      type: Number
     },
     downloadSizeMb: {
-      type: Number,
-      default: null
+      type: Number
     },
     downloadDurationSeconds: {
-      type: Number,
-      default: null
+      type: Number
     },
     enabled: {
-      type: Boolean,
-      default: null
+      type: Boolean
     },
     autoHangupSeconds: {
-      type: Number,
-      default: null
+      type: Number
     },
     status: {
       type: String,
@@ -102,12 +91,10 @@ const commandSchema = new mongoose.Schema(
       index: true
     },
     failureReason: {
-      type: String,
-      default: null
+      type: String
     },
     scheduledAt: {
-      type: Date,
-      default: null
+      type: Date
     },
     isImmediate: {
       type: Boolean,
@@ -118,8 +105,7 @@ const commandSchema = new mongoose.Schema(
       default: Date.now
     },
     executedAt: {
-      type: Date,
-      default: null
+      type: Date
     }
   },
   {
