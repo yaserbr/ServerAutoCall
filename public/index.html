@@ -1044,7 +1044,6 @@
         }
 
         .command-details-main,
-        .command-result-text,
         .command-notes-text {
             display: block;
             max-width: 320px;
@@ -1176,7 +1175,6 @@
             }
 
             .command-details-main,
-            .command-result-text,
             .command-notes-text {
                 max-width: 220px;
             }
@@ -2144,6 +2142,25 @@
             return mappedType && supportedCommandTypes.has(mappedType) ? mappedType : "-";
         }
 
+        function appendScheduledDetail(details, command) {
+            const scheduledAt = toNonEmptyString(command?.scheduledAt);
+            if (!scheduledAt) return details;
+
+            const scheduledLabel = `Scheduled: ${scheduledAt}`;
+            if (details.secondary) {
+                details.secondary = `${details.secondary} | ${scheduledLabel}`;
+                return details;
+            }
+
+            if (details.primary && details.primary !== "-") {
+                details.secondary = scheduledLabel;
+                return details;
+            }
+
+            details.primary = scheduledLabel;
+            return details;
+        }
+
         function getCommandDetails(command) {
             const commandType = getCommandType(command);
             const details = {
@@ -2164,7 +2181,7 @@
                 }
 
                 details.primary = parts.length ? parts.join(" | ") : "-";
-                return details;
+                return appendScheduledDetail(details, command);
             }
 
             if (commandType === "SMS") {
@@ -2180,12 +2197,12 @@
                 }
 
                 details.primary = parts.length ? parts.join(" | ") : "-";
-                return details;
+                return appendScheduledDetail(details, command);
             }
 
             if (commandType === "OPEN_URL") {
                 details.primary = toNonEmptyString(command?.url) || "-";
-                return details;
+                return appendScheduledDetail(details, command);
             }
 
             if (commandType === "OPEN_APP") {
@@ -2193,16 +2210,23 @@
                 const packageName = toNonEmptyString(command?.resolvedPackageName);
                 details.primary = appName ? `App: ${appName}` : "-";
                 details.secondary = packageName ? `Package: ${packageName}` : "";
-                return details;
+                return appendScheduledDetail(details, command);
             }
 
             if (commandType === "DOWNLOAD_DATA") {
+                const parts = [];
                 const sizeMb = Number(command?.downloadSizeMb);
-                details.primary =
-                    Number.isFinite(sizeMb) && sizeMb > 0
-                        ? `Size: ${Math.round(sizeMb)} MB`
-                        : "-";
-                return details;
+                if (Number.isFinite(sizeMb) && sizeMb > 0) {
+                    parts.push(`Size: ${Math.round(sizeMb)} MB`);
+                }
+
+                const durationSeconds = Number(command?.downloadDurationSeconds);
+                if (Number.isFinite(durationSeconds) && durationSeconds > 0) {
+                    parts.push(`Duration: ${Math.round(durationSeconds)} sec`);
+                }
+
+                details.primary = parts.length ? parts.join(" | ") : "-";
+                return appendScheduledDetail(details, command);
             }
 
             if (commandType === "AUTO_ANSWER") {
@@ -2217,46 +2241,25 @@
                 }
 
                 details.primary = parts.length ? parts.join(" | ") : "-";
-                return details;
+                return appendScheduledDetail(details, command);
             }
 
             if (commandType === "RETURN_TO_AUTOCALL") {
                 details.primary = "Return app to foreground";
-                return details;
+                return appendScheduledDetail(details, command);
             }
 
             if (commandType === "CLOSE_WEBVIEW") {
                 details.primary = "Close WebView";
-                return details;
+                return appendScheduledDetail(details, command);
             }
 
             if (commandType === "END") {
                 details.primary = "End current call";
-                return details;
+                return appendScheduledDetail(details, command);
             }
 
-            return details;
-        }
-
-        function getCommandResult(command) {
-            const normalizedStatus = toNonEmptyString(command?.status).toLowerCase();
-            if (normalizedStatus === "failed") {
-                return toNonEmptyString(command?.failureReason) || "-";
-            }
-
-            if (normalizedStatus === "pending" || normalizedStatus === "executing") {
-                return "Not available yet";
-            }
-
-            if (normalizedStatus === "executed" && getCommandType(command) === "DOWNLOAD_DATA") {
-                const durationSeconds = Number(command?.downloadDurationSeconds);
-                if (Number.isFinite(durationSeconds) && durationSeconds > 0) {
-                    return `Duration: ${Math.round(durationSeconds)} sec`;
-                }
-                return "Not available yet";
-            }
-
-            return "-";
+            return appendScheduledDetail(details, command);
         }
 
         function getCommandNotes(command) {
@@ -2326,8 +2329,6 @@
 
                 const statusMeta = getStatusMeta(command?.status);
                 const createdAt = asDisplayValue(command?.createdAt);
-                const executedAt = asDisplayValue(command?.executedAt);
-                const resultText = getCommandResult(command);
                 const notesText = getCommandNotes(command);
 
                 return `
@@ -2342,10 +2343,6 @@
                             <span class="status-pill ${statusMeta.className}">${escapeHtml(statusMeta.label)}</span>
                         </td>
                         <td>${escapeHtml(createdAt)}</td>
-                        <td>${escapeHtml(executedAt)}</td>
-                        <td>
-                            <span class="command-result-text" title="${escapeHtml(resultText)}">${escapeHtml(resultText)}</span>
-                        </td>
                         <td>
                             <span class="command-notes-text" title="${escapeHtml(notesText)}">${escapeHtml(notesText)}</span>
                         </td>
@@ -2362,8 +2359,6 @@
                             <th>Details</th>
                             <th>Status</th>
                             <th>Created</th>
-                            <th>Executed</th>
-                            <th>Result</th>
                             <th>Notes</th>
                         </tr>
                     </thead>
