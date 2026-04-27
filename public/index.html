@@ -1457,7 +1457,7 @@
                     <h2>Send Call</h2>
                     <div class="input-row call-input-grid">
                         <select id="deviceSelect"></select>
-                        <input id="phone" placeholder="phone number" />
+                        <input id="phone" type="text" placeholder="phone number" />
                     </div>
                     <div class="input-row call-input-grid-3">
                         <input id="durationSeconds" type="text" inputmode="numeric" pattern="[0-9]*" placeholder="Call duration (seconds)" oninput="sanitizeDurationInput(event)" />
@@ -2900,7 +2900,7 @@
 
         async function sendCall() {
             const deviceUid = document.getElementById("deviceSelect").value;
-            const phoneNumber = document.getElementById("phone").value;
+            const phoneNumber = String(document.getElementById("phone").value || "").trim();
             const scheduledAt = document.getElementById("scheduleTime").value;
             const durationRaw = document.getElementById("durationSeconds").value.trim();
             const durationSeconds = getValidDurationSeconds(durationRaw);

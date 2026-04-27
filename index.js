@@ -1092,8 +1092,6 @@ app.post("/commands", requireAuth, async (req, res) => {
       autoHangupSeconds
     } = req.body;
 
-    console.log("[USSD TEST]", phoneNumber);
-
     const normalizedDeviceUid = normalizeDeviceUid(deviceUid);
     if (!normalizedDeviceUid) {
       return res.status(400).json({ error: DEVICE_UID_FORMAT_ERROR });
