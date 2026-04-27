@@ -113,7 +113,7 @@
 
         .header-title-row {
             display: flex;
-            align-items: center;
+            align-items: flex-start;
             justify-content: space-between;
             gap: 12px;
             flex-wrap: wrap;
@@ -121,11 +121,20 @@
             z-index: 2;
         }
 
+        .header-title-group {
+            display: inline-flex;
+            flex-direction: column;
+            align-items: flex-start;
+            gap: 10px;
+        }
+
         .header-right-tools {
             display: flex;
-            align-items: center;
+            align-items: flex-start;
             gap: 10px;
             margin-left: auto;
+            flex-wrap: wrap;
+            justify-content: flex-end;
         }
 
         .download-apk-btn {
@@ -378,12 +387,26 @@
             }
         }
 
+        .header-logo-shell {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            padding: 6px;
+            border-radius: 14px;
+            border: 1px solid rgba(255, 255, 255, 0.28);
+            background: linear-gradient(145deg, rgba(255, 255, 255, 0.2), rgba(255, 255, 255, 0.06));
+            box-shadow: 0 10px 24px rgba(4, 8, 26, 0.36);
+            backdrop-filter: blur(8px) saturate(130%);
+            -webkit-backdrop-filter: blur(8px) saturate(130%);
+            flex-shrink: 0;
+        }
+
         .header-logo {
-            width: 66px;
-            border-radius: 12px;
+            width: 56px;
             object-fit: cover;
-            border: 1px solid rgba(255, 255, 255, 0.3);
-            box-shadow: 0 8px 18px rgba(0, 0, 0, 0.25);
+            border-radius: 10px;
+            border: 1px solid rgba(255, 255, 255, 0.35);
+            box-shadow: 0 6px 14px rgba(0, 0, 0, 0.24);
             flex-shrink: 0;
         }
 
@@ -394,22 +417,29 @@
         }
 
         .session-info {
-            margin-top: 12px;
             display: flex;
-            align-items: center;
-            gap: 10px;
+            flex-direction: column;
+            align-items: stretch;
+            gap: 8px;
             position: relative;
             z-index: 2;
+            margin-top: 0;
+            min-width: 150px;
         }
 
         .session-badge {
-            padding: 7px 11px;
-            border-radius: 999px;
+            padding: 8px 11px;
+            border-radius: 12px;
             border: 1px solid rgba(255, 255, 255, 0.2);
             background: rgba(12, 20, 36, 0.45);
             color: var(--text);
             font-size: 0.86rem;
             line-height: 1;
+            text-align: center;
+        }
+
+        .session-info .danger-button {
+            width: 100%;
         }
 
         .grid {
@@ -1084,6 +1114,10 @@
                 justify-content: flex-end;
             }
 
+            .session-info {
+                min-width: 0;
+            }
+
             .download-apk-btn {
                 font-size: 0.82rem;
                 padding: 8px 11px;
@@ -1152,7 +1186,12 @@
     <main class="container">
         <section class="header">
             <div class="header-title-row">
-                <h1>AutoCall Control Panel</h1>
+                <div class="header-title-group">
+                    <div class="header-logo-shell">
+                        <img class="header-logo" src="/images/icon.png" alt="AutoCall logo" />
+                    </div>
+                    <h1>AutoCall Control Panel</h1>
+                </div>
                 <div class="header-right-tools">
                     <a
                         class="download-apk-btn"
@@ -1169,12 +1208,11 @@
                         onclick="openInstructions()">
                         i
                     </button>
-                    <img class="header-logo" src="/images/icon.png" alt="AutoCall logo" />
+                    <div id="sessionInfo" class="session-info panel-hidden">
+                        <span id="sessionUserLabel" class="session-badge">Signed out</span>
+                        <button class="danger-button" onclick="logout()">Logout</button>
+                    </div>
                 </div>
-            </div>
-            <div id="sessionInfo" class="session-info panel-hidden">
-                <span id="sessionUserLabel" class="session-badge">Signed out</span>
-                <button class="danger-button" onclick="logout()">Logout</button>
             </div>
         </section>
 
