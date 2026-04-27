@@ -472,6 +472,53 @@
             margin: 0;
         }
 
+        .panel-header-actions {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            margin-left: auto;
+        }
+
+        .add-device-btn {
+            width: 34px;
+            height: 34px;
+            min-width: 34px;
+            border-radius: 10px;
+            padding: 0;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 1.1rem;
+            font-weight: 700;
+            line-height: 1;
+            background: linear-gradient(135deg, rgba(46, 196, 182, 0.9), rgba(103, 232, 249, 0.8));
+            color: #042b33;
+        }
+
+        .claim-device-form {
+            margin-bottom: 12px;
+            padding: 12px;
+            border-radius: 12px;
+            border: 1px solid rgba(255, 255, 255, 0.18);
+            background: rgba(7, 18, 34, 0.38);
+        }
+
+        .claim-device-actions {
+            display: flex;
+            gap: 8px;
+            flex-wrap: wrap;
+        }
+
+        .subtle-button {
+            color: #eaf4ff;
+            background: rgba(255, 255, 255, 0.08);
+            box-shadow: none;
+        }
+
+        .subtle-button:hover {
+            box-shadow: 0 8px 18px rgba(8, 15, 28, 0.35);
+        }
+
         .panel-toggle-btn {
             display: inline-flex;
             align-items: center;
@@ -1092,6 +1139,10 @@
                 grid-template-columns: 1fr;
             }
 
+            .panel-header-actions {
+                width: 100%;
+                justify-content: flex-end;
+            }
 
         }
 
@@ -1349,21 +1400,34 @@
             <article id="devicesPanel" class="card full-width">
                 <div class="panel-header">
                     <h2>Devices</h2>
-                    <button id="toggleDevicesBtn" class="toggle-button panel-toggle-btn inactive"
-                        onclick="togglePanel('devices')">
-                        <span id="toggleDevicesIcon" class="toggle-icon" aria-hidden="true"></span>
-                        <span id="toggleDevicesLabel">Show</span>
-                    </button>
+                    <div class="panel-header-actions">
+                        <button
+                            id="showClaimDeviceBtn"
+                            class="add-device-btn"
+                            type="button"
+                            aria-label="Add device"
+                            aria-expanded="false"
+                            onclick="toggleClaimDeviceForm()">
+                            +
+                        </button>
+                        <button id="toggleDevicesBtn" class="toggle-button panel-toggle-btn inactive"
+                            onclick="togglePanel('devices')">
+                            <span id="toggleDevicesIcon" class="toggle-icon" aria-hidden="true"></span>
+                            <span id="toggleDevicesLabel">Show</span>
+                        </button>
+                    </div>
                 </div>
                 <div id="devicesPanelContent" class="panel-collapsible">
-                    <div class="input-row call-input-grid">
-                        <div class="field-group">
-                            <label class="field-label" for="claimDeviceUidInput">Claim Device UID</label>
-                            <input id="claimDeviceUidInput" type="text" maxlength="5" placeholder="abc12" />
+                    <div id="claimDeviceForm" class="claim-device-form panel-hidden">
+                        <div class="input-row">
+                            <div class="field-group">
+                                <label class="field-label" for="claimDeviceUidInput">Device UID</label>
+                                <input id="claimDeviceUidInput" type="text" maxlength="5" placeholder="abc12" />
+                            </div>
                         </div>
-                        <div class="field-group">
-                            <label class="field-label" for="claimDeviceBtn">Claim</label>
-                            <button id="claimDeviceBtn" type="button" onclick="claimDevice()">Claim Device</button>
+                        <div class="claim-device-actions">
+                            <button id="claimDeviceBtn" type="button" onclick="claimDevice()">Claim / Add Device</button>
+                            <button type="button" class="subtle-button" onclick="hideClaimDeviceForm()">Cancel</button>
                         </div>
                     </div>
                     <div class="actions">
@@ -1444,6 +1508,36 @@
         function normalizeDeviceUidInput(value) {
             if (typeof value !== "string") return "";
             return value.trim().toLowerCase();
+        }
+
+        function showClaimDeviceForm() {
+            const form = document.getElementById("claimDeviceForm");
+            const toggleBtn = document.getElementById("showClaimDeviceBtn");
+            const input = document.getElementById("claimDeviceUidInput");
+            if (!form || !toggleBtn) return;
+            form.classList.remove("panel-hidden");
+            toggleBtn.setAttribute("aria-expanded", "true");
+            if (input) input.focus();
+        }
+
+        function hideClaimDeviceForm() {
+            const form = document.getElementById("claimDeviceForm");
+            const toggleBtn = document.getElementById("showClaimDeviceBtn");
+            const input = document.getElementById("claimDeviceUidInput");
+            if (!form || !toggleBtn) return;
+            form.classList.add("panel-hidden");
+            toggleBtn.setAttribute("aria-expanded", "false");
+            if (input) input.value = "";
+        }
+
+        function toggleClaimDeviceForm() {
+            const form = document.getElementById("claimDeviceForm");
+            if (!form) return;
+            if (form.classList.contains("panel-hidden")) {
+                showClaimDeviceForm();
+                return;
+            }
+            hideClaimDeviceForm();
         }
 
         function rememberDevices(devices) {
@@ -2095,6 +2189,7 @@
                     claimInput.value = "";
                 }
 
+                hideClaimDeviceForm();
                 showToast("Device claimed successfully", "success");
                 await loadDevices();
                 await loadDevicesToSelect();
