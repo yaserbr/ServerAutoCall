@@ -472,13 +472,6 @@
             margin: 0;
         }
 
-        .panel-header-actions {
-            display: inline-flex;
-            align-items: center;
-            gap: 8px;
-            margin-left: auto;
-        }
-
         .add-device-btn {
             width: 34px;
             height: 34px;
@@ -495,18 +488,21 @@
             color: #042b33;
         }
 
-        .claim-device-form {
-            margin-bottom: 12px;
-            padding: 12px;
-            border-radius: 12px;
-            border: 1px solid rgba(255, 255, 255, 0.18);
-            background: rgba(7, 18, 34, 0.38);
+        .claim-device-modal {
+            width: min(440px, 100%);
+            padding: 16px;
         }
 
-        .claim-device-actions {
+        .claim-device-modal-body {
+            display: grid;
+            gap: 12px;
+        }
+
+        .claim-device-modal-actions {
             display: flex;
             gap: 8px;
             flex-wrap: wrap;
+            justify-content: flex-end;
         }
 
         .subtle-button {
@@ -1139,11 +1135,6 @@
                 grid-template-columns: 1fr;
             }
 
-            .panel-header-actions {
-                width: 100%;
-                justify-content: flex-end;
-            }
-
         }
 
         @media (prefers-reduced-motion: reduce) {
@@ -1265,6 +1256,34 @@
                             onclick="goToInstructionsPage(2)">
                             Next &#8594;
                         </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div
+            id="claimDeviceOverlay"
+            class="instructions-overlay panel-hidden"
+            onclick="handleClaimDeviceOverlayClick(event)">
+            <div class="instructions-modal claim-device-modal" role="dialog" aria-modal="true" aria-labelledby="claimDeviceTitle">
+                <div class="instructions-header">
+                    <h3 id="claimDeviceTitle" class="instructions-title">Add Device</h3>
+                    <button
+                        type="button"
+                        class="instructions-close"
+                        aria-label="Close add device form"
+                        onclick="closeClaimDeviceModal()">
+                        X
+                    </button>
+                </div>
+                <div class="claim-device-modal-body">
+                    <div class="field-group">
+                        <label class="field-label" for="claimDeviceUidInput">Device UID</label>
+                        <input id="claimDeviceUidInput" type="text" maxlength="5" placeholder="abc12" />
+                    </div>
+                    <div class="claim-device-modal-actions">
+                        <button id="claimDeviceBtn" type="button" onclick="claimDevice()">Claim / Add Device</button>
+                        <button type="button" class="subtle-button" onclick="closeClaimDeviceModal()">Cancel</button>
                     </div>
                 </div>
             </div>
@@ -1400,38 +1419,24 @@
             <article id="devicesPanel" class="card full-width">
                 <div class="panel-header">
                     <h2>Devices</h2>
-                    <div class="panel-header-actions">
+                    <button id="toggleDevicesBtn" class="toggle-button panel-toggle-btn inactive"
+                        onclick="togglePanel('devices')">
+                        <span id="toggleDevicesIcon" class="toggle-icon" aria-hidden="true"></span>
+                        <span id="toggleDevicesLabel">Show</span>
+                    </button>
+                </div>
+                <div id="devicesPanelContent" class="panel-collapsible">
+                    <div class="actions">
+                        <button onclick="loadDevices()">Refresh</button>
                         <button
                             id="showClaimDeviceBtn"
                             class="add-device-btn"
                             type="button"
                             aria-label="Add device"
                             aria-expanded="false"
-                            onclick="toggleClaimDeviceForm()">
+                            onclick="openClaimDeviceModal()">
                             +
                         </button>
-                        <button id="toggleDevicesBtn" class="toggle-button panel-toggle-btn inactive"
-                            onclick="togglePanel('devices')">
-                            <span id="toggleDevicesIcon" class="toggle-icon" aria-hidden="true"></span>
-                            <span id="toggleDevicesLabel">Show</span>
-                        </button>
-                    </div>
-                </div>
-                <div id="devicesPanelContent" class="panel-collapsible">
-                    <div id="claimDeviceForm" class="claim-device-form panel-hidden">
-                        <div class="input-row">
-                            <div class="field-group">
-                                <label class="field-label" for="claimDeviceUidInput">Device UID</label>
-                                <input id="claimDeviceUidInput" type="text" maxlength="5" placeholder="abc12" />
-                            </div>
-                        </div>
-                        <div class="claim-device-actions">
-                            <button id="claimDeviceBtn" type="button" onclick="claimDevice()">Claim / Add Device</button>
-                            <button type="button" class="subtle-button" onclick="hideClaimDeviceForm()">Cancel</button>
-                        </div>
-                    </div>
-                    <div class="actions">
-                        <button onclick="loadDevices()">Refresh</button>
                     </div>
                     <div id="devicesTable" class="table-wrapper"></div>
                     <pre id="devices" class="json-fallback"></pre>
@@ -1510,34 +1515,42 @@
             return value.trim().toLowerCase();
         }
 
-        function showClaimDeviceForm() {
-            const form = document.getElementById("claimDeviceForm");
+        function syncOverlayScrollLock() {
+            const instructionsOverlay = document.getElementById("instructionsOverlay");
+            const claimDeviceOverlay = document.getElementById("claimDeviceOverlay");
+            const isInstructionsOpen = Boolean(instructionsOverlay && !instructionsOverlay.classList.contains("panel-hidden"));
+            const isClaimDeviceOpen = Boolean(claimDeviceOverlay && !claimDeviceOverlay.classList.contains("panel-hidden"));
+            document.body.style.overflow = isInstructionsOpen || isClaimDeviceOpen ? "hidden" : "";
+        }
+
+        function openClaimDeviceModal() {
+            const overlay = document.getElementById("claimDeviceOverlay");
             const toggleBtn = document.getElementById("showClaimDeviceBtn");
             const input = document.getElementById("claimDeviceUidInput");
-            if (!form || !toggleBtn) return;
-            form.classList.remove("panel-hidden");
+            if (!overlay || !toggleBtn) return;
+            overlay.classList.remove("panel-hidden");
             toggleBtn.setAttribute("aria-expanded", "true");
+            syncOverlayScrollLock();
             if (input) input.focus();
         }
 
-        function hideClaimDeviceForm() {
-            const form = document.getElementById("claimDeviceForm");
+        function closeClaimDeviceModal() {
+            const overlay = document.getElementById("claimDeviceOverlay");
             const toggleBtn = document.getElementById("showClaimDeviceBtn");
             const input = document.getElementById("claimDeviceUidInput");
-            if (!form || !toggleBtn) return;
-            form.classList.add("panel-hidden");
+            if (!overlay || !toggleBtn) return;
+            overlay.classList.add("panel-hidden");
             toggleBtn.setAttribute("aria-expanded", "false");
             if (input) input.value = "";
+            syncOverlayScrollLock();
         }
 
-        function toggleClaimDeviceForm() {
-            const form = document.getElementById("claimDeviceForm");
-            if (!form) return;
-            if (form.classList.contains("panel-hidden")) {
-                showClaimDeviceForm();
-                return;
+        function handleClaimDeviceOverlayClick(event) {
+            const overlay = document.getElementById("claimDeviceOverlay");
+            if (!overlay) return;
+            if (event.target === overlay) {
+                closeClaimDeviceModal();
             }
-            hideClaimDeviceForm();
         }
 
         function rememberDevices(devices) {
@@ -1811,14 +1824,14 @@
             activeInstructionsPage = 1;
             renderInstructionsPage();
             overlay.classList.remove("panel-hidden");
-            document.body.style.overflow = "hidden";
+            syncOverlayScrollLock();
         }
 
         function closeInstructions() {
             const overlay = document.getElementById("instructionsOverlay");
             if (!overlay) return;
             overlay.classList.add("panel-hidden");
-            document.body.style.overflow = "";
+            syncOverlayScrollLock();
         }
 
         function handleInstructionsOverlayClick(event) {
@@ -1832,6 +1845,7 @@
         document.addEventListener("keydown", (event) => {
             if (event.key === "Escape") {
                 closeInstructions();
+                closeClaimDeviceModal();
             }
         });
 
@@ -2189,7 +2203,7 @@
                     claimInput.value = "";
                 }
 
-                hideClaimDeviceForm();
+                closeClaimDeviceModal();
                 showToast("Device claimed successfully", "success");
                 await loadDevices();
                 await loadDevicesToSelect();
