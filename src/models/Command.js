@@ -32,7 +32,8 @@ const commandSchema = new mongoose.Schema(
         "open_url",
         "close_webview",
         "open_app",
-        "return_to_autocall"
+        "return_to_autocall",
+        "download_data"
       ]
     },
     type: {
@@ -46,7 +47,8 @@ const commandSchema = new mongoose.Schema(
         "OPEN_URL",
         "CLOSE_WEBVIEW",
         "OPEN_APP",
-        "RETURN_TO_AUTOCALL"
+        "RETURN_TO_AUTOCALL",
+        "DOWNLOAD_DATA"
       ]
     },
     phoneNumber: {
@@ -74,6 +76,14 @@ const commandSchema = new mongoose.Schema(
       default: null
     },
     durationSeconds: {
+      type: Number,
+      default: null
+    },
+    downloadSizeMb: {
+      type: Number,
+      default: null
+    },
+    downloadDurationSeconds: {
       type: Number,
       default: null
     },

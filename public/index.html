@@ -1349,7 +1349,7 @@
         <section id="appSection" class="grid panel-hidden">
             <article class="card full-width">
                 <h2>Command Center</h2>
-                <div class="segmented-control" role="tablist" aria-label="Call SMS Auto Answer Open App WebView Toggle">
+                <div class="segmented-control" role="tablist" aria-label="Call SMS Auto Answer Open App Download Data WebView Toggle">
                     <button id="callTabBtn" class="segmented-option active" role="tab" aria-selected="true"
                         onclick="setActionTab('call')">Call</button>
                     <button id="smsTabBtn" class="segmented-option" role="tab" aria-selected="false"
@@ -1358,6 +1358,8 @@
                         onclick="setActionTab('auto_answer')">Auto Answer</button>
                     <button id="openAppTabBtn" class="segmented-option" role="tab" aria-selected="false"
                         onclick="setActionTab('open_app')">Open App</button>
+                    <button id="downloadDataTabBtn" class="segmented-option" role="tab" aria-selected="false"
+                        onclick="setActionTab('download_data')">Download Data</button>
                     <button id="webViewTabBtn" class="segmented-option" role="tab" aria-selected="false"
                         onclick="setActionTab('webview')">WebView</button>
                 </div>
@@ -1452,6 +1454,25 @@
                         <button onclick="sendReturnToAutoCall()">Return to AutoCall</button>
                     </div>
                 </div>
+                <div id="downloadDataTabPanel" class="tab-panel">
+                    <h2>Download Data</h2>
+                    <div class="input-row auto-answer-input-grid">
+                        <select id="deviceSelectDownloadData"></select>
+                        <div class="field-group">
+                            <label class="field-label" for="downloadSizeMbInput">Download Size MB</label>
+                            <input
+                                id="downloadSizeMbInput"
+                                type="text"
+                                inputmode="numeric"
+                                pattern="[0-9]*"
+                                placeholder="200"
+                                oninput="sanitizeDurationInput(event)" />
+                        </div>
+                    </div>
+                    <div class="actions">
+                        <button onclick="sendDownloadDataCommand()">Send DOWNLOAD_DATA</button>
+                    </div>
+                </div>
             </article>
 
             <article id="devicesPanel" class="card full-width">
@@ -1539,7 +1560,8 @@
             sms: 1,
             auto_answer: 2,
             open_app: 3,
-            webview: 4
+            download_data: 4,
+            webview: 5
         };
         const deviceNameByUid = new Map();
 
@@ -2040,13 +2062,29 @@
                     <div class="device-uid-line">${escapeHtml(asDisplayValue(command.deviceUid))}</div>
                 `;
                 const type = escapeHtml(asDisplayValue(command.type));
-                const appName = escapeHtml(asDisplayValue(command.appName));
-                const phone = escapeHtml(asDisplayValue(command.phoneNumber));
-                const message = escapeHtml(asDisplayValue(command.message));
-                const url = escapeHtml(asDisplayValue(command.url));
-                const notes = escapeHtml(asDisplayValue(command.notes));
+                const isDownloadDataCommand =
+                    String(command.type || "").toUpperCase() === "DOWNLOAD_DATA" ||
+                    String(command.action || "").toLowerCase() === "download_data";
+                const appName = escapeHtml(asDisplayValue(isDownloadDataCommand ? "-" : command.appName));
+                const phone = escapeHtml(asDisplayValue(isDownloadDataCommand ? "-" : command.phoneNumber));
+                const message = escapeHtml(asDisplayValue(isDownloadDataCommand ? "-" : command.message));
+                const url = escapeHtml(asDisplayValue(isDownloadDataCommand ? "-" : command.url));
+                const notes = escapeHtml(asDisplayValue(isDownloadDataCommand ? "-" : command.notes));
                 const status = escapeHtml(formatCommandStatus(command.status));
                 const createdAt = escapeHtml(asDisplayValue(command.createdAt));
+                const requestedSize = isDownloadDataCommand
+                    ? `Requested Size: ${escapeHtml(asDisplayValue(command.downloadSizeMb))} MB`
+                    : "-";
+                const normalizedStatus = String(command.status || "").toLowerCase();
+                const duration = isDownloadDataCommand
+                    ? (
+                        normalizedStatus === "executed" &&
+                        Number.isFinite(Number(command.downloadDurationSeconds)) &&
+                        Number(command.downloadDurationSeconds) > 0
+                            ? `Duration: ${Math.round(Number(command.downloadDurationSeconds))} sec`
+                            : "Duration: Not available yet"
+                    )
+                    : "-";
 
                 return `
                     <tr>
@@ -2059,6 +2097,8 @@
                         <td>${message}</td>
                         <td>${url}</td>
                         <td>${notes}</td>
+                        <td>${requestedSize}</td>
+                        <td>${escapeHtml(duration)}</td>
                     </tr>
                 `;
             }).join("");
@@ -2076,6 +2116,8 @@
                             <th>Message</th>
                             <th>URL</th>
                             <th>Notes</th>
+                            <th>Requested Size</th>
+                            <th>Duration</th>
                         </tr>
                     </thead>
                     <tbody>${rows}</tbody>
@@ -2091,20 +2133,23 @@
             const isSms = activeTab === "sms";
             const isAutoAnswer = activeTab === "auto_answer";
             const isOpenApp = activeTab === "open_app";
+            const isDownloadData = activeTab === "download_data";
             const isWebView = activeTab === "webview";
 
             const callPanel = document.getElementById("callTabPanel");
             const smsPanel = document.getElementById("smsTabPanel");
             const autoAnswerPanel = document.getElementById("autoAnswerTabPanel");
             const openAppPanel = document.getElementById("openAppTabPanel");
+            const downloadDataPanel = document.getElementById("downloadDataTabPanel");
             const webViewPanel = document.getElementById("webViewTabPanel");
-            const panels = [callPanel, smsPanel, autoAnswerPanel, openAppPanel, webViewPanel];
+            const panels = [callPanel, smsPanel, autoAnswerPanel, openAppPanel, downloadDataPanel, webViewPanel];
             panels.forEach((panel) => panel.classList.remove("tab-enter-left", "tab-enter-right"));
 
             callPanel.classList.toggle("active", isCall);
             smsPanel.classList.toggle("active", isSms);
             autoAnswerPanel.classList.toggle("active", isAutoAnswer);
             openAppPanel.classList.toggle("active", isOpenApp);
+            downloadDataPanel.classList.toggle("active", isDownloadData);
             webViewPanel.classList.toggle("active", isWebView);
 
             if (targetTab !== previousTab) {
@@ -2116,7 +2161,9 @@
                             ? autoAnswerPanel
                             : isOpenApp
                                 ? openAppPanel
-                            : webViewPanel;
+                                : isDownloadData
+                                    ? downloadDataPanel
+                                    : webViewPanel;
                 const movingForward = tabOrder[targetTab] > tabOrder[previousTab];
                 const animationClass = movingForward ? "tab-enter-right" : "tab-enter-left";
                 void targetPanel.offsetWidth;
@@ -2127,12 +2174,14 @@
             document.getElementById("smsTabBtn").classList.toggle("active", isSms);
             document.getElementById("autoAnswerTabBtn").classList.toggle("active", isAutoAnswer);
             document.getElementById("openAppTabBtn").classList.toggle("active", isOpenApp);
+            document.getElementById("downloadDataTabBtn").classList.toggle("active", isDownloadData);
             document.getElementById("webViewTabBtn").classList.toggle("active", isWebView);
 
             document.getElementById("callTabBtn").setAttribute("aria-selected", String(isCall));
             document.getElementById("smsTabBtn").setAttribute("aria-selected", String(isSms));
             document.getElementById("autoAnswerTabBtn").setAttribute("aria-selected", String(isAutoAnswer));
             document.getElementById("openAppTabBtn").setAttribute("aria-selected", String(isOpenApp));
+            document.getElementById("downloadDataTabBtn").setAttribute("aria-selected", String(isDownloadData));
             document.getElementById("webViewTabBtn").setAttribute("aria-selected", String(isWebView));
         }
 
@@ -2313,11 +2362,13 @@
                 const smsSelect = document.getElementById("deviceSelectSms");
                 const autoAnswerSelect = document.getElementById("deviceSelectAutoAnswer");
                 const openAppSelect = document.getElementById("deviceSelectOpenApp");
+                const downloadDataSelect = document.getElementById("deviceSelectDownloadData");
                 const webViewSelect = document.getElementById("deviceSelectWebView");
                 const previousCallValue = callSelect.value;
                 const previousSmsValue = smsSelect.value;
                 const previousAutoAnswerValue = autoAnswerSelect.value;
                 const previousOpenAppValue = openAppSelect.value;
+                const previousDownloadDataValue = downloadDataSelect.value;
                 const previousWebViewValue = webViewSelect.value;
 
                 rememberDevices(data);
@@ -2325,17 +2376,20 @@
                 populateDeviceSelect(smsSelect, data, previousSmsValue);
                 populateDeviceSelect(autoAnswerSelect, data, previousAutoAnswerValue);
                 populateDeviceSelect(openAppSelect, data, previousOpenAppValue);
+                populateDeviceSelect(downloadDataSelect, data, previousDownloadDataValue);
                 populateDeviceSelect(webViewSelect, data, previousWebViewValue);
             } catch (error) {
                 const callSelect = document.getElementById("deviceSelect");
                 const smsSelect = document.getElementById("deviceSelectSms");
                 const autoAnswerSelect = document.getElementById("deviceSelectAutoAnswer");
                 const openAppSelect = document.getElementById("deviceSelectOpenApp");
+                const downloadDataSelect = document.getElementById("deviceSelectDownloadData");
                 const webViewSelect = document.getElementById("deviceSelectWebView");
                 populateDeviceSelect(callSelect, [], "");
                 populateDeviceSelect(smsSelect, [], "");
                 populateDeviceSelect(autoAnswerSelect, [], "");
                 populateDeviceSelect(openAppSelect, [], "");
+                populateDeviceSelect(downloadDataSelect, [], "");
                 populateDeviceSelect(webViewSelect, [], "");
             }
         }
@@ -2392,6 +2446,18 @@
             return parsed;
         }
 
+        function getValidDownloadSizeMb(rawValue) {
+            if (typeof rawValue !== "string") return null;
+            const trimmed = rawValue.trim();
+            if (!trimmed) return null;
+            if (!/^\d+$/.test(trimmed)) return null;
+
+            const parsed = Number(trimmed);
+            if (!Number.isInteger(parsed)) return null;
+            if (parsed < 10 || parsed > 1000) return null;
+            return parsed;
+        }
+
         function isValidHttpUrl(value) {
             if (typeof value !== "string") return false;
             const trimmed = value.trim();
@@ -2422,7 +2488,7 @@
 
             openUrlFieldGroup.style.display = isOpenUrl ? "grid" : "none";
             webViewNotesFieldGroup.style.display = isOpenUrl ? "grid" : "none";
-            sendButton.textContent = isOpenUrl ? "Send OPEN_URL" : "Send CLOSE_WEBVIEW";
+            sendButton.textContent = isOpenUrl ? "Send OPEN URL" : "Send CLOSE WEBVIEW";
             sendButton.classList.toggle("danger-button", !isOpenUrl);
         }
 
@@ -2546,6 +2612,47 @@
                 await loadCommands();
             } catch (error) {
                 showToast(error.message, "error");
+            }
+        }
+
+        async function sendDownloadDataCommand() {
+            const deviceUid = document.getElementById("deviceSelectDownloadData").value;
+            const rawDownloadSize = String(document.getElementById("downloadSizeMbInput").value || "");
+            const downloadSizeMb = getValidDownloadSizeMb(rawDownloadSize);
+
+            if (!deviceUid) {
+                showToast("Please select a device first", "error");
+                return;
+            }
+
+            if (downloadSizeMb === null) {
+                showToast("Download Size MB must be a number between 10 and 1000", "error");
+                return;
+            }
+
+            const payload = {
+                deviceUid,
+                action: "download_data",
+                type: "DOWNLOAD_DATA",
+                downloadSizeMb
+            };
+
+            try {
+                const res = await apiFetch("/commands", {
+                    method: "POST",
+                    headers: {
+                        "Content-Type": "application/json"
+                    },
+                    body: JSON.stringify(payload)
+                });
+
+                const data = await res.json();
+                if (!res.ok) throw new Error(data.error || "Failed to send DOWNLOAD_DATA command");
+
+                showToast("DOWNLOAD_DATA command sent", "success");
+                await loadCommands();
+            } catch (error) {
+                showToast(error.message || "Failed to send DOWNLOAD_DATA command", "error");
             }
         }
 

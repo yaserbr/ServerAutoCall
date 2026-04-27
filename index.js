@@ -50,6 +50,9 @@ const COMMAND_FETCH_WINDOW_MS = 24 * 60 * 60 * 1000;
 const BCRYPT_SALT_ROUNDS = 10;
 const JWT_ACCESS_EXPIRES_IN = process.env.JWT_ACCESS_EXPIRES_IN || "7d";
 const COMMAND_CLAIM_SORT = { isImmediate: -1, scheduledAt: 1, createdAt: 1, _id: 1 };
+const DUMMY_DOWNLOAD_MIN_MB = 10;
+const DUMMY_DOWNLOAD_MAX_MB = 1000;
+const DUMMY_DOWNLOAD_CHUNK_BYTES = 64 * 1024;
 const OPEN_APP_PACKAGE_REGEX = /^[a-zA-Z0-9_]+(\.[a-zA-Z0-9_]+)+$/;
 const OPEN_APP_ALIAS_DEFINITIONS = [
   { packageName: "com.whatsapp", aliases: ["whatsapp", "whats app", "wa"] },
@@ -157,6 +160,23 @@ function normalizeHttpUrl(value) {
   } catch (_error) {
     return null;
   }
+}
+
+function parseDownloadSizeMb(value) {
+  if (value === undefined || value === null || String(value).trim() === "") {
+    return null;
+  }
+
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed) || !Number.isInteger(parsed)) {
+    return null;
+  }
+
+  if (parsed < DUMMY_DOWNLOAD_MIN_MB || parsed > DUMMY_DOWNLOAD_MAX_MB) {
+    return null;
+  }
+
+  return parsed;
 }
 
 function normalizeOpenAppAliasKey(value) {
@@ -412,6 +432,8 @@ function mapCommandForResponse(command) {
     resolvedPackageName: source.resolvedPackageName ?? null,
     notes: source.notes ?? null,
     durationSeconds: source.durationSeconds ?? null,
+    downloadSizeMb: source.downloadSizeMb ?? null,
+    downloadDurationSeconds: source.downloadDurationSeconds ?? null,
     enabled: source.enabled ?? null,
     autoHangupSeconds: source.autoHangupSeconds ?? null,
     status: source.status,
@@ -546,6 +568,45 @@ app.get("/", (req, res) => {
 
 app.get("/health", (req, res) => {
   return res.status(200).json({ ok: true });
+});
+
+app.get("/dummy-download", (req, res) => {
+  const requestedMb = parseDownloadSizeMb(req.query?.mb);
+  if (requestedMb === null) {
+    return res.status(400).json({
+      error: `mb must be an integer between ${DUMMY_DOWNLOAD_MIN_MB} and ${DUMMY_DOWNLOAD_MAX_MB}`
+    });
+  }
+
+  const totalBytes = requestedMb * 1024 * 1024;
+  const chunk = Buffer.alloc(DUMMY_DOWNLOAD_CHUNK_BYTES, 0x61);
+  let remainingBytes = totalBytes;
+
+  res.status(200);
+  res.setHeader("Content-Type", "application/octet-stream");
+  res.setHeader("Content-Length", String(totalBytes));
+  res.setHeader("Cache-Control", "no-store");
+
+  const streamChunks = () => {
+    while (remainingBytes > 0) {
+      const bytesToWrite = Math.min(DUMMY_DOWNLOAD_CHUNK_BYTES, remainingBytes);
+      const payload =
+        bytesToWrite === DUMMY_DOWNLOAD_CHUNK_BYTES
+          ? chunk
+          : chunk.subarray(0, bytesToWrite);
+      const canContinue = res.write(payload);
+      remainingBytes -= bytesToWrite;
+
+      if (!canContinue) {
+        res.once("drain", streamChunks);
+        return;
+      }
+    }
+
+    res.end();
+  };
+
+  return streamChunks();
 });
 
 app.post("/auth/register", async (req, res) => {
@@ -1003,6 +1064,7 @@ app.post("/commands", requireAuth, async (req, res) => {
       notes,
       scheduledAt,
       durationSeconds,
+      downloadSizeMb,
       enabled,
       autoHangupSeconds
     } = req.body;
@@ -1041,7 +1103,8 @@ app.post("/commands", requireAuth, async (req, res) => {
       open_url: "OPEN_URL",
       close_webview: "CLOSE_WEBVIEW",
       open_app: "OPEN_APP",
-      return_to_autocall: "RETURN_TO_AUTOCALL"
+      return_to_autocall: "RETURN_TO_AUTOCALL",
+      download_data: "DOWNLOAD_DATA"
     };
     const typeToAction = {
       CALL: "call",
@@ -1051,7 +1114,8 @@ app.post("/commands", requireAuth, async (req, res) => {
       OPEN_URL: "open_url",
       CLOSE_WEBVIEW: "close_webview",
       OPEN_APP: "open_app",
-      RETURN_TO_AUTOCALL: "return_to_autocall"
+      RETURN_TO_AUTOCALL: "return_to_autocall",
+      DOWNLOAD_DATA: "download_data"
     };
 
     const normalizedActionInput =
@@ -1066,14 +1130,14 @@ app.post("/commands", requireAuth, async (req, res) => {
     if (normalizedActionInput && !actionToType[normalizedActionInput]) {
       return res.status(400).json({
         error:
-          "Invalid action. Only 'call', 'end', 'sms', 'auto_answer', 'open_url', 'close_webview', 'open_app', and 'return_to_autocall' are supported."
+          "Invalid action. Only 'call', 'end', 'sms', 'auto_answer', 'open_url', 'close_webview', 'open_app', 'return_to_autocall', and 'download_data' are supported."
       });
     }
 
     if (normalizedTypeInput && !typeToAction[normalizedTypeInput]) {
       return res.status(400).json({
         error:
-          "Invalid type. Only 'CALL', 'END', 'SMS', 'AUTO_ANSWER', 'OPEN_URL', 'CLOSE_WEBVIEW', 'OPEN_APP', and 'RETURN_TO_AUTOCALL' are supported."
+          "Invalid type. Only 'CALL', 'END', 'SMS', 'AUTO_ANSWER', 'OPEN_URL', 'CLOSE_WEBVIEW', 'OPEN_APP', 'RETURN_TO_AUTOCALL', and 'DOWNLOAD_DATA' are supported."
       });
     }
 
@@ -1094,6 +1158,7 @@ app.post("/commands", requireAuth, async (req, res) => {
     const isOpenUrlCommand = normalizedAction === "open_url";
     const isOpenAppCommand = normalizedAction === "open_app";
     const isReturnToAutoCallCommand = normalizedAction === "return_to_autocall";
+    const isDownloadDataCommand = normalizedAction === "download_data";
     const allowsExtraPayloadFields = isReturnToAutoCallCommand;
 
     const receivedPhoneNumber =
@@ -1197,6 +1262,25 @@ app.post("/commands", requireAuth, async (req, res) => {
       });
     }
 
+    let normalizedDownloadSizeMb = null;
+    if (isDownloadDataCommand) {
+      const parsedDownloadSizeMb = parseDownloadSizeMb(downloadSizeMb);
+      if (parsedDownloadSizeMb === null) {
+        return res.status(400).json({
+          error: `downloadSizeMb is required and must be an integer between ${DUMMY_DOWNLOAD_MIN_MB} and ${DUMMY_DOWNLOAD_MAX_MB}`
+        });
+      }
+      normalizedDownloadSizeMb = parsedDownloadSizeMb;
+    } else if (
+      downloadSizeMb !== undefined &&
+      downloadSizeMb !== null &&
+      !allowsExtraPayloadFields
+    ) {
+      return res.status(400).json({
+        error: "downloadSizeMb is only supported for DOWNLOAD_DATA commands"
+      });
+    }
+
     let normalizedEnabled = null;
     let normalizedAutoHangupSeconds = null;
     if (isAutoAnswerCommand) {
@@ -1272,6 +1356,8 @@ app.post("/commands", requireAuth, async (req, res) => {
       resolvedPackageName: isOpenAppCommand ? normalizedResolvedPackageName : null,
       notes: normalizedNotes,
       durationSeconds: normalizedAction === "call" ? normalizedDurationSeconds : null,
+      downloadSizeMb: isDownloadDataCommand ? normalizedDownloadSizeMb : null,
+      downloadDurationSeconds: null,
       enabled: isAutoAnswerCommand ? normalizedEnabled : null,
       autoHangupSeconds:
         isAutoAnswerCommand && normalizedEnabled === true
@@ -1295,6 +1381,7 @@ app.post("/commands", requireAuth, async (req, res) => {
         url: isOpenUrlCommand ? normalizedUrl : null,
         appName: isOpenAppCommand ? normalizedAppName : null,
         resolvedPackageName: isOpenAppCommand ? normalizedResolvedPackageName : null,
+        downloadSizeMb: isDownloadDataCommand ? normalizedDownloadSizeMb : null,
         scheduledAt: scheduledAtDate ? scheduledAtDate.toISOString() : null
       }
     });
@@ -1342,7 +1429,8 @@ app.post("/commands/claim", async (req, res) => {
         $set: {
           status: "executing",
           failureReason: null,
-          executedAt: null
+          executedAt: null,
+          downloadDurationSeconds: null
         }
       },
       {
@@ -1505,7 +1593,7 @@ app.delete("/commands", requireAuth, async (req, res) => {
 app.post("/commands/:id/status", async (req, res) => {
   try {
     const { id } = req.params;
-    const { status, failureReason } = req.body;
+    const { status, failureReason, downloadDurationSeconds } = req.body;
 
     const command = mongoose.isValidObjectId(id)
       ? await Command.findById(id)
@@ -1550,8 +1638,23 @@ app.post("/commands/:id/status", async (req, res) => {
 
     const previousStatus = command.status;
     command.status = normalizedStatus;
+    const isDownloadDataCommand =
+      command.action === "download_data" || command.type === "DOWNLOAD_DATA";
 
     if (normalizedStatus === "executed") {
+      if (isDownloadDataCommand) {
+        const parsedDownloadDurationSeconds = Number(downloadDurationSeconds);
+        if (
+          !Number.isFinite(parsedDownloadDurationSeconds) ||
+          parsedDownloadDurationSeconds <= 0
+        ) {
+          return res.status(400).json({
+            error:
+              "downloadDurationSeconds is required and must be a number greater than 0 for DOWNLOAD_DATA when status is executed"
+          });
+        }
+        command.downloadDurationSeconds = Math.round(parsedDownloadDurationSeconds);
+      }
       command.executedAt = new Date(toUtcISOString());
       command.failureReason = null;
     } else if (normalizedStatus === "failed") {
@@ -1559,8 +1662,14 @@ app.post("/commands/:id/status", async (req, res) => {
         typeof failureReason === "string" && failureReason.trim()
           ? failureReason.trim()
           : "Command execution failed";
+      if (isDownloadDataCommand) {
+        command.downloadDurationSeconds = null;
+      }
     } else {
       command.failureReason = null;
+      if (isDownloadDataCommand) {
+        command.downloadDurationSeconds = null;
+      }
     }
 
     await command.save();
@@ -1574,6 +1683,10 @@ app.post("/commands/:id/status", async (req, res) => {
         failureReason:
           normalizedStatus === "failed"
             ? command.failureReason ?? null
+            : null,
+        downloadDurationSeconds:
+          normalizedStatus === "executed" && isDownloadDataCommand
+            ? command.downloadDurationSeconds ?? null
             : null
       }
     });
