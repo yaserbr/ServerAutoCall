@@ -33,7 +33,9 @@ const commandSchema = new mongoose.Schema(
         "close_webview",
         "open_app",
         "return_to_autocall",
-        "download_data"
+        "download_data",
+        "start_screen_mirror",
+        "stop_screen_mirror"
       ]
     },
     type: {
@@ -48,7 +50,9 @@ const commandSchema = new mongoose.Schema(
         "CLOSE_WEBVIEW",
         "OPEN_APP",
         "RETURN_TO_AUTOCALL",
-        "DOWNLOAD_DATA"
+        "DOWNLOAD_DATA",
+        "START_SCREEN_MIRROR",
+        "STOP_SCREEN_MIRROR"
       ]
     },
     phoneNumber: {

