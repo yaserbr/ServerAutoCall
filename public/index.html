@@ -1162,21 +1162,44 @@
             max-height: 190px;
         }
 
+        .screen-mirror-layout {
+            display: grid;
+            grid-template-columns: 320px 1fr;
+            gap: 24px;
+            align-items: start;
+        }
+
+        .screen-mirror-control-column {
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+        }
+
+        .screen-mirror-control-column h2 {
+            margin: 0 0 4px;
+        }
+
+        .screen-mirror-control-column select {
+            width: 100%;
+        }
+
         .screen-mirror-actions-inline {
             display: flex;
+            flex-direction: column;
             gap: 10px;
-            flex-wrap: wrap;
+        }
+
+        .screen-mirror-actions-inline button {
+            width: 100%;
         }
 
         .screen-mirror-status-grid {
             display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
-            gap: 10px;
-            margin-top: 10px;
+            gap: 8px;
         }
 
         .screen-mirror-status-item {
-            padding: 10px 12px;
+            padding: 9px 11px;
             border-radius: 10px;
             border: 1px solid rgba(255, 255, 255, 0.2);
             background: rgba(11, 18, 32, 0.36);
@@ -1184,23 +1207,35 @@
             font-size: 0.88rem;
         }
 
+        .screen-mirror-frame-count-hidden {
+            display: none;
+        }
+
+        .screen-mirror-viewer-wrap {
+            display: flex;
+            align-items: flex-start;
+            justify-content: center;
+        }
+
         .screen-mirror-viewer {
-            margin-top: 12px;
-            min-height: 260px;
-            border-radius: 12px;
+            width: clamp(360px, 36vw, 420px);
+            aspect-ratio: 9 / 19.5;
+            max-height: 78vh;
+            border-radius: 32px;
             overflow: hidden;
             border: 1px solid rgba(255, 255, 255, 0.2);
             background: rgba(2, 6, 18, 0.72);
             display: flex;
             align-items: center;
             justify-content: center;
+            box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.08);
         }
 
         .screen-mirror-viewer img {
             width: 100%;
-            height: auto;
-            max-height: 62vh;
+            height: 100%;
             object-fit: contain;
+            border-radius: 28px;
             display: block;
         }
 
@@ -1223,6 +1258,15 @@
 
             .command-details-subtle {
                 max-width: 220px;
+            }
+
+            .screen-mirror-layout {
+                grid-template-columns: 1fr;
+                gap: 16px;
+            }
+
+            .screen-mirror-viewer-wrap {
+                align-items: center;
             }
         }
 
@@ -1608,21 +1652,25 @@
                     </div>
                 </div>
                 <div id="screenMirrorTabPanel" class="tab-panel">
-                    <h2>Live Screen Mirror</h2>
-                    <div class="input-row auto-answer-input-grid">
-                        <select id="deviceSelectScreenMirror"></select>
-                        <div class="screen-mirror-actions-inline">
-                            <button onclick="startScreenMirror()">Start Screen Mirror</button>
-                            <button class="danger-button" onclick="stopScreenMirror()">Stop Screen Mirror</button>
+                    <div class="screen-mirror-layout">
+                        <div class="screen-mirror-control-column">
+                            <h2>Live Screen Mirror</h2>
+                            <select id="deviceSelectScreenMirror"></select>
+                            <div class="screen-mirror-actions-inline">
+                                <button onclick="startScreenMirror()">Start Screen Mirror</button>
+                                <button class="danger-button" onclick="stopScreenMirror()">Stop Screen Mirror</button>
+                            </div>
+                            <div class="screen-mirror-status-grid">
+                                <div class="screen-mirror-status-item">Status: <span id="screenMirrorStatusText">idle</span></div>
+                                <div class="screen-mirror-status-item">Last Frame: <span id="screenMirrorLastFrameText">--</span></div>
+                            </div>
+                            <span id="screenMirrorFrameCountText" class="screen-mirror-frame-count-hidden">0</span>
                         </div>
-                    </div>
-                    <div class="screen-mirror-status-grid">
-                        <div class="screen-mirror-status-item">Status: <span id="screenMirrorStatusText">idle</span></div>
-                        <div class="screen-mirror-status-item">Frame Count: <span id="screenMirrorFrameCountText">0</span></div>
-                        <div class="screen-mirror-status-item">Last Frame: <span id="screenMirrorLastFrameText">--</span></div>
-                    </div>
-                    <div class="screen-mirror-viewer">
-                        <img id="screenMirrorPreview" alt="Live mirrored screen" />
+                        <div class="screen-mirror-viewer-wrap">
+                            <div class="screen-mirror-viewer">
+                                <img id="screenMirrorPreview" alt="Live mirrored screen" />
+                            </div>
+                        </div>
                     </div>
                 </div>
             </article>
