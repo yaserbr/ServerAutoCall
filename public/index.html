@@ -1634,12 +1634,6 @@
                 </div>
                 <div id="downloadDataTabPanel" class="tab-panel">
                     <h2>Download Data</h2>
-                    <div class="segmented-control" role="tablist" aria-label="Download data execution timing">
-                        <button id="downloadDataImmediateBtn" class="segmented-option active" role="tab" aria-selected="true"
-                            onclick="setDownloadDataTimingMode('immediate')">Run Now</button>
-                        <button id="downloadDataScheduledBtn" class="segmented-option" role="tab" aria-selected="false"
-                            onclick="setDownloadDataTimingMode('scheduled')">Schedule</button>
-                    </div>
                     <div class="input-row auto-answer-input-grid">
                         <select id="deviceSelectDownloadData"></select>
                         <div class="field-group">
@@ -1652,7 +1646,7 @@
                                 placeholder="200"
                                 oninput="sanitizeDurationInput(event)" />
                         </div>
-                        <div id="downloadDataScheduleFieldGroup" class="field-group panel-hidden">
+                        <div id="downloadDataScheduleFieldGroup" class="field-group">
                             <label class="field-label" for="downloadDataScheduleTime">Schedule Time</label>
                             <input id="downloadDataScheduleTime" type="datetime-local" />
                         </div>
@@ -1746,7 +1740,6 @@
         const AUTH_TOKEN_STORAGE_KEY = "autocall.accessToken";
         let activeTab = "call";
         let activeWebViewAction = "open_url";
-        let downloadDataTimingMode = "immediate";
         let authToken = "";
         let authenticatedUser = null;
         let refreshDevicesIntervalId = null;
@@ -3082,27 +3075,6 @@
             sendButton.classList.toggle("danger-button", !isOpenUrl);
         }
 
-        function setDownloadDataTimingMode(mode) {
-            const normalizedMode = mode === "scheduled" ? "scheduled" : "immediate";
-            downloadDataTimingMode = normalizedMode;
-            const isScheduled = normalizedMode === "scheduled";
-
-            const immediateButton = document.getElementById("downloadDataImmediateBtn");
-            const scheduledButton = document.getElementById("downloadDataScheduledBtn");
-            const scheduleFieldGroup = document.getElementById("downloadDataScheduleFieldGroup");
-            const scheduleInput = document.getElementById("downloadDataScheduleTime");
-
-            immediateButton.classList.toggle("active", !isScheduled);
-            scheduledButton.classList.toggle("active", isScheduled);
-            immediateButton.setAttribute("aria-selected", String(!isScheduled));
-            scheduledButton.setAttribute("aria-selected", String(isScheduled));
-            scheduleFieldGroup.classList.toggle("panel-hidden", !isScheduled);
-
-            if (!isScheduled && scheduleInput) {
-                scheduleInput.value = "";
-            }
-        }
-
         async function sendWebViewCommand() {
             const deviceUid = document.getElementById("deviceSelectWebView").value;
             const notes = document.getElementById("webViewNotes").value.trim();
@@ -3230,9 +3202,7 @@
             const deviceUid = document.getElementById("deviceSelectDownloadData").value;
             const rawDownloadSize = String(document.getElementById("downloadSizeMbInput").value || "");
             const downloadSizeMb = getValidDownloadSizeMb(rawDownloadSize);
-            const isScheduled = downloadDataTimingMode === "scheduled";
-            const scheduledAtRaw = String(document.getElementById("downloadDataScheduleTime")?.value || "");
-            const scheduledAt = isScheduled ? scheduledAtRaw : "";
+            const scheduledAt = String(document.getElementById("downloadDataScheduleTime")?.value || "");
 
             if (!deviceUid) {
                 showToast("Please select a device first", "error");
@@ -3244,18 +3214,12 @@
                 return;
             }
 
-            if (isScheduled && !scheduledAt) {
-                showToast("Please choose a schedule time", "error");
-                return;
-            }
-
             const payload = {
                 deviceUid,
                 action: "download_data",
                 type: "DOWNLOAD_DATA",
                 downloadSizeMb,
-                scheduledAt: scheduledAt || null,
-                isImmediate: !scheduledAt
+                scheduledAt: scheduledAt || null
             };
 
             try {
@@ -3445,7 +3409,6 @@
 
         resetScreenMirrorView();
         setWebViewCommandAction("open_url");
-        setDownloadDataTimingMode("immediate");
         updatePanelToggleUI("devices");
         updatePanelToggleUI("commands");
         renderInstructionsPage();
