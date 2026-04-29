@@ -60,6 +60,15 @@ const deviceSchema = new mongoose.Schema(
       default: null,
       index: true
     },
+    deviceTokenHash: {
+      type: String,
+      default: null,
+      select: false
+    },
+    deviceTokenIssuedAt: {
+      type: Date,
+      default: null
+    },
     claimedAt: {
       type: Date,
       default: null
@@ -73,6 +82,8 @@ const deviceSchema = new mongoose.Schema(
     versionKey: false
   }
 );
+
+deviceSchema.index({ deviceTokenHash: 1 }, { sparse: true });
 
 deviceSchema.pre("validate", function setDefaultDeviceName() {
   this.deviceUid = normalizeDeviceUid(this.deviceUid);

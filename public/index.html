@@ -1854,13 +1854,23 @@
         }
 
         function ensureScreenMirrorSocket() {
-            if (screenMirrorSocket || typeof io !== "function") {
+            if (typeof io !== "function") {
+                return screenMirrorSocket;
+            }
+
+            if (screenMirrorSocket) {
+                screenMirrorSocket.auth = {
+                    accessToken: authToken
+                };
                 return screenMirrorSocket;
             }
 
             screenMirrorSocket = io(SERVER, {
                 transports: ["websocket"],
-                reconnection: true
+                reconnection: true,
+                auth: {
+                    accessToken: authToken
+                }
             });
 
             screenMirrorSocket.on("connect", () => {
@@ -1868,6 +1878,12 @@
                     screenMirrorSocket.emit("dashboard:join", {
                         deviceUid: screenMirrorJoinedDeviceUid
                     });
+                }
+            });
+            screenMirrorSocket.on("connect_error", (error) => {
+                const reason = String(error?.message || "").toLowerCase();
+                if (reason.includes("unauthorized")) {
+                    showToast("Screen mirror socket auth failed", "error");
                 }
             });
 
@@ -1930,6 +1946,9 @@
             screenMirrorJoinedDeviceUid = normalizedDeviceUid;
             const socket = ensureScreenMirrorSocket();
             if (!socket) return;
+            socket.auth = {
+                accessToken: authToken
+            };
 
             socket.emit("dashboard:join", { deviceUid: normalizedDeviceUid });
         }
@@ -2101,7 +2120,10 @@
             if (sessionInfo) {
                 sessionInfo.classList.remove("panel-hidden");
             }
-            ensureScreenMirrorSocket();
+            const socket = ensureScreenMirrorSocket();
+            if (socket && !socket.connected) {
+                socket.connect();
+            }
         }
 
         function clearAuthenticatedUser(removeStoredToken = true) {

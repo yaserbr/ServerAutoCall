@@ -2,6 +2,7 @@ require("dotenv").config();
 
 const express = require("express");
 const cors = require("cors");
+const helmet = require("helmet");
 const mongoose = require("mongoose");
 const path = require("path");
 const http = require("http");
@@ -14,6 +15,25 @@ const Device = require("./src/models/Device");
 const Command = require("./src/models/Command");
 const User = require("./src/models/User");
 const { requireAuth } = require("./src/middleware/requireAuth");
+const {
+  buildRequireDeviceAuth,
+  extractDeviceTokenFromRequest
+} = require("./src/middleware/requireDeviceAuth");
+const { issueDeviceTokenForDevice, isDeviceTokenMatch } = require("./src/auth/deviceToken");
+const { sanitizeRequestBody } = require("./src/security/requestSanitizer");
+const {
+  authRateLimiter,
+  commandRateLimiter,
+  deviceRateLimiter
+} = require("./src/security/rateLimits");
+const { logSecurityEvent } = require("./src/security/auditLogger");
+const {
+  createSocketAuthMiddleware,
+  isDashboardSocket,
+  isDeviceSocket,
+  resolveAuthenticatedDeviceUidFromSocket,
+  canDashboardJoinDevice
+} = require("./src/socket/auth");
 
 const app = express();
 const httpServer = http.createServer(app);
@@ -23,6 +43,8 @@ const io = new SocketIOServer(httpServer, {
     methods: ["GET", "POST"]
   }
 });
+
+app.set("trust proxy", 1);
 
 process.on("uncaughtException", (error) => {
   console.error("[uncaughtException]", error);
@@ -38,8 +60,15 @@ app.use((req, res, next) => {
 });
 
 app.use(cors());
+app.use(
+  helmet({
+    contentSecurityPolicy: false,
+    crossOriginEmbedderPolicy: false
+  })
+);
 app.use(express.json());
 app.use(express.text({ type: ["text/plain"] }));
+app.use(sanitizeRequestBody);
 app.use((req, res, next) => {
   const start = Date.now();
   res.on("finish", () => {
@@ -48,6 +77,10 @@ app.use((req, res, next) => {
   });
   next();
 });
+
+app.use("/auth", authRateLimiter);
+app.use("/commands", commandRateLimiter);
+app.use("/devices", deviceRateLimiter);
 
 const RIYADH_TIMEZONE = "Asia/Riyadh";
 const RIYADH_UTC_OFFSET_MINUTES = 3 * 60;
@@ -64,7 +97,16 @@ const DUMMY_DOWNLOAD_MAX_MB = 1000;
 const DUMMY_DOWNLOAD_CHUNK_BYTES = 64 * 1024;
 const SCREEN_MIRROR_MAX_FRAME_BYTES = Math.floor(1.5 * 1024 * 1024);
 const OPEN_APP_PACKAGE_REGEX = /^[a-zA-Z0-9_]+(\.[a-zA-Z0-9_]+)+$/;
+const DEVICE_AUTH_ALLOW_LEGACY_FALLBACK =
+  String(process.env.DEVICE_AUTH_ALLOW_LEGACY_FALLBACK || "").trim().toLowerCase() === "true";
 const screenMirrorSessions = new Map();
+const requireAuthenticatedDevice = buildRequireDeviceAuth({
+  allowLegacyFallback: DEVICE_AUTH_ALLOW_LEGACY_FALLBACK
+});
+const requireAuthenticatedDeviceAllowBootstrap = buildRequireDeviceAuth({
+  allowMissingTokenHash: true,
+  allowLegacyFallback: DEVICE_AUTH_ALLOW_LEGACY_FALLBACK
+});
 const OPEN_APP_ALIAS_DEFINITIONS = [
   { packageName: "com.whatsapp", aliases: ["whatsapp", "whats app", "wa"] },
   { packageName: "org.telegram.messenger", aliases: ["telegram", "telegram app", "tg"] },
@@ -482,6 +524,37 @@ function mapCommandForResponse(command) {
   };
 }
 
+function redactSensitivePayload(value, depth = 0) {
+  if (depth > 6) return value;
+  if (value === null || value === undefined) return value;
+  if (Array.isArray(value)) {
+    return value.map((item) => redactSensitivePayload(item, depth + 1));
+  }
+  if (typeof value !== "object") return value;
+
+  const output = {};
+  for (const [key, nestedValue] of Object.entries(value)) {
+    const normalizedKey = String(key).toLowerCase();
+    const isSensitiveKey = normalizedKey.includes("token") || normalizedKey.includes("password");
+    output[key] = isSensitiveKey ? "[REDACTED]" : redactSensitivePayload(nestedValue, depth + 1);
+  }
+  return output;
+}
+
+function parseUsername(rawUsername) {
+  const normalized = normalizeUsername(rawUsername);
+  if (!normalized) return "";
+  if (normalized.length > 50) return "";
+  return normalized;
+}
+
+function parsePassword(rawPassword) {
+  if (typeof rawPassword !== "string") return "";
+  const normalized = rawPassword.trim();
+  if (normalized.length < 1 || normalized.length > 200) return "";
+  return normalized;
+}
+
 function normalizeAuthUserId(value) {
   if (typeof value !== "string") return "";
   const normalized = value.trim();
@@ -597,11 +670,7 @@ function respondAuthDisabled(res) {
 }
 
 function resolveScreenMirrorDeviceUid(socket, payload = {}) {
-  const payloadUid = normalizeDeviceUid(payload?.deviceUid);
-  if (payloadUid) return payloadUid;
-
-  const socketUid = normalizeDeviceUid(socket?.data?.screenMirrorDeviceUid);
-  return socketUid;
+  return resolveAuthenticatedDeviceUidFromSocket(socket, payload);
 }
 
 function ensureScreenMirrorSession(deviceUid) {
@@ -661,9 +730,36 @@ function estimateBase64Bytes(base64Value) {
   return Math.floor((length * 3) / 4) - padding;
 }
 
+io.use(createSocketAuthMiddleware());
+
 io.on("connection", (socket) => {
+  const requireDeviceSocket = (eventName, payload = {}) => {
+    if (!isDeviceSocket(socket)) {
+      logSecurityEvent("socket_event_rejected", {
+        socketId: socket.id,
+        event: eventName,
+        reason: "dashboard_socket_cannot_emit_device_event"
+      });
+      socket.emit("security:error", { event: eventName, reason: "unauthorized" });
+      return null;
+    }
+
+    const deviceUid = resolveScreenMirrorDeviceUid(socket, payload);
+    if (!deviceUid) {
+      logSecurityEvent("socket_event_rejected", {
+        socketId: socket.id,
+        event: eventName,
+        reason: "missing_authenticated_device_uid"
+      });
+      socket.emit("security:error", { event: eventName, reason: "unauthorized" });
+      return null;
+    }
+
+    return deviceUid;
+  };
+
   socket.on("device:join", (payload = {}) => {
-    const deviceUid = normalizeDeviceUid(payload?.deviceUid);
+    const deviceUid = requireDeviceSocket("device:join", payload);
     if (!deviceUid) return;
 
     socket.data.screenMirrorDeviceUid = deviceUid;
@@ -671,17 +767,59 @@ io.on("connection", (socket) => {
     console.log("[SCREEN_MIRROR] device joined", { deviceUid });
   });
 
-  socket.on("dashboard:join", (payload = {}) => {
-    const deviceUid = normalizeDeviceUid(payload?.deviceUid);
-    if (!deviceUid) return;
+  socket.on("dashboard:join", async (payload = {}) => {
+    try {
+      if (!isDashboardSocket(socket)) {
+        logSecurityEvent("socket_event_rejected", {
+          socketId: socket.id,
+          event: "dashboard:join",
+          reason: "device_socket_cannot_join_dashboard_room"
+        });
+        socket.emit("security:error", { event: "dashboard:join", reason: "unauthorized" });
+        return;
+      }
 
-    socket.join(`dashboard:${deviceUid}`);
-    console.log("[SCREEN_MIRROR] dashboard joined", { deviceUid });
-    emitScreenMirrorStatus(deviceUid);
+      const deviceUid = normalizeDeviceUid(payload?.deviceUid);
+      if (!deviceUid) {
+        return;
+      }
+
+      const canJoin = await canDashboardJoinDevice(socket.data.userId, deviceUid);
+      if (!canJoin) {
+        logSecurityEvent("socket_dashboard_join_denied", {
+          socketId: socket.id,
+          event: "dashboard:join",
+          deviceUid,
+          userId: socket.data.userId,
+          reason: "device_not_owned_by_user"
+        });
+        socket.emit("security:error", {
+          event: "dashboard:join",
+          reason: "forbidden"
+        });
+        return;
+      }
+
+      socket.join(`dashboard:${deviceUid}`);
+      socket.data.screenMirrorDashboardDeviceUid = deviceUid;
+      console.log("[SCREEN_MIRROR] dashboard joined", { deviceUid, userId: socket.data.userId });
+      emitScreenMirrorStatus(deviceUid);
+    } catch (error) {
+      logSecurityEvent("socket_dashboard_join_failed", {
+        socketId: socket.id,
+        event: "dashboard:join",
+        userId: socket.data.userId ?? null,
+        reason: error?.message || "unknown"
+      });
+      socket.emit("security:error", {
+        event: "dashboard:join",
+        reason: "internal_error"
+      });
+    }
   });
 
   socket.on("screen:started", (payload = {}) => {
-    const deviceUid = resolveScreenMirrorDeviceUid(socket, payload);
+    const deviceUid = requireDeviceSocket("screen:started", payload);
     if (!deviceUid) return;
 
     const session = ensureScreenMirrorSession(deviceUid);
@@ -697,7 +835,7 @@ io.on("connection", (socket) => {
   });
 
   socket.on("screen:stopped", (payload = {}) => {
-    const deviceUid = resolveScreenMirrorDeviceUid(socket, payload);
+    const deviceUid = requireDeviceSocket("screen:stopped", payload);
     if (!deviceUid) return;
 
     const session = ensureScreenMirrorSession(deviceUid);
@@ -717,7 +855,7 @@ io.on("connection", (socket) => {
   });
 
   socket.on("screen:error", (payload = {}) => {
-    const deviceUid = resolveScreenMirrorDeviceUid(socket, payload);
+    const deviceUid = requireDeviceSocket("screen:error", payload);
     if (!deviceUid) return;
 
     const session = ensureScreenMirrorSession(deviceUid);
@@ -737,7 +875,7 @@ io.on("connection", (socket) => {
   });
 
   socket.on("screen:frame", (payload = {}) => {
-    const deviceUid = resolveScreenMirrorDeviceUid(socket, payload);
+    const deviceUid = requireDeviceSocket("screen:frame", payload);
     if (!deviceUid) return;
 
     const frameBase64 =
@@ -797,7 +935,7 @@ app.get("/health", (req, res) => {
   return res.status(200).json({ ok: true });
 });
 
-app.get("/dummy-download", (req, res) => {
+app.get("/dummy-download", requireAuthenticatedDevice, (req, res) => {
   const requestedMb = parseDownloadSizeMb(req.query?.mb);
   if (requestedMb === null) {
     return res.status(400).json({
@@ -808,6 +946,11 @@ app.get("/dummy-download", (req, res) => {
   const totalBytes = requestedMb * 1024 * 1024;
   const chunk = Buffer.alloc(DUMMY_DOWNLOAD_CHUNK_BYTES, 0x61);
   let remainingBytes = totalBytes;
+
+  console.log("[DummyDownload] start", {
+    deviceUid: req.deviceUid ?? null,
+    mb: requestedMb
+  });
 
   res.status(200);
   res.setHeader("Content-Type", "application/octet-stream");
@@ -853,10 +996,15 @@ app.post("/auth/register", async (req, res) => {
     }
 
     const payload = parseRequestBodyObject(req.body);
-    const username = normalizeUsername(payload.username);
-    const password = typeof payload.password === "string" ? payload.password : "";
+    const username = parseUsername(payload.username);
+    const password = parsePassword(payload.password);
 
     if (!username || !password) {
+      logSecurityEvent("auth_register_validation_failed", {
+        ip: req.ip,
+        path: req.originalUrl,
+        method: req.method
+      });
       return res.status(400).json({ error: "username and password are required" });
     }
 
@@ -895,10 +1043,15 @@ app.post("/auth/login", async (req, res) => {
     }
 
     const payload = parseRequestBodyObject(req.body);
-    const username = normalizeUsername(payload.username);
-    const password = typeof payload.password === "string" ? payload.password : "";
+    const username = parseUsername(payload.username);
+    const password = parsePassword(payload.password);
 
     if (!username || !password) {
+      logSecurityEvent("auth_login_validation_failed", {
+        ip: req.ip,
+        path: req.originalUrl,
+        method: req.method
+      });
       return res.status(400).json({ error: "username and password are required" });
     }
 
@@ -950,7 +1103,7 @@ app.post("/devices/register", async (req, res) => {
       contentType: req.headers["content-type"] ?? null,
       userAgent: req.headers["user-agent"] ?? null,
       keys: Object.keys(payload || {}),
-      body: payload
+      body: redactSensitivePayload(payload)
     };
     console.log("[DeviceRegister] Incoming request:", requestInfo);
 
@@ -959,9 +1112,24 @@ app.post("/devices/register", async (req, res) => {
       return res.status(400).json({ error: DEVICE_UID_FORMAT_ERROR });
     }
 
+    const providedDeviceToken = extractDeviceTokenFromRequest(req);
     const now = new Date(toUtcISOString());
-    let device = await Device.findOne({ deviceUid: normalizedDeviceUid });
+    let device = await Device.findOne({ deviceUid: normalizedDeviceUid }).select("+deviceTokenHash");
     const wasExisting = Boolean(device);
+    let issuedDeviceToken = null;
+
+    if (device?.deviceTokenHash) {
+      const canAuthenticate = isDeviceTokenMatch(providedDeviceToken, device.deviceTokenHash);
+      if (!canAuthenticate) {
+        logSecurityEvent("device_register_rejected_bad_token", {
+          ip: req.ip,
+          path: req.originalUrl,
+          method: req.method,
+          deviceUid: normalizedDeviceUid
+        });
+        return res.status(401).json({ error: "Unauthorized" });
+      }
+    }
 
     if (!device) {
       device = new Device({
@@ -986,6 +1154,10 @@ app.post("/devices/register", async (req, res) => {
       }
     }
 
+    if (!device.deviceTokenHash) {
+      issuedDeviceToken = issueDeviceTokenForDevice(device);
+    }
+
     try {
       await device.save();
     } catch (error) {
@@ -996,9 +1168,27 @@ app.post("/devices/register", async (req, res) => {
           error: error.message
         });
 
-        const existingDevice = await Device.findOne({ deviceUid: normalizedDeviceUid });
+        const existingDevice = await Device.findOne({ deviceUid: normalizedDeviceUid }).select(
+          "+deviceTokenHash"
+        );
         if (!existingDevice) {
           throw error;
+        }
+
+        if (existingDevice.deviceTokenHash) {
+          const canAuthenticate = isDeviceTokenMatch(
+            providedDeviceToken,
+            existingDevice.deviceTokenHash
+          );
+          if (!canAuthenticate) {
+            logSecurityEvent("device_register_rejected_bad_token_after_race", {
+              ip: req.ip,
+              path: req.originalUrl,
+              method: req.method,
+              deviceUid: normalizedDeviceUid
+            });
+            return res.status(401).json({ error: "Unauthorized" });
+          }
         }
 
         existingDevice.online = true;
@@ -1010,6 +1200,10 @@ app.post("/devices/register", async (req, res) => {
         }
         if (normalizedPlatform) {
           existingDevice.platform = normalizedPlatform;
+        }
+
+        if (!existingDevice.deviceTokenHash) {
+          issuedDeviceToken = issueDeviceTokenForDevice(existingDevice);
         }
 
         await existingDevice.save();
@@ -1025,7 +1219,11 @@ app.post("/devices/register", async (req, res) => {
       platform: device.platform ?? null
     });
 
-    return res.json({ success: true, device: mapDeviceForResponse(device) });
+    return res.json({
+      success: true,
+      device: mapDeviceForResponse(device),
+      ...(issuedDeviceToken ? { deviceToken: issuedDeviceToken } : {})
+    });
   } catch (error) {
     console.error("[DeviceRegister] Registration failed:", {
       error: error?.message,
@@ -1038,14 +1236,16 @@ app.post("/devices/register", async (req, res) => {
 // =====================
 // Heartbeat
 // =====================
-app.post("/devices/heartbeat", async (req, res) => {
+app.post("/devices/heartbeat", requireAuthenticatedDeviceAllowBootstrap, async (req, res) => {
   try {
-    const { payload, normalizedDeviceUid } = extractDeviceRegistrationInput(req.body);
+    const { payload } = extractDeviceRegistrationInput(req.body);
+    const normalizedDeviceUid = req.deviceUid;
+    const device = req.authenticatedDevice;
     console.log("[DeviceHeartbeat] Incoming request:", {
       contentType: req.headers["content-type"] ?? null,
       userAgent: req.headers["user-agent"] ?? null,
       keys: Object.keys(payload || {}),
-      body: payload
+      body: redactSensitivePayload(payload)
     });
 
     if (!normalizedDeviceUid) {
@@ -1053,29 +1253,37 @@ app.post("/devices/heartbeat", async (req, res) => {
       return res.status(400).json({ error: DEVICE_UID_FORMAT_ERROR });
     }
 
-    const device = await Device.findOne({ deviceUid: normalizedDeviceUid });
-
-    if (device) {
-      device.online = true;
-      device.lastSeen = new Date(toUtcISOString());
-
-      if (!normalizeDeviceName(device.deviceName)) {
-        device.deviceName = buildDefaultDeviceName(normalizedDeviceUid);
-      }
-
-      await device.save();
-      console.log("[DeviceHeartbeat] Updated existing device:", {
+    if (!device) {
+      logSecurityEvent("device_heartbeat_missing_authenticated_device", {
+        ip: req.ip,
+        path: req.originalUrl,
+        method: req.method,
         deviceUid: normalizedDeviceUid
       });
-    } else {
-      console.warn("[DeviceHeartbeat] Device not found, heartbeat ignored:", {
-        deviceUid: normalizedDeviceUid
-      });
+      return res.status(401).json({ error: "Unauthorized" });
     }
+
+    let issuedDeviceToken = null;
+    if (req.deviceAuthNeedsProvision === true && !device.deviceTokenHash) {
+      issuedDeviceToken = issueDeviceTokenForDevice(device);
+    }
+
+    device.online = true;
+    device.lastSeen = new Date(toUtcISOString());
+
+    if (!normalizeDeviceName(device.deviceName)) {
+      device.deviceName = buildDefaultDeviceName(normalizedDeviceUid);
+    }
+
+    await device.save();
+    console.log("[DeviceHeartbeat] Updated existing device:", {
+      deviceUid: normalizedDeviceUid
+    });
 
     return res.json({
       success: true,
-      device: device ? mapDeviceForResponse(device) : null
+      device: mapDeviceForResponse(device),
+      ...(issuedDeviceToken ? { deviceToken: issuedDeviceToken } : {})
     });
   } catch (error) {
     return handleServerError(res, error, "POST /devices/heartbeat");
@@ -1357,6 +1565,13 @@ app.post("/commands", requireAuth, async (req, res) => {
         : null;
 
     if (normalizedActionInput && !actionToType[normalizedActionInput]) {
+      logSecurityEvent("command_rejected_invalid_action", {
+        ip: req.ip,
+        path: req.originalUrl,
+        method: req.method,
+        action: normalizedActionInput,
+        deviceUid: normalizedDeviceUid
+      });
       return res.status(400).json({
         error:
           "Invalid action. Only 'call', 'end', 'sms', 'auto_answer', 'open_url', 'close_webview', 'open_app', 'return_to_autocall', 'download_data', 'start_screen_mirror', and 'stop_screen_mirror' are supported."
@@ -1364,6 +1579,13 @@ app.post("/commands", requireAuth, async (req, res) => {
     }
 
     if (normalizedTypeInput && !typeToAction[normalizedTypeInput]) {
+      logSecurityEvent("command_rejected_invalid_type", {
+        ip: req.ip,
+        path: req.originalUrl,
+        method: req.method,
+        type: normalizedTypeInput,
+        deviceUid: normalizedDeviceUid
+      });
       return res.status(400).json({
         error:
           "Invalid type. Only 'CALL', 'END', 'SMS', 'AUTO_ANSWER', 'OPEN_URL', 'CLOSE_WEBVIEW', 'OPEN_APP', 'RETURN_TO_AUTOCALL', 'DOWNLOAD_DATA', 'START_SCREEN_MIRROR', and 'STOP_SCREEN_MIRROR' are supported."
@@ -1375,6 +1597,14 @@ app.post("/commands", requireAuth, async (req, res) => {
       normalizedTypeInput &&
       actionToType[normalizedActionInput] !== normalizedTypeInput
     ) {
+      logSecurityEvent("command_rejected_action_type_mismatch", {
+        ip: req.ip,
+        path: req.originalUrl,
+        method: req.method,
+        action: normalizedActionInput,
+        type: normalizedTypeInput,
+        deviceUid: normalizedDeviceUid
+      });
       return res.status(400).json({
         error: "action and type mismatch"
       });
@@ -1652,9 +1882,9 @@ app.post("/commands", requireAuth, async (req, res) => {
 // =====================
 // Claim next command (atomic pending -> executing)
 // =====================
-app.post("/commands/claim", async (req, res) => {
+app.post("/commands/claim", requireAuthenticatedDevice, async (req, res) => {
   try {
-    const normalizedDeviceUid = normalizeDeviceUid(req.body?.deviceUid);
+    const normalizedDeviceUid = req.deviceUid;
     if (!normalizedDeviceUid) {
       return res.status(400).json({ error: DEVICE_UID_FORMAT_ERROR });
     }
@@ -1829,7 +2059,7 @@ app.delete("/commands", requireAuth, async (req, res) => {
 // =====================
 // Update command status
 // =====================
-app.post("/commands/:id/status", async (req, res) => {
+app.post("/commands/:id/status", requireAuthenticatedDevice, async (req, res) => {
   try {
     const { id } = req.params;
     const { status, failureReason, downloadDurationSeconds } = req.body;
@@ -1845,6 +2075,19 @@ app.post("/commands/:id/status", async (req, res) => {
         newStatus: status ?? null
       });
       return res.status(404).json({ error: "Command not found" });
+    }
+
+    const authenticatedDeviceUid = req.deviceUid;
+    if (!authenticatedDeviceUid || command.deviceUid !== authenticatedDeviceUid) {
+      logSecurityEvent("command_status_update_forbidden_device_mismatch", {
+        ip: req.ip,
+        path: req.originalUrl,
+        method: req.method,
+        commandId: id,
+        deviceUid: authenticatedDeviceUid ?? null,
+        commandDeviceUid: command.deviceUid ?? null
+      });
+      return res.status(403).json({ error: "Forbidden" });
     }
 
     const normalizedStatus =
@@ -1973,6 +2216,16 @@ function warnIfJwtSecretMissing() {
   );
 }
 
+function warnIfLegacyDeviceAuthFallbackEnabled() {
+  if (!DEVICE_AUTH_ALLOW_LEGACY_FALLBACK) {
+    return;
+  }
+
+  console.warn(
+    "[DeviceAuth] DEVICE_AUTH_ALLOW_LEGACY_FALLBACK=true. Legacy untokened device requests are temporarily allowed on protected device endpoints."
+  );
+}
+
 async function cleanupLegacyDeviceUidData() {
   if (mongoose.connection.readyState !== 1) {
     return;
@@ -1996,6 +2249,7 @@ async function cleanupLegacyDeviceUidData() {
 
 async function startServer() {
   warnIfJwtSecretMissing();
+  warnIfLegacyDeviceAuthFallbackEnabled();
 
   httpServer.listen(PORT, "0.0.0.0", () => {
     console.log(`Server running on port ${PORT}`);
