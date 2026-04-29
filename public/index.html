@@ -1295,6 +1295,12 @@
             transition: none;
         }
 
+        .screen-mirror-floating-panel.resizing {
+            cursor: nwse-resize;
+            transition: none;
+            box-shadow: 0 22px 48px rgba(3, 8, 23, 0.6);
+        }
+
         .screen-mirror-floating-header {
             display: flex;
             align-items: center;
@@ -1377,7 +1383,7 @@
         }
 
         .screen-mirror-floating-panel.minimized {
-            height: var(--floating-panel-min-height);
+            height: var(--floating-panel-min-height) !important;
         }
 
         .screen-mirror-floating-panel.minimized .screen-mirror-floating-body {
@@ -1386,6 +1392,37 @@
             max-height: 0;
             padding-top: 0;
             padding-bottom: 0;
+            pointer-events: none;
+        }
+
+        .screen-mirror-floating-resize-handle {
+            position: absolute;
+            right: 0;
+            bottom: 0;
+            width: 26px;
+            height: 26px;
+            cursor: nwse-resize;
+            touch-action: none;
+            z-index: 2;
+            border-top-left-radius: 10px;
+            background: linear-gradient(135deg, rgba(255, 255, 255, 0), rgba(255, 255, 255, 0.22));
+        }
+
+        .screen-mirror-floating-resize-handle::before {
+            content: "";
+            position: absolute;
+            right: 6px;
+            bottom: 6px;
+            width: 10px;
+            height: 10px;
+            border-right: 2px solid rgba(234, 244, 255, 0.8);
+            border-bottom: 2px solid rgba(234, 244, 255, 0.8);
+            border-bottom-right-radius: 2px;
+            opacity: 0.95;
+        }
+
+        .screen-mirror-floating-panel.minimized .screen-mirror-floating-resize-handle {
+            opacity: 0;
             pointer-events: none;
         }
 
@@ -1957,6 +1994,7 @@
             </div>
         </div>
         <div id="screenMirrorFloatingBody" class="screen-mirror-floating-body screen-mirror-viewer-slot"></div>
+        <div id="screenMirrorFloatingResizeHandle" class="screen-mirror-floating-resize-handle" aria-hidden="true"></div>
     </div>
     <div id="toastContainer" class="toast-container" aria-live="polite" aria-atomic="true"></div>
 
@@ -1979,11 +2017,21 @@
         let isScreenMirrorFloatingMinimized = false;
         const SCREEN_MIRROR_FLOAT_ANIMATION_MS = 220;
         let screenMirrorFloatingCloseTimerId = null;
+        const SCREEN_MIRROR_FLOATING_MIN_WIDTH = 280;
+        const SCREEN_MIRROR_FLOATING_MIN_HEIGHT = 320;
         const screenMirrorFloatingDragState = {
             active: false,
             pointerId: null,
             offsetX: 0,
             offsetY: 0
+        };
+        const screenMirrorFloatingResizeState = {
+            active: false,
+            pointerId: null,
+            startX: 0,
+            startY: 0,
+            startWidth: 0,
+            startHeight: 0
         };
         const panelVisibility = {
             devices: false,
@@ -2049,6 +2097,10 @@
 
         function getScreenMirrorFloatingHeader() {
             return document.getElementById("screenMirrorFloatingHeader");
+        }
+
+        function getScreenMirrorFloatingResizeHandle() {
+            return document.getElementById("screenMirrorFloatingResizeHandle");
         }
 
         function getScreenMirrorPinToggleButton() {
@@ -2173,10 +2225,16 @@
             isScreenMirrorFloatingMinimized = false;
             screenMirrorFloatingDragState.active = false;
             screenMirrorFloatingDragState.pointerId = null;
+            screenMirrorFloatingResizeState.active = false;
+            screenMirrorFloatingResizeState.pointerId = null;
+            window.removeEventListener("pointermove", handleScreenMirrorFloatingResizeMove);
+            window.removeEventListener("pointerup", endScreenMirrorFloatingResize);
+            window.removeEventListener("pointercancel", endScreenMirrorFloatingResize);
 
             if (floatingPanel) {
                 floatingPanel.classList.remove("minimized");
                 floatingPanel.classList.remove("dragging");
+                floatingPanel.classList.remove("resizing");
                 floatingPanel.style.left = "";
                 floatingPanel.style.top = "";
                 floatingPanel.style.right = "";
@@ -2221,6 +2279,9 @@
             if (event.pointerType === "mouse" && event.button !== 0) return;
             const target = event.target;
             if (target instanceof Element && target.closest("button")) {
+                return;
+            }
+            if (target instanceof Element && target.closest(".screen-mirror-floating-resize-handle")) {
                 return;
             }
 
@@ -2305,16 +2366,111 @@
             window.removeEventListener("pointercancel", endScreenMirrorFloatingDrag);
         }
 
-        function clampScreenMirrorFloatingPanelToViewport() {
-            if (!isScreenMirrorPinned || isScreenMirrorFloatingHidden) return;
+        function startScreenMirrorFloatingResize(event) {
+            if (!isScreenMirrorPinned || isScreenMirrorFloatingHidden || isScreenMirrorFloatingMinimized) return;
+            if (event.pointerType === "mouse" && event.button !== 0) return;
+
             const floatingPanel = getScreenMirrorFloatingPanel();
             if (!floatingPanel || floatingPanel.classList.contains("panel-hidden")) return;
-            if (!floatingPanel.style.left || !floatingPanel.style.top) return;
 
+            const panelRect = floatingPanel.getBoundingClientRect();
+            screenMirrorFloatingResizeState.active = true;
+            screenMirrorFloatingResizeState.pointerId = event.pointerId;
+            screenMirrorFloatingResizeState.startX = event.clientX;
+            screenMirrorFloatingResizeState.startY = event.clientY;
+            screenMirrorFloatingResizeState.startWidth = panelRect.width;
+            screenMirrorFloatingResizeState.startHeight = panelRect.height;
+
+            floatingPanel.style.left = `${panelRect.left}px`;
+            floatingPanel.style.top = `${panelRect.top}px`;
+            floatingPanel.style.right = "auto";
+            floatingPanel.style.bottom = "auto";
+            floatingPanel.classList.add("resizing");
+
+            if (typeof event.target?.setPointerCapture === "function") {
+                try {
+                    event.target.setPointerCapture(event.pointerId);
+                } catch (_error) {
+                    // ignore pointer capture errors
+                }
+            }
+
+            window.addEventListener("pointermove", handleScreenMirrorFloatingResizeMove);
+            window.addEventListener("pointerup", endScreenMirrorFloatingResize);
+            window.addEventListener("pointercancel", endScreenMirrorFloatingResize);
+            event.preventDefault();
+        }
+
+        function handleScreenMirrorFloatingResizeMove(event) {
+            if (!screenMirrorFloatingResizeState.active) return;
+            if (screenMirrorFloatingResizeState.pointerId !== null && event.pointerId !== screenMirrorFloatingResizeState.pointerId) {
+                return;
+            }
+
+            const floatingPanel = getScreenMirrorFloatingPanel();
+            if (!floatingPanel) return;
+
+            const left = Number.parseFloat(floatingPanel.style.left || "0");
+            const top = Number.parseFloat(floatingPanel.style.top || "0");
+            const deltaX = event.clientX - screenMirrorFloatingResizeState.startX;
+            const deltaY = event.clientY - screenMirrorFloatingResizeState.startY;
+            const viewportMaxWidth = Math.max(SCREEN_MIRROR_FLOATING_MIN_WIDTH, window.innerWidth - Math.max(0, left));
+            const viewportMaxHeight = Math.max(SCREEN_MIRROR_FLOATING_MIN_HEIGHT, window.innerHeight - Math.max(0, top));
+
+            const nextWidth = Math.min(
+                viewportMaxWidth,
+                Math.max(SCREEN_MIRROR_FLOATING_MIN_WIDTH, screenMirrorFloatingResizeState.startWidth + deltaX)
+            );
+            const nextHeight = Math.min(
+                viewportMaxHeight,
+                Math.max(SCREEN_MIRROR_FLOATING_MIN_HEIGHT, screenMirrorFloatingResizeState.startHeight + deltaY)
+            );
+
+            floatingPanel.style.width = `${Math.round(nextWidth)}px`;
+            floatingPanel.style.height = `${Math.round(nextHeight)}px`;
+            clampScreenMirrorFloatingPanelToViewport();
+        }
+
+        function endScreenMirrorFloatingResize(event) {
+            if (!screenMirrorFloatingResizeState.active) return;
+            if (screenMirrorFloatingResizeState.pointerId !== null && event.pointerId !== screenMirrorFloatingResizeState.pointerId) {
+                return;
+            }
+
+            const floatingPanel = getScreenMirrorFloatingPanel();
+            if (floatingPanel) {
+                floatingPanel.classList.remove("resizing");
+            }
+
+            screenMirrorFloatingResizeState.active = false;
+            screenMirrorFloatingResizeState.pointerId = null;
+
+            window.removeEventListener("pointermove", handleScreenMirrorFloatingResizeMove);
+            window.removeEventListener("pointerup", endScreenMirrorFloatingResize);
+            window.removeEventListener("pointercancel", endScreenMirrorFloatingResize);
+        }
+
+        function clampScreenMirrorFloatingPanelToViewport() {
+            if (!isScreenMirrorPinned || isScreenMirrorFloatingHidden) return;
+            if (isScreenMirrorFloatingMinimized) return;
+            const floatingPanel = getScreenMirrorFloatingPanel();
+            if (!floatingPanel || floatingPanel.classList.contains("panel-hidden")) return;
             const panelWidth = floatingPanel.offsetWidth;
             const panelHeight = floatingPanel.offsetHeight;
-            const maxLeft = Math.max(0, window.innerWidth - panelWidth);
-            const maxTop = Math.max(0, window.innerHeight - panelHeight);
+            const constrainedWidth = Math.min(window.innerWidth, Math.max(SCREEN_MIRROR_FLOATING_MIN_WIDTH, panelWidth));
+            const constrainedHeight = Math.min(window.innerHeight, Math.max(SCREEN_MIRROR_FLOATING_MIN_HEIGHT, panelHeight));
+            if (Math.abs(constrainedWidth - panelWidth) > 0.5) {
+                floatingPanel.style.width = `${Math.round(constrainedWidth)}px`;
+            }
+            if (Math.abs(constrainedHeight - panelHeight) > 0.5) {
+                floatingPanel.style.height = `${Math.round(constrainedHeight)}px`;
+            }
+
+            if (!floatingPanel.style.left || !floatingPanel.style.top) return;
+            const finalWidth = floatingPanel.offsetWidth;
+            const finalHeight = floatingPanel.offsetHeight;
+            const maxLeft = Math.max(0, window.innerWidth - finalWidth);
+            const maxTop = Math.max(0, window.innerHeight - finalHeight);
             const left = Number.parseFloat(floatingPanel.style.left);
             const top = Number.parseFloat(floatingPanel.style.top);
             const safeLeft = Number.isFinite(left) ? Math.min(Math.max(0, left), maxLeft) : maxLeft;
@@ -2328,6 +2484,7 @@
 
         function initializeScreenMirrorFloatingUI() {
             const floatingHeader = getScreenMirrorFloatingHeader();
+            const floatingResizeHandle = getScreenMirrorFloatingResizeHandle();
             const floatingPanel = getScreenMirrorFloatingPanel();
             const dockSlot = getScreenMirrorViewerDockSlot();
             if (floatingPanel) {
@@ -2343,6 +2500,9 @@
             isScreenMirrorFloatingMinimized = false;
             if (floatingHeader) {
                 floatingHeader.addEventListener("pointerdown", startScreenMirrorFloatingDrag);
+            }
+            if (floatingResizeHandle) {
+                floatingResizeHandle.addEventListener("pointerdown", startScreenMirrorFloatingResize);
             }
             updateScreenMirrorPinToggleState();
             updateScreenMirrorFloatingTitle();
