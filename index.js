@@ -96,6 +96,9 @@ const DUMMY_DOWNLOAD_MIN_MB = 10;
 const DUMMY_DOWNLOAD_MAX_MB = 1000;
 const DUMMY_DOWNLOAD_CHUNK_BYTES = 64 * 1024;
 const SCREEN_MIRROR_MAX_FRAME_BYTES = Math.floor(1.5 * 1024 * 1024);
+const REMOTE_TOUCH_MAX_COORDINATE = 20000;
+const REMOTE_TOUCH_MAX_DURATION_MS = 10000;
+const REMOTE_TOUCH_MIN_DURATION_MS = 50;
 const OPEN_APP_PACKAGE_REGEX = /^[a-zA-Z0-9_]+(\.[a-zA-Z0-9_]+)+$/;
 const DEVICE_AUTH_ALLOW_LEGACY_FALLBACK =
   String(process.env.DEVICE_AUTH_ALLOW_LEGACY_FALLBACK || "").trim().toLowerCase() === "true";
@@ -230,6 +233,65 @@ function parseDownloadSizeMb(value) {
   }
 
   return parsed;
+}
+
+function parseNonNegativeCoordinate(value) {
+  if (value === undefined || value === null || String(value).trim() === "") {
+    return null;
+  }
+
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed) || !Number.isInteger(parsed)) {
+    return null;
+  }
+
+  if (parsed < 0 || parsed > REMOTE_TOUCH_MAX_COORDINATE) {
+    return null;
+  }
+
+  return parsed;
+}
+
+function parsePositiveDimension(value) {
+  if (value === undefined || value === null || String(value).trim() === "") {
+    return null;
+  }
+
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed) || !Number.isInteger(parsed)) {
+    return null;
+  }
+
+  if (parsed <= 0 || parsed > REMOTE_TOUCH_MAX_COORDINATE) {
+    return null;
+  }
+
+  return parsed;
+}
+
+function parseTouchDurationMs(value) {
+  if (value === undefined || value === null || String(value).trim() === "") {
+    return null;
+  }
+
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed) || !Number.isInteger(parsed)) {
+    return null;
+  }
+
+  if (parsed <= 0 || parsed > REMOTE_TOUCH_MAX_DURATION_MS) {
+    return null;
+  }
+
+  return Math.max(REMOTE_TOUCH_MIN_DURATION_MS, parsed);
+}
+
+function parseTouchTarget(value) {
+  if (typeof value !== "string") return null;
+  const normalized = value.trim().toLowerCase();
+  if (!normalized) return null;
+
+  return ["back", "home", "recents"].includes(normalized) ? normalized : null;
 }
 
 function hasPresentValue(value) {
@@ -512,6 +574,16 @@ function mapCommandForResponse(command) {
     downloadDurationSeconds: source.downloadDurationSeconds ?? null,
     enabled: source.enabled ?? null,
     autoHangupSeconds: source.autoHangupSeconds ?? null,
+    x: source.x ?? null,
+    y: source.y ?? null,
+    screenWidth: source.screenWidth ?? null,
+    screenHeight: source.screenHeight ?? null,
+    startX: source.startX ?? null,
+    startY: source.startY ?? null,
+    endX: source.endX ?? null,
+    endY: source.endY ?? null,
+    durationMs: source.durationMs ?? null,
+    touchTarget: source.touchTarget ?? null,
     status: source.status,
     failureReason: source.failureReason ?? null,
     scheduledAt: formatUtcForRiyadhDisplay(source.scheduledAt),
@@ -1501,7 +1573,17 @@ app.post("/commands", requireAuth, async (req, res) => {
       durationSeconds,
       downloadSizeMb,
       enabled,
-      autoHangupSeconds
+      autoHangupSeconds,
+      x,
+      y,
+      screenWidth,
+      screenHeight,
+      startX,
+      startY,
+      endX,
+      endY,
+      durationMs,
+      touchTarget
     } = req.body;
 
     const normalizedDeviceUid = normalizeDeviceUid(deviceUid);
@@ -1539,7 +1621,9 @@ app.post("/commands", requireAuth, async (req, res) => {
       return_to_autocall: "RETURN_TO_AUTOCALL",
       download_data: "DOWNLOAD_DATA",
       start_screen_mirror: "START_SCREEN_MIRROR",
-      stop_screen_mirror: "STOP_SCREEN_MIRROR"
+      stop_screen_mirror: "STOP_SCREEN_MIRROR",
+      screen_touch: "SCREEN_TOUCH",
+      screen_swipe: "SCREEN_SWIPE"
     };
     const typeToAction = {
       CALL: "call",
@@ -1552,7 +1636,9 @@ app.post("/commands", requireAuth, async (req, res) => {
       RETURN_TO_AUTOCALL: "return_to_autocall",
       DOWNLOAD_DATA: "download_data",
       START_SCREEN_MIRROR: "start_screen_mirror",
-      STOP_SCREEN_MIRROR: "stop_screen_mirror"
+      STOP_SCREEN_MIRROR: "stop_screen_mirror",
+      SCREEN_TOUCH: "screen_touch",
+      SCREEN_SWIPE: "screen_swipe"
     };
 
     const normalizedActionInput =
@@ -1574,7 +1660,7 @@ app.post("/commands", requireAuth, async (req, res) => {
       });
       return res.status(400).json({
         error:
-          "Invalid action. Only 'call', 'end', 'sms', 'auto_answer', 'open_url', 'close_webview', 'open_app', 'return_to_autocall', 'download_data', 'start_screen_mirror', and 'stop_screen_mirror' are supported."
+          "Invalid action. Only 'call', 'end', 'sms', 'auto_answer', 'open_url', 'close_webview', 'open_app', 'return_to_autocall', 'download_data', 'start_screen_mirror', 'stop_screen_mirror', 'screen_touch', and 'screen_swipe' are supported."
       });
     }
 
@@ -1588,7 +1674,7 @@ app.post("/commands", requireAuth, async (req, res) => {
       });
       return res.status(400).json({
         error:
-          "Invalid type. Only 'CALL', 'END', 'SMS', 'AUTO_ANSWER', 'OPEN_URL', 'CLOSE_WEBVIEW', 'OPEN_APP', 'RETURN_TO_AUTOCALL', 'DOWNLOAD_DATA', 'START_SCREEN_MIRROR', and 'STOP_SCREEN_MIRROR' are supported."
+          "Invalid type. Only 'CALL', 'END', 'SMS', 'AUTO_ANSWER', 'OPEN_URL', 'CLOSE_WEBVIEW', 'OPEN_APP', 'RETURN_TO_AUTOCALL', 'DOWNLOAD_DATA', 'START_SCREEN_MIRROR', 'STOP_SCREEN_MIRROR', 'SCREEN_TOUCH', and 'SCREEN_SWIPE' are supported."
       });
     }
 
@@ -1618,6 +1704,8 @@ app.post("/commands", requireAuth, async (req, res) => {
     const isOpenAppCommand = normalizedAction === "open_app";
     const isReturnToAutoCallCommand = normalizedAction === "return_to_autocall";
     const isDownloadDataCommand = normalizedAction === "download_data";
+    const isScreenTouchCommand = normalizedAction === "screen_touch";
+    const isScreenSwipeCommand = normalizedAction === "screen_swipe";
     const allowsExtraPayloadFields = isReturnToAutoCallCommand;
 
     const receivedPhoneNumberRaw = typeof phoneNumber === "string" ? phoneNumber : "";
@@ -1783,6 +1871,167 @@ app.post("/commands", requireAuth, async (req, res) => {
       }
     }
 
+    const hasTouchTargetInput = hasPresentValue(touchTarget);
+    const normalizedTouchTarget = hasTouchTargetInput
+      ? parseTouchTarget(touchTarget)
+      : null;
+    if (isScreenTouchCommand && hasTouchTargetInput && !normalizedTouchTarget) {
+      return res.status(400).json({
+        error: "touchTarget must be one of: back, home, recents"
+      });
+    }
+
+    if (!isScreenTouchCommand && hasTouchTargetInput && !allowsExtraPayloadFields) {
+      return res.status(400).json({
+        error: "touchTarget is only supported for SCREEN_TOUCH commands"
+      });
+    }
+
+    const hasAnyTouchPayload =
+      hasPresentValue(x) ||
+      hasPresentValue(y) ||
+      hasPresentValue(screenWidth) ||
+      hasPresentValue(screenHeight) ||
+      hasPresentValue(startX) ||
+      hasPresentValue(startY) ||
+      hasPresentValue(endX) ||
+      hasPresentValue(endY) ||
+      hasPresentValue(durationMs) ||
+      hasTouchTargetInput;
+
+    if (!isScreenTouchCommand && !isScreenSwipeCommand && hasAnyTouchPayload && !allowsExtraPayloadFields) {
+      return res.status(400).json({
+        error:
+          "Touch payload fields are only supported for SCREEN_TOUCH and SCREEN_SWIPE commands"
+      });
+    }
+
+    let normalizedX;
+    let normalizedY;
+    let normalizedScreenWidth;
+    let normalizedScreenHeight;
+    let normalizedStartX;
+    let normalizedStartY;
+    let normalizedEndX;
+    let normalizedEndY;
+    let normalizedDurationMs;
+
+    if (isScreenTouchCommand) {
+      const parsedX = parseNonNegativeCoordinate(x);
+      const parsedY = parseNonNegativeCoordinate(y);
+      const parsedScreenWidth = parsePositiveDimension(screenWidth);
+      const parsedScreenHeight = parsePositiveDimension(screenHeight);
+      const hasTapCoordinatesInput =
+        hasPresentValue(x) ||
+        hasPresentValue(y) ||
+        hasPresentValue(screenWidth) ||
+        hasPresentValue(screenHeight);
+
+      if (!normalizedTouchTarget) {
+        if (
+          parsedX === null ||
+          parsedY === null ||
+          parsedScreenWidth === null ||
+          parsedScreenHeight === null
+        ) {
+          return res.status(400).json({
+            error:
+              "x, y, screenWidth, and screenHeight are required for SCREEN_TOUCH when touchTarget is not used"
+          });
+        }
+      } else if (
+        hasTapCoordinatesInput &&
+        (parsedX === null ||
+          parsedY === null ||
+          parsedScreenWidth === null ||
+          parsedScreenHeight === null)
+      ) {
+        return res.status(400).json({
+          error:
+            "x, y, screenWidth, and screenHeight must all be valid integers when provided with touchTarget"
+        });
+      }
+
+      if (
+        parsedScreenWidth !== null &&
+        parsedScreenHeight !== null &&
+        parsedX !== null &&
+        parsedY !== null
+      ) {
+        if (parsedX >= parsedScreenWidth || parsedY >= parsedScreenHeight) {
+          return res.status(400).json({
+            error:
+              "x and y must be within the provided screenWidth and screenHeight bounds"
+          });
+        }
+      }
+
+      normalizedX = parsedX;
+      normalizedY = parsedY;
+      normalizedScreenWidth = parsedScreenWidth;
+      normalizedScreenHeight = parsedScreenHeight;
+    }
+
+    if (isScreenSwipeCommand) {
+      const parsedStartX = parseNonNegativeCoordinate(startX);
+      const parsedStartY = parseNonNegativeCoordinate(startY);
+      const parsedEndX = parseNonNegativeCoordinate(endX);
+      const parsedEndY = parseNonNegativeCoordinate(endY);
+      const parsedDurationMs = parseTouchDurationMs(durationMs);
+
+      if (
+        parsedStartX === null ||
+        parsedStartY === null ||
+        parsedEndX === null ||
+        parsedEndY === null ||
+        parsedDurationMs === null
+      ) {
+        return res.status(400).json({
+          error:
+            "startX, startY, endX, endY, and durationMs are required for SCREEN_SWIPE commands"
+        });
+      }
+
+      const hasSwipeScreenWidthInput = hasPresentValue(screenWidth);
+      const hasSwipeScreenHeightInput = hasPresentValue(screenHeight);
+      const parsedSwipeScreenWidth = hasSwipeScreenWidthInput
+        ? parsePositiveDimension(screenWidth)
+        : null;
+      const parsedSwipeScreenHeight = hasSwipeScreenHeightInput
+        ? parsePositiveDimension(screenHeight)
+        : null;
+
+      if ((hasSwipeScreenWidthInput || hasSwipeScreenHeightInput) &&
+        (parsedSwipeScreenWidth === null || parsedSwipeScreenHeight === null)) {
+        return res.status(400).json({
+          error:
+            "screenWidth and screenHeight must both be valid positive integers when provided for SCREEN_SWIPE"
+        });
+      }
+
+      if (parsedSwipeScreenWidth !== null && parsedSwipeScreenHeight !== null) {
+        const allWithinBounds =
+          parsedStartX < parsedSwipeScreenWidth &&
+          parsedEndX < parsedSwipeScreenWidth &&
+          parsedStartY < parsedSwipeScreenHeight &&
+          parsedEndY < parsedSwipeScreenHeight;
+        if (!allWithinBounds) {
+          return res.status(400).json({
+            error:
+              "start/end coordinates must be within the provided screenWidth and screenHeight bounds"
+          });
+        }
+      }
+
+      normalizedStartX = parsedStartX;
+      normalizedStartY = parsedStartY;
+      normalizedEndX = parsedEndX;
+      normalizedEndY = parsedEndY;
+      normalizedDurationMs = parsedDurationMs;
+      normalizedScreenWidth = parsedSwipeScreenWidth;
+      normalizedScreenHeight = parsedSwipeScreenHeight;
+    }
+
     if (scheduledAt) {
       const parsedDate = parseScheduledAtAsRiyadhToUtcDate(scheduledAt);
       const parsedTime = parsedDate.getTime();
@@ -1833,6 +2082,20 @@ app.post("/commands", requireAuth, async (req, res) => {
       }
     } else if (normalizedAction === "download_data") {
       addIfPresent(commandData, "downloadSizeMb", normalizedDownloadSizeMb);
+    } else if (normalizedAction === "screen_touch") {
+      addIfPresent(commandData, "x", normalizedX);
+      addIfPresent(commandData, "y", normalizedY);
+      addIfPresent(commandData, "screenWidth", normalizedScreenWidth);
+      addIfPresent(commandData, "screenHeight", normalizedScreenHeight);
+      addIfPresent(commandData, "touchTarget", normalizedTouchTarget);
+    } else if (normalizedAction === "screen_swipe") {
+      addIfPresent(commandData, "startX", normalizedStartX);
+      addIfPresent(commandData, "startY", normalizedStartY);
+      addIfPresent(commandData, "endX", normalizedEndX);
+      addIfPresent(commandData, "endY", normalizedEndY);
+      addIfPresent(commandData, "durationMs", normalizedDurationMs);
+      addIfPresent(commandData, "screenWidth", normalizedScreenWidth);
+      addIfPresent(commandData, "screenHeight", normalizedScreenHeight);
     }
 
     const command = await Command.create(commandData);
@@ -1849,6 +2112,22 @@ app.post("/commands", requireAuth, async (req, res) => {
         appName: isOpenAppCommand ? normalizedAppName : null,
         resolvedPackageName: isOpenAppCommand ? normalizedResolvedPackageName : null,
         downloadSizeMb: isDownloadDataCommand ? normalizedDownloadSizeMb : null,
+        x: isScreenTouchCommand ? normalizedX ?? null : null,
+        y: isScreenTouchCommand ? normalizedY ?? null : null,
+        touchTarget: isScreenTouchCommand ? normalizedTouchTarget ?? null : null,
+        startX: isScreenSwipeCommand ? normalizedStartX ?? null : null,
+        startY: isScreenSwipeCommand ? normalizedStartY ?? null : null,
+        endX: isScreenSwipeCommand ? normalizedEndX ?? null : null,
+        endY: isScreenSwipeCommand ? normalizedEndY ?? null : null,
+        durationMs: isScreenSwipeCommand ? normalizedDurationMs ?? null : null,
+        screenWidth:
+          isScreenTouchCommand || isScreenSwipeCommand
+            ? normalizedScreenWidth ?? null
+            : null,
+        screenHeight:
+          isScreenTouchCommand || isScreenSwipeCommand
+            ? normalizedScreenHeight ?? null
+            : null,
         scheduledAt: scheduledAtDate ? scheduledAtDate.toISOString() : null
       }
     });

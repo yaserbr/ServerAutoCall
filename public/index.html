@@ -1193,6 +1193,33 @@
             width: 100%;
         }
 
+        .screen-touch-control-toggle {
+            width: 100%;
+        }
+
+        .screen-touch-control-toggle.enabled {
+            background: linear-gradient(135deg, #16a34a, #22c55e);
+            color: #ecfdf5;
+            box-shadow: 0 10px 24px rgba(34, 197, 94, 0.45);
+        }
+
+        .screen-touch-control-toggle.disabled {
+            background: linear-gradient(135deg, #334155, #1e293b);
+            color: #dbeafe;
+            box-shadow: 0 10px 24px rgba(15, 23, 42, 0.38);
+        }
+
+        .screen-mirror-quick-actions {
+            display: grid;
+            grid-template-columns: repeat(3, minmax(0, 1fr));
+            gap: 8px;
+        }
+
+        .screen-mirror-quick-actions button {
+            width: 100%;
+            min-width: 0;
+        }
+
         .screen-mirror-status-grid {
             display: grid;
             gap: 8px;
@@ -1233,6 +1260,7 @@
             align-items: center;
             justify-content: center;
             box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.08);
+            user-select: none;
         }
 
         .screen-mirror-viewer img {
@@ -1241,6 +1269,14 @@
             object-fit: contain;
             border-radius: 28px;
             display: block;
+        }
+
+        .screen-mirror-viewer.touch-control-enabled {
+            cursor: crosshair;
+            touch-action: none;
+            box-shadow:
+                inset 0 0 0 1px rgba(255, 255, 255, 0.08),
+                0 0 0 2px rgba(34, 197, 94, 0.55);
         }
 
         .screen-mirror-floating-panel {
@@ -1911,6 +1947,18 @@
                                 <button onclick="startScreenMirror()">Start Screen Mirror</button>
                                 <button class="danger-button" onclick="stopScreenMirror()">Stop Screen Mirror</button>
                                 <button id="screenMirrorPinToggleBtn" type="button" onclick="toggleScreenMirrorFloating()">Pin Screen</button>
+                                <button
+                                    id="screenTouchControlToggleBtn"
+                                    type="button"
+                                    class="screen-touch-control-toggle disabled"
+                                    onclick="toggleScreenTouchControl()">
+                                    Enable Touch Control: OFF
+                                </button>
+                            </div>
+                            <div class="screen-mirror-quick-actions">
+                                <button type="button" onclick="sendScreenQuickAction('back')">Back</button>
+                                <button type="button" onclick="sendScreenQuickAction('home')">Home</button>
+                                <button type="button" onclick="sendScreenQuickAction('recents')">Recents</button>
                             </div>
                             <div class="screen-mirror-status-grid">
                                 <div class="screen-mirror-status-item">Status: <span id="screenMirrorStatusText">idle</span></div>
@@ -2015,10 +2063,16 @@
         let isScreenMirrorPinned = false;
         let isScreenMirrorFloatingHidden = true;
         let isScreenMirrorFloatingMinimized = false;
+        let isScreenTouchControlEnabled = false;
+        let screenMirrorFrameWidth = 0;
+        let screenMirrorFrameHeight = 0;
         const SCREEN_MIRROR_FLOAT_ANIMATION_MS = 220;
         let screenMirrorFloatingCloseTimerId = null;
         const SCREEN_MIRROR_FLOATING_MIN_WIDTH = 280;
         const SCREEN_MIRROR_FLOATING_MIN_HEIGHT = 320;
+        const SCREEN_TOUCH_TAP_DISTANCE_THRESHOLD_PX = 12;
+        const SCREEN_TOUCH_MIN_SWIPE_DURATION_MS = 80;
+        const SCREEN_TOUCH_MAX_SWIPE_DURATION_MS = 5000;
         const screenMirrorFloatingDragState = {
             active: false,
             pointerId: null,
@@ -2032,6 +2086,14 @@
             startY: 0,
             startWidth: 0,
             startHeight: 0
+        };
+        const screenMirrorPointerGestureState = {
+            active: false,
+            pointerId: null,
+            startClientX: 0,
+            startClientY: 0,
+            startedAtMs: 0,
+            startMappedPoint: null
         };
         const panelVisibility = {
             devices: false,
@@ -2055,7 +2117,9 @@
             close_webview: "CLOSE_WEBVIEW",
             end: "END",
             start_screen_mirror: "START_SCREEN_MIRROR",
-            stop_screen_mirror: "STOP_SCREEN_MIRROR"
+            stop_screen_mirror: "STOP_SCREEN_MIRROR",
+            screen_touch: "SCREEN_TOUCH",
+            screen_swipe: "SCREEN_SWIPE"
         };
         const supportedCommandTypes = new Set(Object.values(commandActionToType));
         const tabOrder = {
@@ -2515,6 +2579,10 @@
             const frameCountText = document.getElementById("screenMirrorFrameCountText");
             const lastFrameText = document.getElementById("screenMirrorLastFrameText");
 
+            screenMirrorFrameWidth = 0;
+            screenMirrorFrameHeight = 0;
+            clearScreenMirrorPointerGestureState();
+
             if (preview) {
                 preview.removeAttribute("src");
             }
@@ -2627,6 +2695,16 @@
                     typeof payload.mimeType === "string" && payload.mimeType.trim()
                         ? payload.mimeType.trim()
                         : "image/jpeg";
+                const payloadWidth = Number(payload?.width);
+                const payloadHeight = Number(payload?.height);
+                if (
+                    Number.isFinite(payloadWidth) &&
+                    Number.isFinite(payloadHeight) &&
+                    payloadWidth > 0 &&
+                    payloadHeight > 0
+                ) {
+                    updateScreenMirrorFrameSize(payloadWidth, payloadHeight);
+                }
                 const preview = document.getElementById("screenMirrorPreview");
                 if (preview) {
                     preview.src = `data:${mimeType};base64,${frameBase64}`;
@@ -2718,6 +2796,346 @@
 
         async function stopScreenMirror() {
             await sendScreenMirrorCommand("stop_screen_mirror", "STOP_SCREEN_MIRROR");
+        }
+
+        function getSelectedScreenMirrorDeviceUid() {
+            const select = document.getElementById("deviceSelectScreenMirror");
+            return normalizeDeviceUidInput(select?.value || "");
+        }
+
+        function toValidPositiveInteger(value) {
+            const parsed = Number(value);
+            if (!Number.isFinite(parsed)) return null;
+            const normalized = Math.round(parsed);
+            return normalized > 0 ? normalized : null;
+        }
+
+        function updateScreenMirrorFrameSize(width, height) {
+            const normalizedWidth = toValidPositiveInteger(width);
+            const normalizedHeight = toValidPositiveInteger(height);
+            if (!normalizedWidth || !normalizedHeight) {
+                return;
+            }
+            screenMirrorFrameWidth = normalizedWidth;
+            screenMirrorFrameHeight = normalizedHeight;
+        }
+
+        function clearScreenMirrorPointerGestureState() {
+            const viewerNode = getScreenMirrorViewerNode();
+            const pointerId = screenMirrorPointerGestureState.pointerId;
+            if (
+                viewerNode &&
+                pointerId !== null &&
+                typeof viewerNode.releasePointerCapture === "function"
+            ) {
+                try {
+                    viewerNode.releasePointerCapture(pointerId);
+                } catch (_error) {
+                    // ignore pointer release errors
+                }
+            }
+
+            screenMirrorPointerGestureState.active = false;
+            screenMirrorPointerGestureState.pointerId = null;
+            screenMirrorPointerGestureState.startClientX = 0;
+            screenMirrorPointerGestureState.startClientY = 0;
+            screenMirrorPointerGestureState.startedAtMs = 0;
+            screenMirrorPointerGestureState.startMappedPoint = null;
+        }
+
+        function updateScreenTouchControlToggleState() {
+            const toggleButton = document.getElementById("screenTouchControlToggleBtn");
+            const viewerNode = getScreenMirrorViewerNode();
+
+            if (toggleButton) {
+                toggleButton.textContent = isScreenTouchControlEnabled
+                    ? "Enable Touch Control: ON"
+                    : "Enable Touch Control: OFF";
+                toggleButton.classList.toggle("enabled", isScreenTouchControlEnabled);
+                toggleButton.classList.toggle("disabled", !isScreenTouchControlEnabled);
+                toggleButton.setAttribute("aria-pressed", String(isScreenTouchControlEnabled));
+            }
+
+            if (viewerNode) {
+                viewerNode.classList.toggle("touch-control-enabled", isScreenTouchControlEnabled);
+            }
+        }
+
+        function setScreenTouchControlEnabled(enabled) {
+            isScreenTouchControlEnabled = Boolean(enabled);
+            if (!isScreenTouchControlEnabled) {
+                clearScreenMirrorPointerGestureState();
+            }
+            updateScreenTouchControlToggleState();
+        }
+
+        function toggleScreenTouchControl() {
+            setScreenTouchControlEnabled(!isScreenTouchControlEnabled);
+        }
+
+        function getScreenMirrorSourceSize() {
+            const preview = document.getElementById("screenMirrorPreview");
+            const explicitWidth = toValidPositiveInteger(screenMirrorFrameWidth);
+            const explicitHeight = toValidPositiveInteger(screenMirrorFrameHeight);
+            if (explicitWidth && explicitHeight) {
+                return { width: explicitWidth, height: explicitHeight };
+            }
+
+            const naturalWidth = toValidPositiveInteger(preview?.naturalWidth);
+            const naturalHeight = toValidPositiveInteger(preview?.naturalHeight);
+            if (naturalWidth && naturalHeight) {
+                return { width: naturalWidth, height: naturalHeight };
+            }
+
+            return null;
+        }
+
+        function mapScreenClientPointToDevicePoint(clientX, clientY) {
+            const preview = document.getElementById("screenMirrorPreview");
+            if (!preview) return null;
+
+            const sourceSize = getScreenMirrorSourceSize();
+            if (!sourceSize) return null;
+
+            const previewRect = preview.getBoundingClientRect();
+            if (previewRect.width <= 0 || previewRect.height <= 0) {
+                return null;
+            }
+
+            const drawScale = Math.min(
+                previewRect.width / sourceSize.width,
+                previewRect.height / sourceSize.height
+            );
+            if (!Number.isFinite(drawScale) || drawScale <= 0) {
+                return null;
+            }
+
+            const drawnWidth = sourceSize.width * drawScale;
+            const drawnHeight = sourceSize.height * drawScale;
+            const offsetX = (previewRect.width - drawnWidth) / 2;
+            const offsetY = (previewRect.height - drawnHeight) / 2;
+            const localX = clientX - previewRect.left;
+            const localY = clientY - previewRect.top;
+
+            const insideDrawnImage =
+                localX >= offsetX &&
+                localX <= offsetX + drawnWidth &&
+                localY >= offsetY &&
+                localY <= offsetY + drawnHeight;
+            if (!insideDrawnImage) {
+                return null;
+            }
+
+            const normalizedX = (localX - offsetX) / drawnWidth;
+            const normalizedY = (localY - offsetY) / drawnHeight;
+            const mappedX = Math.min(
+                sourceSize.width - 1,
+                Math.max(0, Math.round(normalizedX * sourceSize.width))
+            );
+            const mappedY = Math.min(
+                sourceSize.height - 1,
+                Math.max(0, Math.round(normalizedY * sourceSize.height))
+            );
+
+            return {
+                x: mappedX,
+                y: mappedY,
+                screenWidth: sourceSize.width,
+                screenHeight: sourceSize.height
+            };
+        }
+
+        async function sendScreenRemoteCommand(payload, options = {}) {
+            const {
+                successMessage = "",
+                showSuccessToast = false,
+                refreshCommands = false,
+                defaultErrorMessage = "Failed to send touch control command"
+            } = options;
+            const deviceUid = getSelectedScreenMirrorDeviceUid();
+            if (!deviceUid) {
+                showToast("Please select a device first", "error");
+                return false;
+            }
+
+            try {
+                const response = await apiFetch("/commands", {
+                    method: "POST",
+                    headers: {
+                        "Content-Type": "application/json"
+                    },
+                    body: JSON.stringify({
+                        ...payload,
+                        deviceUid
+                    })
+                });
+                const data = await response.json();
+                if (!response.ok) {
+                    throw new Error(parseApiErrorMessage(data, defaultErrorMessage));
+                }
+
+                if (showSuccessToast && successMessage) {
+                    showToast(successMessage, "success");
+                }
+                if (refreshCommands) {
+                    await loadCommands();
+                }
+                return true;
+            } catch (error) {
+                showToast(error.message || defaultErrorMessage, "error");
+                return false;
+            }
+        }
+
+        async function sendScreenQuickAction(actionTarget) {
+            const normalizedTarget = String(actionTarget || "").trim().toLowerCase();
+            if (!["back", "home", "recents"].includes(normalizedTarget)) {
+                return;
+            }
+
+            await sendScreenRemoteCommand(
+                {
+                    action: "screen_touch",
+                    type: "SCREEN_TOUCH",
+                    touchTarget: normalizedTarget
+                },
+                {
+                    successMessage: `${normalizedTarget.toUpperCase()} command sent`,
+                    showSuccessToast: true,
+                    refreshCommands: true
+                }
+            );
+        }
+
+        function handleScreenMirrorPointerDown(event) {
+            if (!isScreenTouchControlEnabled) return;
+            if (event.pointerType === "mouse" && event.button !== 0) return;
+            if (!getSelectedScreenMirrorDeviceUid()) return;
+
+            const mappedStart = mapScreenClientPointToDevicePoint(event.clientX, event.clientY);
+            if (!mappedStart) return;
+
+            const viewerNode = getScreenMirrorViewerNode();
+            clearScreenMirrorPointerGestureState();
+            screenMirrorPointerGestureState.active = true;
+            screenMirrorPointerGestureState.pointerId = event.pointerId;
+            screenMirrorPointerGestureState.startClientX = event.clientX;
+            screenMirrorPointerGestureState.startClientY = event.clientY;
+            screenMirrorPointerGestureState.startedAtMs = Date.now();
+            screenMirrorPointerGestureState.startMappedPoint = mappedStart;
+
+            if (viewerNode && typeof viewerNode.setPointerCapture === "function") {
+                try {
+                    viewerNode.setPointerCapture(event.pointerId);
+                } catch (_error) {
+                    // ignore pointer capture errors
+                }
+            }
+
+            event.preventDefault();
+        }
+
+        async function handleScreenMirrorPointerUp(event) {
+            if (!screenMirrorPointerGestureState.active) return;
+            if (screenMirrorPointerGestureState.pointerId !== event.pointerId) return;
+
+            const gestureStateSnapshot = {
+                startClientX: screenMirrorPointerGestureState.startClientX,
+                startClientY: screenMirrorPointerGestureState.startClientY,
+                startedAtMs: screenMirrorPointerGestureState.startedAtMs,
+                startMappedPoint: screenMirrorPointerGestureState.startMappedPoint
+            };
+
+            clearScreenMirrorPointerGestureState();
+            if (!isScreenTouchControlEnabled) return;
+            if (!getSelectedScreenMirrorDeviceUid()) return;
+
+            const mappedEnd = mapScreenClientPointToDevicePoint(event.clientX, event.clientY);
+            const pointerDistance = Math.hypot(
+                event.clientX - gestureStateSnapshot.startClientX,
+                event.clientY - gestureStateSnapshot.startClientY
+            );
+            const endPointForTap = mappedEnd || gestureStateSnapshot.startMappedPoint;
+
+            if (
+                pointerDistance <= SCREEN_TOUCH_TAP_DISTANCE_THRESHOLD_PX &&
+                endPointForTap
+            ) {
+                await sendScreenRemoteCommand(
+                    {
+                        action: "screen_touch",
+                        type: "SCREEN_TOUCH",
+                        x: endPointForTap.x,
+                        y: endPointForTap.y,
+                        screenWidth: endPointForTap.screenWidth,
+                        screenHeight: endPointForTap.screenHeight
+                    },
+                    {
+                        showSuccessToast: false,
+                        refreshCommands: false,
+                        defaultErrorMessage: "Failed to send screen tap command"
+                    }
+                );
+                event.preventDefault();
+                return;
+            }
+
+            if (!gestureStateSnapshot.startMappedPoint || !mappedEnd) {
+                return;
+            }
+
+            const elapsedMs = Math.round(Date.now() - gestureStateSnapshot.startedAtMs);
+            const durationMs = Math.max(
+                SCREEN_TOUCH_MIN_SWIPE_DURATION_MS,
+                Math.min(SCREEN_TOUCH_MAX_SWIPE_DURATION_MS, elapsedMs)
+            );
+
+            await sendScreenRemoteCommand(
+                {
+                    action: "screen_swipe",
+                    type: "SCREEN_SWIPE",
+                    startX: gestureStateSnapshot.startMappedPoint.x,
+                    startY: gestureStateSnapshot.startMappedPoint.y,
+                    endX: mappedEnd.x,
+                    endY: mappedEnd.y,
+                    durationMs,
+                    screenWidth: mappedEnd.screenWidth,
+                    screenHeight: mappedEnd.screenHeight
+                },
+                {
+                    showSuccessToast: false,
+                    refreshCommands: false,
+                    defaultErrorMessage: "Failed to send screen swipe command"
+                }
+            );
+            event.preventDefault();
+        }
+
+        function handleScreenMirrorPointerCancel(event) {
+            if (!screenMirrorPointerGestureState.active) return;
+            if (screenMirrorPointerGestureState.pointerId !== event.pointerId) return;
+            clearScreenMirrorPointerGestureState();
+        }
+
+        function initializeScreenMirrorTouchControl() {
+            const viewerNode = getScreenMirrorViewerNode();
+            const preview = document.getElementById("screenMirrorPreview");
+            if (!viewerNode || !preview) {
+                return;
+            }
+
+            viewerNode.addEventListener("pointerdown", handleScreenMirrorPointerDown, { passive: false });
+            viewerNode.addEventListener("pointerup", handleScreenMirrorPointerUp, { passive: false });
+            viewerNode.addEventListener("pointercancel", handleScreenMirrorPointerCancel);
+            viewerNode.addEventListener("dragstart", (event) => event.preventDefault());
+
+            preview.addEventListener("load", () => {
+                if (!screenMirrorFrameWidth || !screenMirrorFrameHeight) {
+                    updateScreenMirrorFrameSize(preview.naturalWidth, preview.naturalHeight);
+                }
+            });
+
+            setScreenTouchControlEnabled(false);
         }
 
         function syncOverlayScrollLock() {
@@ -3317,6 +3735,55 @@
 
             if (commandType === "STOP_SCREEN_MIRROR") {
                 details.primary = "Stop live screen mirror";
+                return appendScheduledDetail(details, command);
+            }
+
+            if (commandType === "SCREEN_TOUCH") {
+                const touchTarget = toNonEmptyString(command?.touchTarget);
+                if (touchTarget) {
+                    details.primary = `Global action: ${touchTarget.toUpperCase()}`;
+                    return appendScheduledDetail(details, command);
+                }
+
+                const x = Number(command?.x);
+                const y = Number(command?.y);
+                const screenWidth = Number(command?.screenWidth);
+                const screenHeight = Number(command?.screenHeight);
+                if (
+                    Number.isFinite(x) &&
+                    Number.isFinite(y) &&
+                    Number.isFinite(screenWidth) &&
+                    Number.isFinite(screenHeight)
+                ) {
+                    details.primary = `Tap: (${Math.round(x)}, ${Math.round(y)})`;
+                    details.secondary = `Screen: ${Math.round(screenWidth)} x ${Math.round(screenHeight)}`;
+                } else {
+                    details.primary = "Tap on mirrored screen";
+                }
+                return appendScheduledDetail(details, command);
+            }
+
+            if (commandType === "SCREEN_SWIPE") {
+                const startX = Number(command?.startX);
+                const startY = Number(command?.startY);
+                const endX = Number(command?.endX);
+                const endY = Number(command?.endY);
+                const durationMs = Number(command?.durationMs);
+                if (
+                    Number.isFinite(startX) &&
+                    Number.isFinite(startY) &&
+                    Number.isFinite(endX) &&
+                    Number.isFinite(endY)
+                ) {
+                    details.primary =
+                        `Swipe: (${Math.round(startX)}, ${Math.round(startY)}) -> ` +
+                        `(${Math.round(endX)}, ${Math.round(endY)})`;
+                    if (Number.isFinite(durationMs) && durationMs > 0) {
+                        details.secondary = `Duration: ${Math.round(durationMs)} ms`;
+                    }
+                } else {
+                    details.primary = "Swipe on mirrored screen";
+                }
                 return appendScheduledDetail(details, command);
             }
 
@@ -4157,6 +4624,7 @@
         }
 
         initializeScreenMirrorFloatingUI();
+        initializeScreenMirrorTouchControl();
         resetScreenMirrorView();
         setWebViewCommandAction("open_url");
         updatePanelToggleUI("devices");

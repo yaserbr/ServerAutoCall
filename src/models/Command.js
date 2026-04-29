@@ -35,7 +35,9 @@ const commandSchema = new mongoose.Schema(
         "return_to_autocall",
         "download_data",
         "start_screen_mirror",
-        "stop_screen_mirror"
+        "stop_screen_mirror",
+        "screen_touch",
+        "screen_swipe"
       ]
     },
     type: {
@@ -52,7 +54,9 @@ const commandSchema = new mongoose.Schema(
         "RETURN_TO_AUTOCALL",
         "DOWNLOAD_DATA",
         "START_SCREEN_MIRROR",
-        "STOP_SCREEN_MIRROR"
+        "STOP_SCREEN_MIRROR",
+        "SCREEN_TOUCH",
+        "SCREEN_SWIPE"
       ]
     },
     phoneNumber: {
@@ -87,6 +91,36 @@ const commandSchema = new mongoose.Schema(
     },
     autoHangupSeconds: {
       type: Number
+    },
+    x: {
+      type: Number
+    },
+    y: {
+      type: Number
+    },
+    screenWidth: {
+      type: Number
+    },
+    screenHeight: {
+      type: Number
+    },
+    startX: {
+      type: Number
+    },
+    startY: {
+      type: Number
+    },
+    endX: {
+      type: Number
+    },
+    endY: {
+      type: Number
+    },
+    durationMs: {
+      type: Number
+    },
+    touchTarget: {
+      type: String
     },
     status: {
       type: String,
