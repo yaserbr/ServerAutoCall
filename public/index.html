@@ -1244,11 +1244,13 @@
         }
 
         .screen-mirror-floating-panel {
+            --floating-panel-height: min(620px, calc(100vh - 24px));
+            --floating-panel-min-height: 58px;
             position: fixed;
             right: 18px;
             bottom: 18px;
             width: min(360px, calc(100vw - 24px));
-            height: min(620px, calc(100vh - 24px));
+            height: var(--floating-panel-height);
             z-index: 1250;
             border-radius: 18px;
             border: 1px solid rgba(255, 255, 255, 0.3);
@@ -1260,15 +1262,37 @@
             flex-direction: column;
             overflow: hidden;
             user-select: none;
+            opacity: 0;
+            transform: translateY(14px) scale(0.98);
+            visibility: hidden;
+            pointer-events: none;
+            transition:
+                opacity 0.22s ease,
+                transform 0.22s ease,
+                height 0.24s ease,
+                visibility 0s linear 0.22s;
         }
 
         .screen-mirror-floating-panel.panel-hidden {
             display: none !important;
         }
 
+        .screen-mirror-floating-panel.is-visible {
+            opacity: 1;
+            transform: translateY(0) scale(1);
+            visibility: visible;
+            pointer-events: auto;
+            transition:
+                opacity 0.22s ease,
+                transform 0.22s ease,
+                height 0.24s ease,
+                visibility 0s linear 0s;
+        }
+
         .screen-mirror-floating-panel.dragging {
             cursor: grabbing;
             box-shadow: 0 22px 48px rgba(3, 8, 23, 0.6);
+            transition: none;
         }
 
         .screen-mirror-floating-header {
@@ -1330,6 +1354,14 @@
             align-items: center;
             justify-content: center;
             overflow: hidden;
+            opacity: 1;
+            transform: translateY(0);
+            max-height: 1000px;
+            transition:
+                opacity 0.2s ease,
+                transform 0.22s ease,
+                max-height 0.24s ease,
+                padding 0.22s ease;
         }
 
         .screen-mirror-floating-body .screen-mirror-viewer {
@@ -1345,11 +1377,16 @@
         }
 
         .screen-mirror-floating-panel.minimized {
-            height: auto;
+            height: var(--floating-panel-min-height);
         }
 
         .screen-mirror-floating-panel.minimized .screen-mirror-floating-body {
-            display: none;
+            opacity: 0;
+            transform: translateY(-8px);
+            max-height: 0;
+            padding-top: 0;
+            padding-bottom: 0;
+            pointer-events: none;
         }
 
         .screen-mirror-floating-launcher {
@@ -1405,7 +1442,7 @@
                 right: 12px;
                 bottom: 12px;
                 width: min(360px, calc(100vw - 20px));
-                height: min(560px, calc(100vh - 20px));
+                --floating-panel-height: min(560px, calc(100vh - 20px));
             }
 
             .screen-mirror-floating-launcher {
@@ -1494,7 +1531,7 @@
                 bottom: 8px;
                 width: calc(100vw - 16px);
                 max-width: 420px;
-                height: min(72vh, 540px);
+                --floating-panel-height: min(72vh, 540px);
             }
 
             .screen-mirror-floating-header {
@@ -1536,7 +1573,10 @@
                     <div class="header-logo-shell">
                         <img class="header-logo" src="/images/icon.png" alt="AutoCall logo" />
                     </div>
-                    <h1>AutoCall Control Panel</h1>
+                    <div>
+                        <h1>AutoCall Control Panel</h1>
+                        <p id="8v6t4j">Made with ❤️ by Yaser Badr Al-Rashid</p>
+                    </div>
                 </div>
                 <div class="header-right-tools">
                     <a
@@ -1897,9 +1937,6 @@
             </article>
         </section>
     </main>
-    <footer class="site-footer">
-        <p id="8v6t4j" class="site-footer-text">Made with ❤️ by Yaser Badr Al-Rashid</p>
-    </footer>
     <div id="screenMirrorFloatingPanel" class="screen-mirror-floating-panel panel-hidden" role="dialog" aria-label="Floating screen mirror viewer">
         <div id="screenMirrorFloatingHeader" class="screen-mirror-floating-header">
             <p id="screenMirrorFloatingTitle" class="screen-mirror-floating-title">Screen Mirror</p>
@@ -1910,13 +1947,6 @@
                     class="screen-mirror-floating-btn"
                     onclick="toggleScreenMirrorFloatingMinimize()">
                     Minimize
-                </button>
-                <button
-                    id="screenMirrorDockBtn"
-                    type="button"
-                    class="screen-mirror-floating-btn"
-                    onclick="dockScreenMirror()">
-                    Dock
                 </button>
                 <button
                     type="button"
@@ -1947,6 +1977,8 @@
         let isScreenMirrorPinned = false;
         let isScreenMirrorFloatingHidden = true;
         let isScreenMirrorFloatingMinimized = false;
+        const SCREEN_MIRROR_FLOAT_ANIMATION_MS = 220;
+        let screenMirrorFloatingCloseTimerId = null;
         const screenMirrorFloatingDragState = {
             active: false,
             pointerId: null,
@@ -2067,19 +2099,58 @@
             return true;
         }
 
+        function showScreenMirrorFloatingPanel() {
+            const floatingPanel = getScreenMirrorFloatingPanel();
+            if (!floatingPanel) return;
+
+            if (screenMirrorFloatingCloseTimerId) {
+                clearTimeout(screenMirrorFloatingCloseTimerId);
+                screenMirrorFloatingCloseTimerId = null;
+            }
+
+            floatingPanel.classList.remove("panel-hidden");
+            requestAnimationFrame(() => {
+                floatingPanel.classList.add("is-visible");
+            });
+        }
+
+        function hideScreenMirrorFloatingPanel(immediate = false) {
+            const floatingPanel = getScreenMirrorFloatingPanel();
+            if (!floatingPanel) return;
+
+            if (screenMirrorFloatingCloseTimerId) {
+                clearTimeout(screenMirrorFloatingCloseTimerId);
+                screenMirrorFloatingCloseTimerId = null;
+            }
+
+            floatingPanel.classList.remove("is-visible");
+
+            if (immediate) {
+                floatingPanel.classList.add("panel-hidden");
+                return;
+            }
+
+            screenMirrorFloatingCloseTimerId = setTimeout(() => {
+                floatingPanel.classList.add("panel-hidden");
+                screenMirrorFloatingCloseTimerId = null;
+            }, SCREEN_MIRROR_FLOAT_ANIMATION_MS);
+        }
+
         function pinScreenMirror() {
             const floatingSlot = getScreenMirrorViewerFloatingSlot();
-            const floatingPanel = getScreenMirrorFloatingPanel();
             const minimizeButton = document.getElementById("screenMirrorMinimizeBtn");
-            if (!floatingSlot || !floatingPanel) return;
+            if (!floatingSlot) return;
             if (!moveScreenMirrorViewerTo(floatingSlot)) return;
 
             isScreenMirrorPinned = true;
             isScreenMirrorFloatingHidden = false;
             isScreenMirrorFloatingMinimized = false;
 
-            floatingPanel.classList.remove("panel-hidden");
-            floatingPanel.classList.remove("minimized");
+            const floatingPanel = getScreenMirrorFloatingPanel();
+            if (floatingPanel) {
+                floatingPanel.classList.remove("minimized");
+            }
+            showScreenMirrorFloatingPanel();
             if (minimizeButton) {
                 minimizeButton.textContent = "Minimize";
             }
@@ -2104,7 +2175,6 @@
             screenMirrorFloatingDragState.pointerId = null;
 
             if (floatingPanel) {
-                floatingPanel.classList.add("panel-hidden");
                 floatingPanel.classList.remove("minimized");
                 floatingPanel.classList.remove("dragging");
                 floatingPanel.style.left = "";
@@ -2112,6 +2182,7 @@
                 floatingPanel.style.right = "";
                 floatingPanel.style.bottom = "";
             }
+            hideScreenMirrorFloatingPanel(false);
             if (minimizeButton) {
                 minimizeButton.textContent = "Minimize";
             }
@@ -2261,6 +2332,7 @@
             const dockSlot = getScreenMirrorViewerDockSlot();
             if (floatingPanel) {
                 floatingPanel.classList.add("panel-hidden");
+                floatingPanel.classList.remove("is-visible");
                 floatingPanel.classList.remove("minimized");
             }
             if (dockSlot) {
