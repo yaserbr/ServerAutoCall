@@ -1209,6 +1209,17 @@
             box-shadow: 0 10px 24px rgba(15, 23, 42, 0.38);
         }
 
+        .screen-mirror-quick-actions {
+            display: grid;
+            grid-template-columns: repeat(3, minmax(0, 1fr));
+            gap: 8px;
+        }
+
+        .screen-mirror-quick-actions button {
+            width: 100%;
+            min-width: 0;
+        }
+
         .screen-mirror-status-grid {
             display: grid;
             gap: 8px;
@@ -1943,6 +1954,11 @@
                                     onclick="toggleScreenTouchControl()">
                                     Enable Touch Control: OFF
                                 </button>
+                            </div>
+                            <div class="screen-mirror-quick-actions">
+                                <button type="button" onclick="sendScreenQuickAction('back')">Back</button>
+                                <button type="button" onclick="sendScreenQuickAction('home')">Home</button>
+                                <button type="button" onclick="sendScreenQuickAction('recents')">Recents</button>
                             </div>
                             <div class="screen-mirror-status-grid">
                                 <div class="screen-mirror-status-item">Status: <span id="screenMirrorStatusText">idle</span></div>
@@ -3019,6 +3035,26 @@
                 showToast(error.message || defaultErrorMessage, "error");
                 return false;
             }
+        }
+
+        async function sendScreenQuickAction(actionTarget) {
+            const normalizedTarget = String(actionTarget || "").trim().toLowerCase();
+            if (!["back", "home", "recents"].includes(normalizedTarget)) {
+                return;
+            }
+
+            await sendScreenRemoteCommand(
+                {
+                    action: "screen_touch",
+                    type: "SCREEN_TOUCH",
+                    touchTarget: normalizedTarget
+                },
+                {
+                    successMessage: `${normalizedTarget.toUpperCase()} command sent`,
+                    showSuccessToast: true,
+                    refreshCommands: true
+                }
+            );
         }
 
         function handleScreenMirrorPointerDown(event) {
