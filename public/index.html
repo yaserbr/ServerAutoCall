@@ -387,26 +387,12 @@
             }
         }
 
-        .header-logo-shell {
-            display: inline-flex;
-            align-items: center;
-            justify-content: center;
-            padding: 6px;
-            border-radius: 14px;
-            border: 1px solid rgba(255, 255, 255, 0.28);
-            background: linear-gradient(145deg, rgba(255, 255, 255, 0.2), rgba(255, 255, 255, 0.06));
-            box-shadow: 0 10px 24px rgba(4, 8, 26, 0.36);
-            backdrop-filter: blur(8px) saturate(130%);
-            -webkit-backdrop-filter: blur(8px) saturate(130%);
-            flex-shrink: 0;
-        }
-
         .header-logo {
-            width: 56px;
+            width: 68px;
             object-fit: cover;
-            border-radius: 10px;
-            border: 1px solid rgba(255, 255, 255, 0.35);
-            box-shadow: 0 6px 14px rgba(0, 0, 0, 0.24);
+            border-radius: 0;
+            border: 0;
+            box-shadow: none;
             flex-shrink: 0;
         }
 
@@ -1643,9 +1629,7 @@
         <section class="header">
             <div class="header-title-row">
                 <div class="header-title-group">
-                    <div class="header-logo-shell">
-                        <img class="header-logo" src="/images/icon.png" alt="AutoCall logo" />
-                    </div>
+                    <img class="header-logo" src="/images/icon.png" alt="AutoCall logo" />
                     <div>
                         <h1>AutoCall Control Panel</h1>
                         <p id="8v6t4j">Made with ❤️ by Yaser Badr Al-Rashid</p>
