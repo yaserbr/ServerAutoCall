@@ -82,37 +82,13 @@
             position: sticky;
             top: 12px;
             z-index: 40;
-            overflow: hidden;
+            overflow: visible;
             isolation: isolate;
         }
 
-        .header::before {
-            content: "";
-            position: absolute;
-            inset: 0;
-            pointer-events: none;
-            background: radial-gradient(circle at 8% 0%, rgba(255, 255, 255, 0.38), rgba(255, 255, 255, 0) 58%);
-            opacity: 0.7;
-            z-index: 0;
-        }
-
+        .header::before,
         .header::after {
-            content: "";
-            position: absolute;
-            left: -16%;
-            right: -16%;
-            bottom: 0;
-            height: 1px;
-            pointer-events: none;
-            background: linear-gradient(90deg,
-                    rgba(255, 255, 255, 0) 0%,
-                    rgba(255, 255, 255, 0.78) 24%,
-                    rgba(255, 255, 255, 0.32) 58%,
-                    rgba(255, 255, 255, 0) 100%);
-            opacity: 0.34;
-            transform: translateX(-12%);
-            animation: glassThreadShift 5.8s ease-in-out infinite;
-            z-index: 1;
+            content: none;
         }
 
         .header h1 {
@@ -142,9 +118,32 @@
 
         .header-right-tools {
             display: flex;
+            align-items: stretch;
+            gap: 0;
             justify-content: flex-end;
             margin-left: auto;
-            width: min(420px, 100%);
+            width: min(300px, 100%);
+        }
+
+        .header-screen-mirror-btn {
+            width: calc(var(--control-height) * 0.85);
+            height: calc(var(--control-height) * 0.85);
+            border-radius: 12px;
+            padding: 0;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            flex-shrink: 0;
+            color: var(--accent-soft);
+            border: 1px solid rgba(103, 232, 249, 0.46);
+            background: rgba(11, 18, 32, 0.5);
+            box-shadow: 0 8px 20px rgba(5, 10, 25, 0.3);
+        }
+
+        .header-screen-mirror-btn svg {
+            width: 19px;
+            height: 19px;
+            stroke: currentColor;
         }
 
         .download-apk-btn {
@@ -251,14 +250,26 @@
         }
 
         #instructionsOverlay .instructions-modal {
+            position: relative;
             opacity: 0;
             transform: translateY(10px) scale(0.985);
+            border-radius: 20px;
+            border: 1px solid var(--glass-border);
+            border-bottom: 1px solid rgba(255, 255, 255, 0.22);
+            background: var(--glass);
+            box-shadow: var(--glass-shadow);
+            backdrop-filter: var(--glass-blur);
+            -webkit-backdrop-filter: var(--glass-blur);
             transition: opacity 0.22s ease, transform 0.22s cubic-bezier(0.22, 1, 0.36, 1);
         }
 
         #instructionsOverlay.is-visible .instructions-modal {
             opacity: 1;
             transform: translateY(0) scale(1);
+        }
+
+        #instructionsOverlay .instructions-modal::before {
+            content: none;
         }
 
         .instructions-header {
@@ -293,6 +304,13 @@
             padding: 13px;
         }
 
+        #instructionsOverlay .instructions-text,
+        #instructionsOverlay .instructions-image-card {
+            border-color: rgba(191, 214, 255, 0.22);
+            background: linear-gradient(145deg, rgba(8, 16, 30, 0.52), rgba(8, 16, 30, 0.34));
+            box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.1);
+        }
+
         .instructions-section-title {
             margin: 0 0 10px;
             font-size: 1rem;
@@ -316,6 +334,16 @@
         .instructions-close:hover {
             background: rgba(239, 68, 68, 0.3);
             box-shadow: none;
+        }
+
+        #instructionsOverlay .instructions-close {
+            border-color: rgba(248, 113, 113, 0.48);
+            background: rgba(239, 68, 68, 0.22);
+            box-shadow: 0 8px 18px rgba(90, 20, 20, 0.28);
+        }
+
+        #instructionsOverlay .instructions-close:hover {
+            background: rgba(239, 68, 68, 0.34);
         }
 
         .instructions-list {
@@ -439,16 +467,37 @@
         }
 
         .session-info {
-            width: min(208px, 100%);
+            width: min(300px, 100%);
             display: grid;
-            grid-template-columns: 1fr;
+            grid-template-columns: calc(var(--control-height) * 0.85) 1fr;
             grid-template-rows: repeat(2, calc(var(--control-height) * 0.85));
             gap: 7px;
             align-items: stretch;
             margin-left: auto;
         }
 
-        #globalDeviceSelect {
+        #globalDeviceDropdown {
+            width: 100%;
+            height: 100%;
+            margin: 0;
+            grid-column: 2;
+            grid-row: 2;
+            position: relative;
+        }
+
+        #sessionLogoutBtn {
+            width: 100%;
+            height: 100%;
+            margin: 0;
+            grid-column: 1 / -1;
+            grid-row: 1;
+        }
+
+        #sessionLogoutBtn {
+            border-radius: 12px;
+        }
+
+        #sessionInfo #screenMirrorHeaderBtn {
             width: 100%;
             height: 100%;
             margin: 0;
@@ -456,16 +505,253 @@
             grid-row: 2;
         }
 
-        #sessionLogoutBtn {
+        #globalDeviceSelect {
+            position: absolute;
+            width: 0;
+            height: 0;
+            opacity: 0;
+            pointer-events: none;
+            border: 0;
+            padding: 0;
+            margin: 0;
+        }
+
+        .device-dropdown-trigger {
             width: 100%;
             height: 100%;
             margin: 0;
-            grid-column: 1;
-            grid-row: 1;
+            border-radius: 12px;
+            border: 1px solid rgba(186, 230, 253, 0.28);
+            background:
+                linear-gradient(148deg, rgba(10, 20, 38, 0.68), rgba(8, 16, 30, 0.52));
+            box-shadow:
+                0 10px 24px rgba(2, 8, 22, 0.34),
+                inset 0 1px 0 rgba(255, 255, 255, 0.12),
+                0 0 0 1px rgba(34, 211, 238, 0.14);
+            backdrop-filter: blur(14px) saturate(130%);
+            -webkit-backdrop-filter: blur(14px) saturate(130%);
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 8px;
+            padding: 0 10px;
+            color: #e6edf7;
+            transition: border-color 0.22s ease, box-shadow 0.22s ease, transform 0.2s ease;
         }
 
-        #sessionLogoutBtn {
-            border-radius: 12px;
+        .device-dropdown-trigger:hover {
+            transform: translateY(-1px);
+            border-color: rgba(103, 232, 249, 0.62);
+            box-shadow:
+                0 12px 26px rgba(2, 8, 22, 0.4),
+                inset 0 1px 0 rgba(255, 255, 255, 0.14),
+                0 0 0 1px rgba(34, 211, 238, 0.24);
+        }
+
+        .device-dropdown-main {
+            min-width: 0;
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            flex: 1 1 auto;
+        }
+
+        .device-dropdown-icon {
+            width: 19px;
+            height: 19px;
+            color: var(--accent-soft);
+            flex-shrink: 0;
+            opacity: 0.94;
+        }
+
+        .device-dropdown-labels {
+            min-width: 0;
+            display: grid;
+            gap: 1px;
+        }
+
+        .device-dropdown-title {
+            min-width: 0;
+            color: #f3f8ff;
+            font-size: 0.78rem;
+            font-weight: 700;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+
+        .device-dropdown-subtitle {
+            min-width: 0;
+            color: #bfd0ea;
+            font-size: 0.68rem;
+            letter-spacing: 0.12px;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+
+        .device-dropdown-meta {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            flex-shrink: 0;
+            min-width: 0;
+        }
+
+        .device-dropdown-status-pill {
+            display: inline-flex;
+            align-items: center;
+            gap: 4px;
+            padding: 2px 7px;
+            border-radius: 999px;
+            border: 1px solid rgba(255, 255, 255, 0.22);
+            background: rgba(255, 255, 255, 0.08);
+            font-size: 0.62rem;
+            color: #e6edf7;
+            letter-spacing: 0.12px;
+            text-transform: uppercase;
+        }
+
+        .device-dropdown-status-dot {
+            width: 7px;
+            height: 7px;
+            border-radius: 999px;
+            background: #94a3b8;
+            box-shadow: 0 0 0 3px rgba(148, 163, 184, 0.18);
+        }
+
+        .device-dropdown-status-dot.online {
+            background: #22c55e;
+            box-shadow: 0 0 0 3px rgba(34, 197, 94, 0.2);
+        }
+
+        .device-dropdown-status-dot.offline {
+            background: #ef4444;
+            box-shadow: 0 0 0 3px rgba(239, 68, 68, 0.2);
+        }
+
+        .device-dropdown-chevron {
+            width: 14px;
+            height: 14px;
+            color: #bcd0e8;
+            flex-shrink: 0;
+            transition: transform 0.22s cubic-bezier(0.22, 1, 0.36, 1), color 0.2s ease;
+        }
+
+        .device-dropdown.is-open .device-dropdown-chevron {
+            transform: rotate(180deg);
+            color: #e6f7ff;
+        }
+
+        .device-dropdown.is-open .device-dropdown-trigger {
+            border-color: rgba(103, 232, 249, 0.72);
+            box-shadow:
+                0 14px 28px rgba(2, 8, 22, 0.42),
+                inset 0 1px 0 rgba(255, 255, 255, 0.16),
+                0 0 0 1px rgba(34, 211, 238, 0.28);
+        }
+
+        .device-dropdown-menu {
+            position: absolute;
+            left: 0;
+            right: 0;
+            top: calc(100% + 8px);
+            border-radius: 14px;
+            border: 1px solid rgba(191, 214, 255, 0.24);
+            background:
+                linear-gradient(150deg, rgba(8, 18, 34, 0.86), rgba(8, 16, 30, 0.74));
+            box-shadow:
+                0 20px 40px rgba(2, 8, 24, 0.48),
+                inset 0 1px 0 rgba(255, 255, 255, 0.16);
+            backdrop-filter: blur(16px) saturate(136%);
+            -webkit-backdrop-filter: blur(16px) saturate(136%);
+            padding: 8px;
+            display: grid;
+            gap: 6px;
+            max-height: min(330px, 58vh);
+            overflow: auto;
+            z-index: 90;
+            opacity: 0;
+            transform: translateY(-8px) scale(0.96);
+            pointer-events: none;
+            transition: opacity 0.22s cubic-bezier(0.22, 1, 0.36, 1), transform 0.22s cubic-bezier(0.22, 1, 0.36, 1);
+        }
+
+        .device-dropdown-menu.is-open {
+            opacity: 1;
+            transform: translateY(0) scale(1);
+            pointer-events: auto;
+        }
+
+        .device-dropdown-item {
+            width: 100%;
+            text-align: left;
+            padding: 9px 10px;
+            border-radius: 11px;
+            border: 1px solid rgba(255, 255, 255, 0.14);
+            background: rgba(8, 16, 30, 0.34);
+            color: #e6edf7;
+            box-shadow: none;
+            display: grid;
+            gap: 4px;
+            transform: translateY(0);
+            transition: background-color 0.2s ease, border-color 0.2s ease, transform 0.2s ease, box-shadow 0.2s ease;
+            animation: deviceItemStaggerIn 0.24s cubic-bezier(0.22, 1, 0.36, 1) both;
+            animation-delay: calc(var(--stagger-index, 0) * 28ms);
+        }
+
+        .device-dropdown-item:hover {
+            transform: translateY(-1px);
+            border-color: rgba(103, 232, 249, 0.46);
+            background: rgba(11, 24, 42, 0.66);
+            box-shadow: 0 10px 20px rgba(4, 10, 24, 0.35);
+        }
+
+        .device-dropdown-item.selected {
+            border-color: rgba(45, 212, 191, 0.6);
+            background: linear-gradient(135deg, rgba(6, 40, 54, 0.72), rgba(4, 38, 54, 0.5));
+            box-shadow: 0 0 0 1px rgba(34, 211, 238, 0.24);
+        }
+
+        .device-dropdown-item-title {
+            font-size: 0.78rem;
+            font-weight: 700;
+            color: #f3f8ff;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+
+        .device-dropdown-item-sub {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            min-width: 0;
+            color: #bfd0ea;
+            font-size: 0.67rem;
+            letter-spacing: 0.12px;
+        }
+
+        .device-dropdown-empty {
+            padding: 10px;
+            border-radius: 10px;
+            border: 1px solid rgba(255, 255, 255, 0.12);
+            background: rgba(8, 16, 30, 0.4);
+            color: #bfd0ea;
+            font-size: 0.75rem;
+            text-align: center;
+        }
+
+        @keyframes deviceItemStaggerIn {
+            from {
+                opacity: 0;
+                transform: translateY(-6px);
+            }
+
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
         }
 
         .grid {
@@ -787,20 +1073,6 @@
 
             100% {
                 transform: scale(1);
-            }
-        }
-
-        @keyframes glassThreadShift {
-            0% {
-                transform: translateX(-12%);
-            }
-
-            50% {
-                transform: translateX(12%);
-            }
-
-            100% {
-                transform: translateX(-12%);
             }
         }
 
@@ -1265,6 +1537,51 @@
             display: none;
         }
 
+        .screen-mirror-toast-card {
+            position: fixed;
+            top: 92px;
+            right: 16px;
+            width: min(430px, calc(100vw - 20px));
+            max-height: calc(100vh - 104px);
+            overflow: auto;
+            padding: 10px;
+            z-index: 1220;
+            opacity: 0;
+            transform: translateY(-10px) scale(0.985);
+            pointer-events: none;
+            transition: opacity 0.22s ease, transform 0.22s cubic-bezier(0.22, 1, 0.36, 1);
+        }
+
+        .screen-mirror-toast-card.is-visible {
+            opacity: 1;
+            transform: translateY(0) scale(1);
+            pointer-events: auto;
+        }
+
+        .screen-mirror-toast-card .screen-mirror-layout {
+            grid-template-columns: 1fr;
+            gap: 10px;
+        }
+
+        .screen-mirror-toast-card .screen-mirror-control-column {
+            gap: 7px;
+        }
+
+        .screen-mirror-toast-card .screen-mirror-viewer {
+            width: min(260px, 100%);
+            max-height: 46vh;
+            border-radius: 20px;
+        }
+
+        .screen-mirror-toast-card .screen-mirror-viewer img {
+            border-radius: 16px;
+        }
+
+        .header-screen-mirror-btn.active {
+            border-color: rgba(103, 232, 249, 0.85);
+            box-shadow: 0 10px 22px rgba(46, 196, 182, 0.35);
+        }
+
         .screen-mirror-viewer-wrap {
             display: flex;
             align-items: flex-start;
@@ -1574,6 +1891,13 @@
                 gap: 16px;
             }
 
+            .screen-mirror-toast-card {
+                top: 84px;
+                right: 10px;
+                width: calc(100vw - 20px);
+                max-height: calc(100vh - 98px);
+            }
+
             .screen-mirror-viewer-wrap {
                 align-items: center;
             }
@@ -1609,19 +1933,29 @@
             .header-right-tools {
                 width: 100%;
                 justify-content: flex-end;
+                align-items: stretch;
             }
 
             .session-info {
                 width: 100%;
                 min-width: 0;
-                grid-template-columns: 1fr;
-                grid-template-rows: repeat(3, calc(var(--control-height) * 0.85));
+                grid-template-columns: calc(var(--control-height) * 0.85) 1fr;
+                grid-template-rows: repeat(2, calc(var(--control-height) * 0.85));
             }
 
-            #globalDeviceSelect,
             #sessionLogoutBtn {
+                grid-column: 1 / -1;
+                grid-row: 1;
+            }
+
+            #sessionInfo #screenMirrorHeaderBtn {
                 grid-column: 1;
-                grid-row: auto;
+                grid-row: 2;
+            }
+
+            #globalDeviceDropdown {
+                grid-column: 2;
+                grid-row: 2;
             }
 
             .download-apk-btn {
@@ -1725,14 +2059,64 @@
                 <div class="header-title-group">
                     <img class="header-logo" src="/images/icon.png" alt="AutoCall logo" />
                     <div>
-                        <h1>AutoCall Control Panel</h1>
+                        <h1>Control Panel</h1>
                         <p id="8v6t4j">Made with ❤️ by Yaser Badr Al-Rashid</p>
                     </div>
                 </div>
                 <div class="header-right-tools">
                     <div id="sessionInfo" class="session-info panel-hidden">
                         <button id="sessionLogoutBtn" class="danger-button" onclick="logout()">Logout</button>
-                        <select id="globalDeviceSelect"></select>
+                        <button
+                            id="screenMirrorHeaderBtn"
+                            type="button"
+                            class="header-screen-mirror-btn panel-hidden"
+                            aria-label="Open Screen Mirror card"
+                            aria-pressed="false"
+                            title="Screen Mirror"
+                            onclick="openScreenMirrorCard()">
+                            <svg
+                                xmlns="http://www.w3.org/2000/svg"
+                                viewBox="0 0 24 24"
+                                fill="none"
+                                stroke-width="2"
+                                stroke-linecap="round"
+                                stroke-linejoin="round"
+                                aria-hidden="true">
+                                <rect x="7" y="2" width="10" height="20" rx="2" ry="2"></rect>
+                                <path d="M11 18h2"></path>
+                            </svg>
+                        </button>
+                        <div id="globalDeviceDropdown" class="device-dropdown">
+                            <button
+                                id="globalDeviceDropdownTrigger"
+                                type="button"
+                                class="device-dropdown-trigger"
+                                aria-haspopup="listbox"
+                                aria-expanded="false"
+                                aria-controls="globalDeviceDropdownMenu">
+                                <span class="device-dropdown-main">
+                                    <svg class="device-dropdown-icon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                                        <rect x="7" y="2" width="10" height="20" rx="2" ry="2"></rect>
+                                        <path d="M11 18h2"></path>
+                                    </svg>
+                                    <span class="device-dropdown-labels">
+                                        <span id="globalDeviceDropdownTitle" class="device-dropdown-title">No devices found</span>
+                                        <span id="globalDeviceDropdownSubtitle" class="device-dropdown-subtitle">Select a device</span>
+                                    </span>
+                                </span>
+                                <span class="device-dropdown-meta">
+                                    <span id="globalDeviceDropdownStatus" class="device-dropdown-status-pill">
+                                        <span id="globalDeviceDropdownStatusDot" class="device-dropdown-status-dot"></span>
+                                        <span id="globalDeviceDropdownStatusText">offline</span>
+                                    </span>
+                                    <svg class="device-dropdown-chevron" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                                        <path d="m6 9 6 6 6-6"></path>
+                                    </svg>
+                                </span>
+                            </button>
+                            <div id="globalDeviceDropdownMenu" class="device-dropdown-menu panel-hidden" role="listbox" aria-label="Device list"></div>
+                            <select id="globalDeviceSelect"></select>
+                        </div>
                     </div>
                 </div>
             </div>
@@ -1871,7 +2255,7 @@
         <section id="appSection" class="grid panel-hidden">
             <article class="card full-width">
                 <h2>Command Center</h2>
-                <div class="segmented-control" role="tablist" aria-label="Call SMS Auto Answer Open App Download Data Screen Mirror WebView Toggle">
+                <div class="segmented-control" role="tablist" aria-label="Call SMS Auto Answer Open App Download Data WebView Toggle">
                     <button id="callTabBtn" class="segmented-option active" role="tab" aria-selected="true"
                         onclick="setActionTab('call')">Call</button>
                     <button id="smsTabBtn" class="segmented-option" role="tab" aria-selected="false"
@@ -1882,8 +2266,6 @@
                         onclick="setActionTab('open_app')">Open App</button>
                     <button id="downloadDataTabBtn" class="segmented-option" role="tab" aria-selected="false"
                         onclick="setActionTab('download_data')">Download Data</button>
-                    <button id="screenMirrorTabBtn" class="segmented-option" role="tab" aria-selected="false"
-                        onclick="setActionTab('screen_mirror')">Screen Mirror</button>
                     <button id="webViewTabBtn" class="segmented-option" role="tab" aria-selected="false"
                         onclick="setActionTab('webview')">WebView</button>
                 </div>
@@ -1986,40 +2368,42 @@
                         <button onclick="sendDownloadDataCommand()">Send DOWNLOAD_DATA</button>
                     </div>
                 </div>
-                <div id="screenMirrorTabPanel" class="tab-panel">
-                    <div class="screen-mirror-layout">
-                        <div class="screen-mirror-control-column">
-                            <h2>Live Screen Mirror</h2>
-                            <div class="screen-mirror-actions-inline">
-                                <button id="screenMirrorStartStopBtn" type="button" onclick="toggleScreenMirrorStartStop()">Start Screen Mirror</button>
-                            </div>
-                            <div class="screen-mirror-quick-actions">
-                                <button type="button" onclick="sendScreenQuickAction('back')">Back</button>
-                                <button type="button" onclick="sendScreenQuickAction('home')">Home</button>
-                                <button type="button" onclick="sendScreenQuickAction('recents')">Recents</button>
-                            </div>
-                            <div class="screen-mirror-status-grid">
-                                <div class="screen-mirror-status-item">Status: <span id="screenMirrorStatusText">idle</span></div>
-                            </div>
-                            <span id="screenMirrorFrameCountText" class="screen-mirror-frame-count-hidden">0</span>
+            </article>
+
+            <article id="screenMirrorCard" class="card full-width screen-mirror-toast-card panel-hidden">
+                <h2>Screen Mirror</h2>
+                <div class="screen-mirror-layout">
+                    <div class="screen-mirror-control-column">
+                        <h2>Live Screen Mirror</h2>
+                        <div class="screen-mirror-actions-inline">
+                            <button id="screenMirrorStartStopBtn" type="button" onclick="toggleScreenMirrorStartStop()">Start Screen Mirror</button>
                         </div>
-                        <div id="screenMirrorViewerDockSlot" class="screen-mirror-viewer-wrap screen-mirror-viewer-slot">
-                            <div id="screenMirrorViewerNode" class="screen-mirror-viewer">
-                                <button id="screenMirrorPinToggleBtn" class="screen-mirror-pin-overlay-btn" type="button" aria-label="Pin screen" title="Pin screen" onclick="toggleScreenMirrorFloating()">
-                                    <svg
-                                        xmlns="http://www.w3.org/2000/svg"
-                                        viewBox="0 0 24 24"
-                                        fill="none"
-                                        stroke-width="2"
-                                        stroke-linecap="round"
-                                        stroke-linejoin="round"
-                                        aria-hidden="true">
-                                        <path d="M21 9V6a2 2 0 0 0-2-2H4a2 2 0 0 0-2 2v10c0 1.1.9 2 2 2h4" />
-                                        <rect width="10" height="7" x="12" y="13" rx="2" />
-                                    </svg>
-                                </button>
-                                <img id="screenMirrorPreview" alt="Live mirrored screen" />
-                            </div>
+                        <div class="screen-mirror-quick-actions">
+                            <button type="button" onclick="sendScreenQuickAction('back')">Back</button>
+                            <button type="button" onclick="sendScreenQuickAction('home')">Home</button>
+                            <button type="button" onclick="sendScreenQuickAction('recents')">Recents</button>
+                        </div>
+                        <div class="screen-mirror-status-grid">
+                            <div class="screen-mirror-status-item">Status: <span id="screenMirrorStatusText">idle</span></div>
+                        </div>
+                        <span id="screenMirrorFrameCountText" class="screen-mirror-frame-count-hidden">0</span>
+                    </div>
+                    <div id="screenMirrorViewerDockSlot" class="screen-mirror-viewer-wrap screen-mirror-viewer-slot">
+                        <div id="screenMirrorViewerNode" class="screen-mirror-viewer">
+                            <button id="screenMirrorPinToggleBtn" class="screen-mirror-pin-overlay-btn" type="button" aria-label="Pin screen" title="Pin screen" onclick="toggleScreenMirrorFloating()">
+                                <svg
+                                    xmlns="http://www.w3.org/2000/svg"
+                                    viewBox="0 0 24 24"
+                                    fill="none"
+                                    stroke-width="2"
+                                    stroke-linecap="round"
+                                    stroke-linejoin="round"
+                                    aria-hidden="true">
+                                    <path d="M21 9V6a2 2 0 0 0-2-2H4a2 2 0 0 0-2 2v10c0 1.1.9 2 2 2h4" />
+                                    <rect width="10" height="7" x="12" y="13" rx="2" />
+                                </svg>
+                            </button>
+                            <img id="screenMirrorPreview" alt="Live mirrored screen" />
                         </div>
                     </div>
                 </div>
@@ -2159,11 +2543,12 @@
         let isScreenMirrorFloatingHidden = true;
         let isScreenMirrorFloatingMinimized = false;
         let isScreenMirrorRunning = false;
-        let isScreenTouchControlEnabled = true;
+        let isScreenTouchControlEnabled = false;
         let screenMirrorFrameWidth = 0;
         let screenMirrorFrameHeight = 0;
         const INSTRUCTIONS_OVERLAY_ANIMATION_MS = 220;
         let instructionsOverlayCloseTimerId = null;
+        let screenMirrorCardCloseTimerId = null;
         const SCREEN_MIRROR_FLOAT_ANIMATION_MS = 220;
         let screenMirrorFloatingCloseTimerId = null;
         const SCREEN_MIRROR_FLOATING_MIN_WIDTH = 280;
@@ -2227,10 +2612,15 @@
             auto_answer: 2,
             open_app: 3,
             download_data: 4,
-            screen_mirror: 5,
-            webview: 6
+            webview: 5
         };
         const deviceNameByUid = new Map();
+        let globalDeviceDropdownDevices = [];
+        let isGlobalDeviceDropdownOpen = false;
+        let globalDeviceDropdownCloseTimerId = null;
+        let hasBoundGlobalDeviceDropdownEvents = false;
+        let blockNextGlobalDeviceDropdownToggle = false;
+        const GLOBAL_DEVICE_DROPDOWN_ANIMATION_MS = 220;
 
         function normalizeUsername(value) {
             if (typeof value !== "string") return "";
@@ -2246,6 +2636,29 @@
             return document.getElementById("globalDeviceSelect");
         }
 
+        function getGlobalDeviceDropdownElement() {
+            return document.getElementById("globalDeviceDropdown");
+        }
+
+        function getGlobalDeviceDropdownTriggerElement() {
+            return document.getElementById("globalDeviceDropdownTrigger");
+        }
+
+        function getGlobalDeviceDropdownMenuElement() {
+            return document.getElementById("globalDeviceDropdownMenu");
+        }
+
+        function isTextEntryElement(element) {
+            if (!(element instanceof HTMLElement)) return false;
+            const tagName = element.tagName;
+            if (tagName === "TEXTAREA") return true;
+            if (tagName === "INPUT") {
+                const inputType = String(element.getAttribute("type") || "text").toLowerCase();
+                return inputType !== "button" && inputType !== "checkbox" && inputType !== "radio";
+            }
+            return element.isContentEditable;
+        }
+
         function getSelectedGlobalDeviceUid() {
             const select = getGlobalDeviceSelectElement();
             return normalizeDeviceUidInput(select?.value || "");
@@ -2259,15 +2672,225 @@
             return deviceUid;
         }
 
-        function initializeGlobalDeviceSelector() {
+        function getDeviceDropdownRecordByUid(devices, uid) {
+            if (!Array.isArray(devices)) return null;
+            const normalizedTarget = normalizeDeviceUidInput(uid);
+            if (!normalizedTarget) return null;
+            return devices.find((device) => normalizeDeviceUidInput(device?.deviceUid || "") === normalizedTarget) || null;
+        }
+
+        function updateGlobalDeviceDropdownTrigger(devices, selectedUid) {
+            const titleElement = document.getElementById("globalDeviceDropdownTitle");
+            const subtitleElement = document.getElementById("globalDeviceDropdownSubtitle");
+            const statusTextElement = document.getElementById("globalDeviceDropdownStatusText");
+            const statusDotElement = document.getElementById("globalDeviceDropdownStatusDot");
+
+            if (!titleElement || !subtitleElement || !statusTextElement || !statusDotElement) {
+                return;
+            }
+
+            const selectedDevice = getDeviceDropdownRecordByUid(devices, selectedUid);
+            if (!selectedDevice) {
+                titleElement.textContent = "No devices found";
+                subtitleElement.textContent = "Select a device";
+                statusTextElement.textContent = "offline";
+                statusDotElement.classList.remove("online");
+                statusDotElement.classList.add("offline");
+                return;
+            }
+
+            const resolvedName = String(selectedDevice.deviceName || selectedDevice.deviceUid || "Unknown device").trim();
+            const resolvedUid = String(selectedDevice.deviceUid || "").trim();
+            const isOnline = Boolean(selectedDevice.online);
+
+            titleElement.textContent = resolvedName;
+            subtitleElement.textContent = resolvedUid || "No UID";
+            statusTextElement.textContent = isOnline ? "online" : "offline";
+            statusDotElement.classList.toggle("online", isOnline);
+            statusDotElement.classList.toggle("offline", !isOnline);
+        }
+
+        function renderGlobalDeviceDropdownMenu(devices, selectedUid) {
+            const menu = getGlobalDeviceDropdownMenuElement();
+            if (!menu) return;
+
+            if (!Array.isArray(devices) || devices.length === 0) {
+                menu.innerHTML = `<div class="device-dropdown-empty">No devices found</div>`;
+                return;
+            }
+
+            const normalizedSelectedUid = normalizeDeviceUidInput(selectedUid);
+            const itemsHtml = devices.map((device, index) => {
+                const rawUid = String(device?.deviceUid || "").trim();
+                const normalizedUid = normalizeDeviceUidInput(rawUid);
+                const isSelected = normalizedUid && normalizedUid === normalizedSelectedUid;
+                const isOnline = Boolean(device?.online);
+                const deviceName = escapeHtml(String(device?.deviceName || device?.deviceUid || "Unknown device"));
+                const deviceUid = escapeHtml(rawUid);
+                const statusText = isOnline ? "online" : "offline";
+
+                return `
+                    <button
+                        type="button"
+                        class="device-dropdown-item${isSelected ? " selected" : ""}"
+                        role="option"
+                        aria-selected="${isSelected ? "true" : "false"}"
+                        data-device-uid="${deviceUid}"
+                        style="--stagger-index:${index};">
+                        <span class="device-dropdown-item-title">${deviceName}</span>
+                        <span class="device-dropdown-item-sub">
+                            <span>${deviceUid || "-"}</span>
+                            <span class="device-dropdown-status-pill">
+                                <span class="device-dropdown-status-dot ${isOnline ? "online" : "offline"}"></span>
+                                <span>${statusText}</span>
+                            </span>
+                        </span>
+                    </button>
+                `;
+            }).join("");
+
+            menu.innerHTML = itemsHtml;
+        }
+
+        function syncGlobalDeviceDropdown(devices, selectedUid) {
+            updateGlobalDeviceDropdownTrigger(devices, selectedUid);
+            renderGlobalDeviceDropdownMenu(devices, selectedUid);
+        }
+
+        function closeGlobalDeviceDropdown(immediate = false) {
+            const wrapper = getGlobalDeviceDropdownElement();
+            const trigger = getGlobalDeviceDropdownTriggerElement();
+            const menu = getGlobalDeviceDropdownMenuElement();
+            if (!wrapper || !trigger || !menu) return;
+
+            if (globalDeviceDropdownCloseTimerId) {
+                clearTimeout(globalDeviceDropdownCloseTimerId);
+                globalDeviceDropdownCloseTimerId = null;
+            }
+
+            isGlobalDeviceDropdownOpen = false;
+            wrapper.classList.remove("is-open");
+            trigger.setAttribute("aria-expanded", "false");
+            menu.classList.remove("is-open");
+
+            if (immediate) {
+                menu.classList.add("panel-hidden");
+                return;
+            }
+
+            globalDeviceDropdownCloseTimerId = setTimeout(() => {
+                menu.classList.add("panel-hidden");
+                globalDeviceDropdownCloseTimerId = null;
+            }, GLOBAL_DEVICE_DROPDOWN_ANIMATION_MS);
+        }
+
+        function openGlobalDeviceDropdown() {
+            const wrapper = getGlobalDeviceDropdownElement();
+            const trigger = getGlobalDeviceDropdownTriggerElement();
+            const menu = getGlobalDeviceDropdownMenuElement();
+            if (!wrapper || !trigger || !menu) return;
+            if (isGlobalDeviceDropdownOpen) return;
+
+            if (globalDeviceDropdownCloseTimerId) {
+                clearTimeout(globalDeviceDropdownCloseTimerId);
+                globalDeviceDropdownCloseTimerId = null;
+            }
+
+            isGlobalDeviceDropdownOpen = true;
+            menu.classList.remove("panel-hidden");
+            const staggerItems = menu.querySelectorAll(".device-dropdown-item");
+            staggerItems.forEach((item) => {
+                item.style.animation = "none";
+            });
+            void menu.offsetWidth;
+            staggerItems.forEach((item) => {
+                item.style.animation = "";
+            });
+            requestAnimationFrame(() => {
+                wrapper.classList.add("is-open");
+                trigger.setAttribute("aria-expanded", "true");
+                menu.classList.add("is-open");
+            });
+        }
+
+        function toggleGlobalDeviceDropdown(event) {
+            if (event) {
+                event.preventDefault();
+                event.stopPropagation();
+            }
+
+            if (blockNextGlobalDeviceDropdownToggle) {
+                blockNextGlobalDeviceDropdownToggle = false;
+                return;
+            }
+
+            if (isGlobalDeviceDropdownOpen) {
+                closeGlobalDeviceDropdown(false);
+                return;
+            }
+            openGlobalDeviceDropdown();
+        }
+
+        function handleGlobalDeviceDropdownOptionClick(event) {
+            const target = event.target;
+            if (!(target instanceof Element)) return;
+            const optionButton = target.closest(".device-dropdown-item");
+            if (!optionButton) return;
+            const selectedUid = String(optionButton.getAttribute("data-device-uid") || "").trim();
+            if (!selectedUid) return;
+
             const select = getGlobalDeviceSelectElement();
             if (!select) return;
+            if (select.value !== selectedUid) {
+                select.value = selectedUid;
+            }
+
+            closeGlobalDeviceDropdown(false);
+            select.dispatchEvent(new Event("change", { bubbles: true }));
+        }
+
+        function handleGlobalDeviceDropdownOutsidePointerDown(event) {
+            if (!isGlobalDeviceDropdownOpen) return;
+            const wrapper = getGlobalDeviceDropdownElement();
+            if (!wrapper) return;
+            const target = event.target;
+            if (target instanceof Element && wrapper.contains(target)) {
+                return;
+            }
+            closeGlobalDeviceDropdown(false);
+        }
+
+        function handleGlobalDeviceDropdownEscape(event) {
+            if (!isGlobalDeviceDropdownOpen) return;
+            if (event.key !== "Escape") return;
+            closeGlobalDeviceDropdown(false);
+        }
+
+        function initializeGlobalDeviceSelector() {
+            const select = getGlobalDeviceSelectElement();
+            const dropdownTrigger = getGlobalDeviceDropdownTriggerElement();
+            const dropdownMenu = getGlobalDeviceDropdownMenuElement();
+            if (!select || !dropdownTrigger || !dropdownMenu) return;
+
             select.addEventListener("change", (event) => {
                 const selectedUid = normalizeDeviceUidInput(event?.target?.value || "");
+                syncGlobalDeviceDropdown(globalDeviceDropdownDevices, selectedUid);
                 updateScreenMirrorFloatingTitle();
                 resetScreenMirrorView();
                 joinScreenMirrorDashboardRoom(selectedUid);
             });
+
+            dropdownTrigger.addEventListener("pointerdown", () => {
+                blockNextGlobalDeviceDropdownToggle = isTextEntryElement(document.activeElement);
+            });
+            dropdownTrigger.addEventListener("click", toggleGlobalDeviceDropdown);
+            dropdownMenu.addEventListener("click", handleGlobalDeviceDropdownOptionClick);
+
+            if (!hasBoundGlobalDeviceDropdownEvents) {
+                document.addEventListener("pointerdown", handleGlobalDeviceDropdownOutsidePointerDown);
+                document.addEventListener("keydown", handleGlobalDeviceDropdownEscape);
+                hasBoundGlobalDeviceDropdownEvents = true;
+            }
         }
 
         function getScreenMirrorViewerNode() {
@@ -2300,6 +2923,80 @@
 
         function getScreenMirrorStartStopButton() {
             return document.getElementById("screenMirrorStartStopBtn");
+        }
+
+        function updateScreenMirrorCardToggleButtonState(isVisible) {
+            const headerButton = document.getElementById("screenMirrorHeaderBtn");
+            if (!headerButton) return;
+            headerButton.setAttribute("aria-pressed", String(Boolean(isVisible)));
+            headerButton.classList.toggle("active", Boolean(isVisible));
+        }
+
+        function hideScreenMirrorCard(immediate = false) {
+            const screenMirrorCard = document.getElementById("screenMirrorCard");
+            if (!screenMirrorCard) return;
+
+            if (screenMirrorCardCloseTimerId) {
+                clearTimeout(screenMirrorCardCloseTimerId);
+                screenMirrorCardCloseTimerId = null;
+            }
+
+            screenMirrorCard.classList.remove("is-visible");
+            updateScreenMirrorCardToggleButtonState(false);
+
+            if (immediate) {
+                screenMirrorCard.classList.add("panel-hidden");
+                return;
+            }
+
+            screenMirrorCardCloseTimerId = setTimeout(() => {
+                screenMirrorCard.classList.add("panel-hidden");
+                screenMirrorCardCloseTimerId = null;
+            }, 220);
+        }
+
+        function openScreenMirrorCard() {
+            const screenMirrorCard = document.getElementById("screenMirrorCard");
+            if (!screenMirrorCard) return;
+
+            const isHidden = screenMirrorCard.classList.contains("panel-hidden");
+            if (!isHidden) {
+                hideScreenMirrorCard(false);
+                return;
+            }
+
+            if (screenMirrorCardCloseTimerId) {
+                clearTimeout(screenMirrorCardCloseTimerId);
+                screenMirrorCardCloseTimerId = null;
+            }
+
+            screenMirrorCard.classList.remove("panel-hidden");
+            requestAnimationFrame(() => {
+                screenMirrorCard.classList.add("is-visible");
+            });
+            updateScreenMirrorCardToggleButtonState(true);
+        }
+
+        function handleScreenMirrorCardOutsidePointerDown(event) {
+            const screenMirrorCard = document.getElementById("screenMirrorCard");
+            if (!screenMirrorCard || screenMirrorCard.classList.contains("panel-hidden")) {
+                return;
+            }
+
+            const target = event.target;
+            if (!(target instanceof Element)) {
+                return;
+            }
+
+            const headerButton = document.getElementById("screenMirrorHeaderBtn");
+            if (screenMirrorCard.contains(target)) {
+                return;
+            }
+            if (headerButton && headerButton.contains(target)) {
+                return;
+            }
+
+            hideScreenMirrorCard(false);
         }
 
         function getSelectedScreenMirrorDeviceLabel() {
@@ -2349,6 +3046,7 @@
 
         function setScreenMirrorRunningState(isRunning) {
             isScreenMirrorRunning = Boolean(isRunning);
+            setScreenTouchControlEnabled(isScreenMirrorRunning);
             updateScreenMirrorStartStopButtonState();
         }
 
@@ -3163,6 +3861,12 @@
                 refreshCommands = false,
                 defaultErrorMessage = "Failed to send touch control command"
             } = options;
+
+            if (!isScreenMirrorRunning) {
+                showToast("Start Screen Mirror first", "error");
+                return false;
+            }
+
             const deviceUid = getSelectedScreenMirrorDeviceUid();
             if (!deviceUid) {
                 showToast("Please select a device first", "error");
@@ -3350,7 +4054,7 @@
                 }
             });
 
-            setScreenTouchControlEnabled(true);
+            setScreenTouchControlEnabled(false);
         }
 
         function syncOverlayScrollLock() {
@@ -3453,6 +4157,7 @@
             const authSection = document.getElementById("authSection");
             const appSection = document.getElementById("appSection");
             const sessionInfo = document.getElementById("sessionInfo");
+            const screenMirrorHeaderBtn = document.getElementById("screenMirrorHeaderBtn");
             if (authSection) {
                 authSection.classList.add("panel-hidden");
             }
@@ -3462,6 +4167,10 @@
             if (sessionInfo) {
                 sessionInfo.classList.remove("panel-hidden");
             }
+            if (screenMirrorHeaderBtn) {
+                screenMirrorHeaderBtn.classList.remove("panel-hidden");
+            }
+            hideScreenMirrorCard(true);
             const socket = ensureScreenMirrorSocket();
             if (socket && !socket.connected) {
                 socket.connect();
@@ -3482,6 +4191,7 @@
             const authSection = document.getElementById("authSection");
             const appSection = document.getElementById("appSection");
             const sessionInfo = document.getElementById("sessionInfo");
+            const screenMirrorHeaderBtn = document.getElementById("screenMirrorHeaderBtn");
             if (authSection) {
                 authSection.classList.remove("panel-hidden");
             }
@@ -3491,6 +4201,10 @@
             if (sessionInfo) {
                 sessionInfo.classList.add("panel-hidden");
             }
+            if (screenMirrorHeaderBtn) {
+                screenMirrorHeaderBtn.classList.add("panel-hidden");
+            }
+            hideScreenMirrorCard(true);
 
             renderDevicesTable([]);
             renderCommandsTable([]);
@@ -3694,8 +4408,11 @@
             if (event.key === "Escape") {
                 closeInstructions();
                 closeClaimDeviceModal();
+                hideScreenMirrorCard(false);
             }
         });
+
+        document.addEventListener("pointerdown", handleScreenMirrorCardOutsidePointerDown);
 
         function parseDateValue(dateText) {
             if (!dateText) return 0;
@@ -4127,7 +4844,6 @@
             const isAutoAnswer = activeTab === "auto_answer";
             const isOpenApp = activeTab === "open_app";
             const isDownloadData = activeTab === "download_data";
-            const isScreenMirror = activeTab === "screen_mirror";
             const isWebView = activeTab === "webview";
 
             const callPanel = document.getElementById("callTabPanel");
@@ -4135,9 +4851,8 @@
             const autoAnswerPanel = document.getElementById("autoAnswerTabPanel");
             const openAppPanel = document.getElementById("openAppTabPanel");
             const downloadDataPanel = document.getElementById("downloadDataTabPanel");
-            const screenMirrorPanel = document.getElementById("screenMirrorTabPanel");
             const webViewPanel = document.getElementById("webViewTabPanel");
-            const panels = [callPanel, smsPanel, autoAnswerPanel, openAppPanel, downloadDataPanel, screenMirrorPanel, webViewPanel];
+            const panels = [callPanel, smsPanel, autoAnswerPanel, openAppPanel, downloadDataPanel, webViewPanel];
             panels.forEach((panel) => panel.classList.remove("tab-enter-left", "tab-enter-right"));
 
             callPanel.classList.toggle("active", isCall);
@@ -4145,7 +4860,6 @@
             autoAnswerPanel.classList.toggle("active", isAutoAnswer);
             openAppPanel.classList.toggle("active", isOpenApp);
             downloadDataPanel.classList.toggle("active", isDownloadData);
-            screenMirrorPanel.classList.toggle("active", isScreenMirror);
             webViewPanel.classList.toggle("active", isWebView);
 
             if (targetTab !== previousTab) {
@@ -4159,9 +4873,7 @@
                                 ? openAppPanel
                                 : isDownloadData
                                     ? downloadDataPanel
-                                    : isScreenMirror
-                                        ? screenMirrorPanel
-                                        : webViewPanel;
+                                    : webViewPanel;
                 const movingForward = tabOrder[targetTab] > tabOrder[previousTab];
                 const animationClass = movingForward ? "tab-enter-right" : "tab-enter-left";
                 void targetPanel.offsetWidth;
@@ -4173,7 +4885,6 @@
             document.getElementById("autoAnswerTabBtn").classList.toggle("active", isAutoAnswer);
             document.getElementById("openAppTabBtn").classList.toggle("active", isOpenApp);
             document.getElementById("downloadDataTabBtn").classList.toggle("active", isDownloadData);
-            document.getElementById("screenMirrorTabBtn").classList.toggle("active", isScreenMirror);
             document.getElementById("webViewTabBtn").classList.toggle("active", isWebView);
 
             document.getElementById("callTabBtn").setAttribute("aria-selected", String(isCall));
@@ -4181,7 +4892,6 @@
             document.getElementById("autoAnswerTabBtn").setAttribute("aria-selected", String(isAutoAnswer));
             document.getElementById("openAppTabBtn").setAttribute("aria-selected", String(isOpenApp));
             document.getElementById("downloadDataTabBtn").setAttribute("aria-selected", String(isDownloadData));
-            document.getElementById("screenMirrorTabBtn").setAttribute("aria-selected", String(isScreenMirror));
             document.getElementById("webViewTabBtn").setAttribute("aria-selected", String(isWebView));
         }
 
@@ -4400,31 +5110,38 @@
 
         function populateDeviceSelect(select, devices, previousValue) {
             if (!select) return;
+            const normalizedDevices = Array.isArray(devices) ? devices : [];
+            globalDeviceDropdownDevices = normalizedDevices;
             select.innerHTML = "";
 
-            if (!Array.isArray(devices) || devices.length === 0) {
+            if (normalizedDevices.length === 0) {
                 const emptyOption = document.createElement("option");
                 emptyOption.value = "";
                 emptyOption.textContent = "No devices found";
                 select.appendChild(emptyOption);
+                select.value = "";
+                syncGlobalDeviceDropdown([], "");
+                closeGlobalDeviceDropdown(true);
                 if (select.id === "globalDeviceSelect") {
                     updateScreenMirrorFloatingTitle();
                 }
                 return;
             }
 
-            devices.forEach((device) => {
+            normalizedDevices.forEach((device) => {
                 const option = document.createElement("option");
                 option.value = device.deviceUid;
-                option.textContent =
-                    `${device.deviceName || device.deviceUid} (${device.deviceUid}) ${device.online ? "🟢" : "🔴"}`;
+                option.textContent = `${device.deviceName || device.deviceUid} (${device.deviceUid})`;
                 select.appendChild(option);
             });
 
-            const hasPrevious = devices.some((device) => device.deviceUid === previousValue);
+            const hasPrevious = normalizedDevices.some((device) => device.deviceUid === previousValue);
             if (hasPrevious) {
                 select.value = previousValue;
+            } else {
+                select.value = String(normalizedDevices[0]?.deviceUid || "");
             }
+            syncGlobalDeviceDropdown(normalizedDevices, select.value);
             if (select.id === "globalDeviceSelect") {
                 updateScreenMirrorFloatingTitle();
             }

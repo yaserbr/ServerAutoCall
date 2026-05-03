@@ -99,6 +99,7 @@ const SCREEN_MIRROR_MAX_FRAME_BYTES = Math.floor(1.5 * 1024 * 1024);
 const REMOTE_TOUCH_MAX_COORDINATE = 20000;
 const REMOTE_TOUCH_MAX_DURATION_MS = 10000;
 const REMOTE_TOUCH_MIN_DURATION_MS = 50;
+const DEVICE_ONLINE_WINDOW_MS = 60 * 1000;
 const OPEN_APP_PACKAGE_REGEX = /^[a-zA-Z0-9_]+(\.[a-zA-Z0-9_]+)+$/;
 const DEVICE_AUTH_ALLOW_LEGACY_FALLBACK =
   String(process.env.DEVICE_AUTH_ALLOW_LEGACY_FALLBACK || "").trim().toLowerCase() === "true";
@@ -543,6 +544,13 @@ function toPlainObject(documentOrObject) {
   return documentOrObject;
 }
 
+function isDeviceOnlineByLastSeen(lastSeenValue) {
+  if (!lastSeenValue) return false;
+  const parsedDate = new Date(lastSeenValue);
+  if (Number.isNaN(parsedDate.getTime())) return false;
+  return Date.now() - parsedDate.getTime() <= DEVICE_ONLINE_WINDOW_MS;
+}
+
 function mapDeviceForResponse(device) {
   const source = toPlainObject(device);
 
@@ -550,7 +558,7 @@ function mapDeviceForResponse(device) {
     deviceUid: source.deviceUid,
     deviceName: ensureDeviceName(source),
     platform: source.platform ?? null,
-    online: Boolean(source.online),
+    online: isDeviceOnlineByLastSeen(source.lastSeen),
     lastSeen: formatUtcForRiyadhDisplay(source.lastSeen)
   };
 }
