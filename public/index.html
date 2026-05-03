@@ -685,19 +685,97 @@
 
         .device-dropdown-item {
             width: 100%;
-            text-align: left;
-            padding: 9px 10px;
+            padding: 8px;
             border-radius: 11px;
             border: 1px solid rgba(255, 255, 255, 0.14);
             background: rgba(8, 16, 30, 0.34);
             color: #e6edf7;
             box-shadow: none;
             display: grid;
-            gap: 4px;
+            grid-template-columns: minmax(0, 1fr) auto;
+            align-items: center;
+            gap: 8px;
             transform: translateY(0);
             transition: background-color 0.2s ease, border-color 0.2s ease, transform 0.2s ease, box-shadow 0.2s ease;
             animation: deviceItemStaggerIn 0.24s cubic-bezier(0.22, 1, 0.36, 1) both;
             animation-delay: calc(var(--stagger-index, 0) * 28ms);
+        }
+
+        .device-dropdown-item-select {
+            width: 100%;
+            min-width: 0;
+            border: 0;
+            padding: 0;
+            margin: 0;
+            border-radius: 0;
+            background: transparent;
+            box-shadow: none;
+            color: inherit;
+            text-align: left;
+            display: grid;
+            gap: 4px;
+            justify-items: start;
+        }
+
+        .device-dropdown-item-select:hover,
+        .device-dropdown-item-select:active {
+            transform: none;
+            box-shadow: none;
+            background: transparent;
+            opacity: 1;
+        }
+
+        .device-dropdown-item-actions {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            flex-shrink: 0;
+        }
+
+        .device-dropdown-inline-action {
+            width: 28px;
+            min-width: 28px;
+            height: 28px;
+            min-height: 28px;
+            padding: 0;
+            border-radius: 8px;
+            border: 1px solid rgba(103, 232, 249, 0.38);
+            background: rgba(8, 30, 48, 0.62);
+            color: #dff5ff;
+            box-shadow: none;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            transition: background-color 0.2s ease, border-color 0.2s ease, transform 0.15s ease;
+        }
+
+        .device-dropdown-inline-action svg {
+            width: 14px;
+            height: 14px;
+            stroke: currentColor;
+            fill: none;
+            stroke-width: 2;
+            stroke-linecap: round;
+            stroke-linejoin: round;
+            pointer-events: none;
+        }
+
+        .device-dropdown-inline-action:hover {
+            transform: translateY(-1px);
+            background: rgba(9, 44, 66, 0.78);
+            border-color: rgba(103, 232, 249, 0.62);
+            box-shadow: none;
+        }
+
+        .device-dropdown-inline-action.danger {
+            border-color: rgba(248, 113, 113, 0.5);
+            background: rgba(92, 22, 22, 0.54);
+            color: #ffe7e7;
+        }
+
+        .device-dropdown-inline-action.danger:hover {
+            background: rgba(120, 26, 26, 0.62);
+            border-color: rgba(252, 165, 165, 0.66);
         }
 
         .device-dropdown-item:hover {
@@ -740,6 +818,23 @@
             color: #bfd0ea;
             font-size: 0.75rem;
             text-align: center;
+        }
+
+        .device-dropdown-footer-action {
+            width: 100%;
+            min-height: 34px;
+            border-radius: 10px;
+            border: 1px solid rgba(103, 232, 249, 0.42);
+            background: linear-gradient(135deg, rgba(46, 196, 182, 0.9), rgba(103, 232, 249, 0.8));
+            color: #03262d;
+            font-size: 0.76rem;
+            font-weight: 800;
+            letter-spacing: 0.02em;
+            box-shadow: 0 10px 22px rgba(12, 40, 52, 0.38);
+        }
+
+        .device-dropdown-footer-action:hover {
+            box-shadow: 0 12px 24px rgba(12, 40, 52, 0.48);
         }
 
         @keyframes deviceItemStaggerIn {
@@ -845,6 +940,75 @@
             gap: 8px;
             flex-wrap: wrap;
             justify-content: flex-end;
+        }
+
+        #deviceActionOverlay {
+            opacity: 0;
+            pointer-events: none;
+            transition: opacity 0.22s ease;
+        }
+
+        #deviceActionOverlay.is-visible {
+            opacity: 1;
+            pointer-events: auto;
+        }
+
+        #deviceActionOverlay .instructions-modal {
+            position: relative;
+            opacity: 0;
+            transform: translateY(10px) scale(0.985);
+            border-radius: 20px;
+            border: 1px solid var(--glass-border);
+            border-bottom: 1px solid rgba(255, 255, 255, 0.22);
+            background: var(--glass);
+            box-shadow: var(--glass-shadow);
+            backdrop-filter: var(--glass-blur);
+            -webkit-backdrop-filter: var(--glass-blur);
+            transition: opacity 0.22s ease, transform 0.22s cubic-bezier(0.22, 1, 0.36, 1);
+        }
+
+        #deviceActionOverlay.is-visible .instructions-modal {
+            opacity: 1;
+            transform: translateY(0) scale(1);
+        }
+
+        #deviceActionOverlay .instructions-modal::before {
+            content: none;
+        }
+
+        .device-action-modal {
+            width: min(460px, 100%);
+            padding: 16px;
+        }
+
+        .device-action-body {
+            display: grid;
+            gap: 12px;
+        }
+
+        .device-action-message {
+            margin: 0;
+            color: #d8e6fb;
+            font-size: 0.92rem;
+            line-height: 1.55;
+        }
+
+        .device-action-target {
+            color: #f8fbff;
+            font-weight: 700;
+        }
+
+        .device-action-input-wrap {
+            display: grid;
+            gap: 6px;
+        }
+
+        .device-action-actions {
+            display: flex;
+            align-items: center;
+            justify-content: flex-end;
+            gap: 8px;
+            flex-wrap: wrap;
         }
 
         .subtle-button {
@@ -2039,6 +2203,15 @@
                 bottom: 8px;
             }
 
+            .device-dropdown-item {
+                grid-template-columns: 1fr;
+                gap: 7px;
+            }
+
+            .device-dropdown-item-actions {
+                justify-content: flex-end;
+            }
+
         }
 
         @media (prefers-reduced-motion: reduce) {
@@ -2233,6 +2406,35 @@
             </div>
         </div>
 
+        <div
+            id="deviceActionOverlay"
+            class="instructions-overlay panel-hidden"
+            onclick="handleDeviceActionOverlayClick(event)">
+            <div class="instructions-modal device-action-modal" role="dialog" aria-modal="true" aria-labelledby="deviceActionTitle">
+                <div class="instructions-header">
+                    <h3 id="deviceActionTitle" class="instructions-title">Device Action</h3>
+                    <button
+                        type="button"
+                        class="instructions-close"
+                        aria-label="Close device action dialog"
+                        onclick="cancelDeviceActionDialog()">
+                        X
+                    </button>
+                </div>
+                <div class="device-action-body">
+                    <p id="deviceActionMessage" class="device-action-message"></p>
+                    <div id="deviceActionInputWrap" class="device-action-input-wrap panel-hidden">
+                        <label class="field-label" for="deviceActionNameInput">Device Name</label>
+                        <input id="deviceActionNameInput" type="text" maxlength="60" placeholder="Device name" />
+                    </div>
+                    <div class="device-action-actions">
+                        <button type="button" class="subtle-button" onclick="cancelDeviceActionDialog()">Cancel</button>
+                        <button id="deviceActionConfirmBtn" type="button" onclick="confirmDeviceActionDialog()">Confirm</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+
         <section id="authSection" class="grid">
             <article class="card full-width">
                 <h2>Login</h2>
@@ -2411,72 +2613,22 @@
 
             <article id="managementPanel" class="card full-width">
                 <h2>Management Panel</h2>
-                <div class="segmented-control management-tabs" role="tablist" aria-label="Management section tabs">
-                    <button
-                        id="managementDevicesTabBtn"
-                        class="segmented-option active"
-                        role="tab"
-                        aria-selected="true"
-                        onclick="setManagementTab('devices')">
-                        Devices
-                    </button>
-                    <button
-                        id="managementCommandsTabBtn"
-                        class="segmented-option"
-                        role="tab"
-                        aria-selected="false"
-                        onclick="setManagementTab('commands')">
-                        Commands
-                    </button>
-                </div>
-
-                <div id="managementDevicesTabPanel" class="management-tab-panel active">
-                    <div id="devicesPanel">
-                        <div class="panel-header">
-                            <h2>Devices</h2>
-                            <button id="toggleDevicesBtn" class="toggle-button panel-toggle-btn inactive"
-                                onclick="togglePanel('devices')">
-                                <span id="toggleDevicesIcon" class="toggle-icon" aria-hidden="true"></span>
-                                <span id="toggleDevicesLabel">Show</span>
-                            </button>
-                        </div>
-                        <div id="devicesPanelContent" class="panel-collapsible">
-                            <div class="actions">
-                                <button onclick="loadDevices()">Refresh</button>
-                                <button
-                                    id="showClaimDeviceBtn"
-                                    class="add-device-btn"
-                                    type="button"
-                                    aria-label="Add device"
-                                    aria-expanded="false"
-                                    onclick="openClaimDeviceModal()">
-                                    +
-                                </button>
-                            </div>
-                            <div id="devicesTable" class="table-wrapper"></div>
-                            <pre id="devices" class="json-fallback"></pre>
-                        </div>
+                <div id="commandsPanel">
+                    <div class="panel-header">
+                        <h2>Commands</h2>
+                        <button id="toggleCommandsBtn" class="toggle-button panel-toggle-btn inactive"
+                            onclick="togglePanel('commands')">
+                            <span id="toggleCommandsIcon" class="toggle-icon" aria-hidden="true"></span>
+                            <span id="toggleCommandsLabel">Show</span>
+                        </button>
                     </div>
-                </div>
-
-                <div id="managementCommandsTabPanel" class="management-tab-panel">
-                    <div id="commandsPanel">
-                        <div class="panel-header">
-                            <h2>Commands</h2>
-                            <button id="toggleCommandsBtn" class="toggle-button panel-toggle-btn inactive"
-                                onclick="togglePanel('commands')">
-                                <span id="toggleCommandsIcon" class="toggle-icon" aria-hidden="true"></span>
-                                <span id="toggleCommandsLabel">Show</span>
-                            </button>
+                    <div id="commandsPanelContent" class="panel-collapsible">
+                        <div class="actions">
+                            <button onclick="loadCommands()">Refresh</button>
+                            <button onclick="clearCommands()">Clear Commands</button>
                         </div>
-                        <div id="commandsPanelContent" class="panel-collapsible">
-                            <div class="actions">
-                                <button onclick="loadCommands()">Refresh</button>
-                                <button onclick="clearCommands()">Clear Commands</button>
-                            </div>
-                            <div id="commandsTable" class="table-wrapper"></div>
-                            <pre id="commands" class="json-fallback"></pre>
-                        </div>
+                        <div id="commandsTable" class="table-wrapper"></div>
+                        <pre id="commands" class="json-fallback"></pre>
                     </div>
                 </div>
             </article>
@@ -2548,6 +2700,12 @@
         let screenMirrorFrameHeight = 0;
         const INSTRUCTIONS_OVERLAY_ANIMATION_MS = 220;
         let instructionsOverlayCloseTimerId = null;
+        const DEVICE_ACTION_OVERLAY_ANIMATION_MS = 220;
+        let deviceActionOverlayCloseTimerId = null;
+        const deviceActionDialogState = {
+            mode: "",
+            resolver: null
+        };
         let screenMirrorCardCloseTimerId = null;
         const SCREEN_MIRROR_FLOAT_ANIMATION_MS = 220;
         let screenMirrorFloatingCloseTimerId = null;
@@ -2579,10 +2737,8 @@
             startMappedPoint: null
         };
         const panelVisibility = {
-            devices: false,
             commands: false
         };
-        let activeManagementTab = "devices";
         const prioritizeActiveStatuses = true;
         const statusPriority = {
             executing: 0,
@@ -2715,7 +2871,18 @@
             if (!menu) return;
 
             if (!Array.isArray(devices) || devices.length === 0) {
-                menu.innerHTML = `<div class="device-dropdown-empty">No devices found</div>`;
+                menu.innerHTML = `
+                    <div class="device-dropdown-empty">No devices found</div>
+                    <button
+                        id="globalDeviceDropdownAddBtn"
+                        type="button"
+                        class="device-dropdown-footer-action"
+                        data-dropdown-action="add-device"
+                        data-claim-device-trigger="true"
+                        aria-expanded="false">
+                        + Add Device
+                    </button>
+                `;
                 return;
             }
 
@@ -2730,26 +2897,71 @@
                 const statusText = isOnline ? "online" : "offline";
 
                 return `
-                    <button
-                        type="button"
+                    <div
                         class="device-dropdown-item${isSelected ? " selected" : ""}"
                         role="option"
                         aria-selected="${isSelected ? "true" : "false"}"
                         data-device-uid="${deviceUid}"
                         style="--stagger-index:${index};">
-                        <span class="device-dropdown-item-title">${deviceName}</span>
-                        <span class="device-dropdown-item-sub">
-                            <span>${deviceUid || "-"}</span>
-                            <span class="device-dropdown-status-pill">
-                                <span class="device-dropdown-status-dot ${isOnline ? "online" : "offline"}"></span>
-                                <span>${statusText}</span>
+                        <button
+                            type="button"
+                            class="device-dropdown-item-select"
+                            data-device-action="select"
+                            data-device-uid="${deviceUid}">
+                            <span class="device-dropdown-item-title">${deviceName}</span>
+                            <span class="device-dropdown-item-sub">
+                                <span>${deviceUid || "-"}</span>
+                                <span class="device-dropdown-status-pill">
+                                    <span class="device-dropdown-status-dot ${isOnline ? "online" : "offline"}"></span>
+                                    <span>${statusText}</span>
+                                </span>
                             </span>
+                        </button>
+                        <span class="device-dropdown-item-actions">
+                            <button
+                                type="button"
+                                class="device-dropdown-inline-action"
+                                data-device-action="rename"
+                                data-device-uid="${deviceUid}"
+                                aria-label="Rename device"
+                                title="Rename">
+                                <svg viewBox="0 0 24 24" aria-hidden="true">
+                                    <path d="M3 17.25V21h3.75L17.81 9.94l-3.75-3.75L3 17.25z"></path>
+                                    <path d="M14.06 4.94l3.75 3.75"></path>
+                                </svg>
+                            </button>
+                            <button
+                                type="button"
+                                class="device-dropdown-inline-action danger"
+                                data-device-action="delete"
+                                data-device-uid="${deviceUid}"
+                                aria-label="Delete device"
+                                title="Delete">
+                                <svg viewBox="0 0 24 24" aria-hidden="true">
+                                    <path d="M3 6h18"></path>
+                                    <path d="M8 6V4h8v2"></path>
+                                    <path d="M19 6l-1 14H6L5 6"></path>
+                                    <path d="M10 11v6"></path>
+                                    <path d="M14 11v6"></path>
+                                </svg>
+                            </button>
                         </span>
-                    </button>
+                    </div>
                 `;
             }).join("");
 
-            menu.innerHTML = itemsHtml;
+            menu.innerHTML = `
+                ${itemsHtml}
+                <button
+                    id="globalDeviceDropdownAddBtn"
+                    type="button"
+                    class="device-dropdown-footer-action"
+                    data-dropdown-action="add-device"
+                    data-claim-device-trigger="true"
+                    aria-expanded="false">
+                    + Add Device
+                </button>
+            `;
         }
 
         function syncGlobalDeviceDropdown(devices, selectedUid) {
@@ -2831,13 +3043,59 @@
             openGlobalDeviceDropdown();
         }
 
-        function handleGlobalDeviceDropdownOptionClick(event) {
+        async function handleGlobalDeviceDropdownOptionClick(event) {
             const target = event.target;
             if (!(target instanceof Element)) return;
-            const optionButton = target.closest(".device-dropdown-item");
-            if (!optionButton) return;
-            const selectedUid = String(optionButton.getAttribute("data-device-uid") || "").trim();
+
+            const dropdownActionButton = target.closest("[data-dropdown-action]");
+            if (dropdownActionButton) {
+                const dropdownAction = String(dropdownActionButton.getAttribute("data-dropdown-action") || "").trim();
+                if (dropdownAction === "add-device") {
+                    closeGlobalDeviceDropdown(false);
+                    openClaimDeviceModal();
+                }
+                return;
+            }
+
+            const deviceActionButton = target.closest("[data-device-action]");
+            if (!deviceActionButton) return;
+            const deviceAction = String(deviceActionButton.getAttribute("data-device-action") || "").trim();
+            const selectedUid = normalizeDeviceUidInput(deviceActionButton.getAttribute("data-device-uid") || "");
             if (!selectedUid) return;
+
+            if (deviceAction === "rename") {
+                const selectedDevice = getDeviceDropdownRecordByUid(globalDeviceDropdownDevices, selectedUid);
+                closeGlobalDeviceDropdown(false);
+                const dialogResult = await openDeviceActionDialog({
+                    mode: "rename",
+                    deviceUid: selectedUid,
+                    deviceName: toNonEmptyString(selectedDevice?.deviceName) || toNonEmptyString(selectedDevice?.deviceUid) || selectedUid
+                });
+                if (!dialogResult?.confirmed) {
+                    return;
+                }
+                await renameDeviceByValue(selectedUid, dialogResult.value);
+                return;
+            }
+
+            if (deviceAction === "delete") {
+                const selectedDevice = getDeviceDropdownRecordByUid(globalDeviceDropdownDevices, selectedUid);
+                closeGlobalDeviceDropdown(false);
+                const dialogResult = await openDeviceActionDialog({
+                    mode: "delete",
+                    deviceUid: selectedUid,
+                    deviceName: toNonEmptyString(selectedDevice?.deviceName) || toNonEmptyString(selectedDevice?.deviceUid) || selectedUid
+                });
+                if (!dialogResult?.confirmed) {
+                    return;
+                }
+                await deleteDevice(selectedUid);
+                return;
+            }
+
+            if (deviceAction !== "select") {
+                return;
+            }
 
             const select = getGlobalDeviceSelectElement();
             if (!select) return;
@@ -4060,29 +4318,38 @@
         function syncOverlayScrollLock() {
             const instructionsOverlay = document.getElementById("instructionsOverlay");
             const claimDeviceOverlay = document.getElementById("claimDeviceOverlay");
+            const deviceActionOverlay = document.getElementById("deviceActionOverlay");
             const isInstructionsOpen = Boolean(instructionsOverlay && !instructionsOverlay.classList.contains("panel-hidden"));
             const isClaimDeviceOpen = Boolean(claimDeviceOverlay && !claimDeviceOverlay.classList.contains("panel-hidden"));
-            document.body.style.overflow = isInstructionsOpen || isClaimDeviceOpen ? "hidden" : "";
+            const isDeviceActionOpen = Boolean(deviceActionOverlay && !deviceActionOverlay.classList.contains("panel-hidden"));
+            document.body.style.overflow = isInstructionsOpen || isClaimDeviceOpen || isDeviceActionOpen ? "hidden" : "";
+        }
+
+        function setClaimDeviceModalTriggerExpanded(isExpanded) {
+            const triggerButtons = document.querySelectorAll("[data-claim-device-trigger='true']");
+            triggerButtons.forEach((button) => {
+                if (button instanceof HTMLElement) {
+                    button.setAttribute("aria-expanded", isExpanded ? "true" : "false");
+                }
+            });
         }
 
         function openClaimDeviceModal() {
             const overlay = document.getElementById("claimDeviceOverlay");
-            const toggleBtn = document.getElementById("showClaimDeviceBtn");
             const input = document.getElementById("claimDeviceUidInput");
-            if (!overlay || !toggleBtn) return;
+            if (!overlay) return;
             overlay.classList.remove("panel-hidden");
-            toggleBtn.setAttribute("aria-expanded", "true");
+            setClaimDeviceModalTriggerExpanded(true);
             syncOverlayScrollLock();
             if (input) input.focus();
         }
 
         function closeClaimDeviceModal() {
             const overlay = document.getElementById("claimDeviceOverlay");
-            const toggleBtn = document.getElementById("showClaimDeviceBtn");
             const input = document.getElementById("claimDeviceUidInput");
-            if (!overlay || !toggleBtn) return;
+            if (!overlay) return;
             overlay.classList.add("panel-hidden");
-            toggleBtn.setAttribute("aria-expanded", "false");
+            setClaimDeviceModalTriggerExpanded(false);
             if (input) input.value = "";
             syncOverlayScrollLock();
         }
@@ -4093,6 +4360,150 @@
             if (event.target === overlay) {
                 closeClaimDeviceModal();
             }
+        }
+
+        function closeDeviceActionDialog(result = { confirmed: false }) {
+            const overlay = document.getElementById("deviceActionOverlay");
+            const input = document.getElementById("deviceActionNameInput");
+            const inputWrap = document.getElementById("deviceActionInputWrap");
+            const confirmBtn = document.getElementById("deviceActionConfirmBtn");
+
+            if (deviceActionOverlayCloseTimerId) {
+                clearTimeout(deviceActionOverlayCloseTimerId);
+                deviceActionOverlayCloseTimerId = null;
+            }
+
+            if (overlay && !overlay.classList.contains("panel-hidden")) {
+                overlay.classList.remove("is-visible");
+                deviceActionOverlayCloseTimerId = setTimeout(() => {
+                    overlay.classList.add("panel-hidden");
+                    deviceActionOverlayCloseTimerId = null;
+                    syncOverlayScrollLock();
+                }, DEVICE_ACTION_OVERLAY_ANIMATION_MS);
+            }
+
+            if (input) input.value = "";
+            if (inputWrap) inputWrap.classList.add("panel-hidden");
+            if (confirmBtn) {
+                confirmBtn.classList.remove("danger-button");
+                confirmBtn.textContent = "Confirm";
+            }
+
+            const resolver = deviceActionDialogState.resolver;
+            deviceActionDialogState.mode = "";
+            deviceActionDialogState.resolver = null;
+            if (typeof resolver === "function") {
+                resolver(result);
+            }
+            syncOverlayScrollLock();
+        }
+
+        function cancelDeviceActionDialog() {
+            closeDeviceActionDialog({ confirmed: false });
+        }
+
+        function handleDeviceActionOverlayClick(event) {
+            const overlay = document.getElementById("deviceActionOverlay");
+            if (!overlay) return;
+            if (event.target === overlay) {
+                cancelDeviceActionDialog();
+            }
+        }
+
+        async function openDeviceActionDialog(config = {}) {
+            const mode = config.mode === "rename" ? "rename" : "delete";
+            const overlay = document.getElementById("deviceActionOverlay");
+            const title = document.getElementById("deviceActionTitle");
+            const message = document.getElementById("deviceActionMessage");
+            const inputWrap = document.getElementById("deviceActionInputWrap");
+            const input = document.getElementById("deviceActionNameInput");
+            const confirmBtn = document.getElementById("deviceActionConfirmBtn");
+            if (!overlay || !title || !message || !inputWrap || !input || !confirmBtn) {
+                return { confirmed: false };
+            }
+
+            if (deviceActionOverlayCloseTimerId) {
+                clearTimeout(deviceActionOverlayCloseTimerId);
+                deviceActionOverlayCloseTimerId = null;
+            }
+
+            if (typeof deviceActionDialogState.resolver === "function") {
+                deviceActionDialogState.resolver({ confirmed: false });
+            }
+
+            const deviceName = toNonEmptyString(config.deviceName) || "Unknown device";
+            const deviceUid = toNonEmptyString(config.deviceUid) || "-";
+            const safeName = escapeHtml(deviceName);
+            const safeUid = escapeHtml(deviceUid);
+
+            deviceActionDialogState.mode = mode;
+            overlay.classList.remove("panel-hidden");
+
+            if (mode === "rename") {
+                title.textContent = "Rename Device";
+                message.innerHTML = `Update device name for <span class="device-action-target">${safeName}</span> <span class="device-action-target">(${safeUid})</span>`;
+                inputWrap.classList.remove("panel-hidden");
+                input.value = deviceName;
+                confirmBtn.textContent = "Save";
+                confirmBtn.classList.remove("danger-button");
+            } else {
+                title.textContent = "Delete Device";
+                message.innerHTML = `Delete device <span class="device-action-target">${safeName}</span> <span class="device-action-target">(${safeUid})</span>?`;
+                inputWrap.classList.add("panel-hidden");
+                input.value = "";
+                confirmBtn.textContent = "Delete";
+                confirmBtn.classList.add("danger-button");
+            }
+
+            requestAnimationFrame(() => {
+                overlay.classList.add("is-visible");
+                if (mode === "rename") {
+                    input.focus();
+                    input.select();
+                } else {
+                    confirmBtn.focus();
+                }
+            });
+
+            syncOverlayScrollLock();
+
+            return await new Promise((resolve) => {
+                deviceActionDialogState.resolver = resolve;
+            });
+        }
+
+        function confirmDeviceActionDialog() {
+            const mode = deviceActionDialogState.mode;
+            if (!mode) return;
+
+            if (mode === "rename") {
+                const input = document.getElementById("deviceActionNameInput");
+                const nextName = String(input?.value || "").trim();
+                if (!nextName) {
+                    showToast("Please enter a device name", "error");
+                    if (input) input.focus();
+                    return;
+                }
+                closeDeviceActionDialog({
+                    confirmed: true,
+                    value: nextName
+                });
+                return;
+            }
+
+            closeDeviceActionDialog({
+                confirmed: true
+            });
+        }
+
+        function initializeDeviceActionDialog() {
+            const input = document.getElementById("deviceActionNameInput");
+            if (!input) return;
+            input.addEventListener("keydown", (event) => {
+                if (event.key !== "Enter") return;
+                event.preventDefault();
+                confirmDeviceActionDialog();
+            });
         }
 
         function rememberDevices(devices) {
@@ -4408,6 +4819,7 @@
             if (event.key === "Escape") {
                 closeInstructions();
                 closeClaimDeviceModal();
+                cancelDeviceActionDialog();
                 hideScreenMirrorCard(false);
             }
         });
@@ -4445,12 +4857,16 @@
 
         function setRawFallback(id, value, showFallback) {
             const pre = document.getElementById(id);
+            if (!pre) return;
             pre.innerText = JSON.stringify(value, null, 2);
             pre.style.display = showFallback ? "block" : "none";
         }
 
         function renderDevicesTable(devices) {
             const container = document.getElementById("devicesTable");
+            if (!container) {
+                return;
+            }
             if (!Array.isArray(devices) || devices.length === 0) {
                 container.innerHTML = "<p class='table-empty'>No devices available.</p>";
                 return;
@@ -4896,42 +5312,23 @@
         }
 
         function updatePanelToggleUI(panelName) {
-            const isDevices = panelName === "devices";
-            const buttonId = isDevices ? "toggleDevicesBtn" : "toggleCommandsBtn";
-            const labelId = isDevices ? "toggleDevicesLabel" : "toggleCommandsLabel";
-            const isVisible = panelVisibility[panelName];
+            if (panelName !== "commands") {
+                return;
+            }
+
+            const buttonId = "toggleCommandsBtn";
+            const labelId = "toggleCommandsLabel";
+            const isVisible = Boolean(panelVisibility[panelName]);
 
             const button = document.getElementById(buttonId);
             const label = document.getElementById(labelId);
+            if (!button || !label) {
+                return;
+            }
 
             button.classList.toggle("active", isVisible);
             button.classList.toggle("inactive", !isVisible);
             label.textContent = isVisible ? "Hide" : "Show";
-        }
-
-        function setManagementTab(tabName) {
-            activeManagementTab = tabName === "commands" ? "commands" : "devices";
-
-            const isDevices = activeManagementTab === "devices";
-            const devicesTabBtn = document.getElementById("managementDevicesTabBtn");
-            const commandsTabBtn = document.getElementById("managementCommandsTabBtn");
-            const devicesPanel = document.getElementById("managementDevicesTabPanel");
-            const commandsPanel = document.getElementById("managementCommandsTabPanel");
-
-            if (devicesTabBtn) {
-                devicesTabBtn.classList.toggle("active", isDevices);
-                devicesTabBtn.setAttribute("aria-selected", String(isDevices));
-            }
-            if (commandsTabBtn) {
-                commandsTabBtn.classList.toggle("active", !isDevices);
-                commandsTabBtn.setAttribute("aria-selected", String(!isDevices));
-            }
-            if (devicesPanel) {
-                devicesPanel.classList.toggle("active", isDevices);
-            }
-            if (commandsPanel) {
-                commandsPanel.classList.toggle("active", !isDevices);
-            }
         }
 
         function setPanelContentVisibility(contentElement, isVisible) {
@@ -4962,8 +5359,11 @@
         }
 
         async function togglePanel(panelName) {
-            const isDevices = panelName === "devices";
-            const contentId = isDevices ? "devicesPanelContent" : "commandsPanelContent";
+            if (panelName !== "commands") {
+                return;
+            }
+
+            const contentId = "commandsPanelContent";
 
             panelVisibility[panelName] = !panelVisibility[panelName];
             const isVisible = panelVisibility[panelName];
@@ -4973,11 +5373,7 @@
             updatePanelToggleUI(panelName);
 
             if (isVisible) {
-                if (isDevices) {
-                    await loadDevices();
-                } else {
-                    await loadCommands();
-                }
+                await loadCommands();
             }
         }
 
@@ -5034,12 +5430,14 @@
             }
         }
 
-        async function renameDevice(deviceUid, inputId) {
-            const input = document.getElementById(inputId);
-            if (!input) return;
-
-            const deviceName = input.value.trim();
-            if (!deviceName) {
+        async function renameDeviceByValue(deviceUid, deviceName) {
+            const normalizedUid = normalizeDeviceUidInput(deviceUid || "");
+            const normalizedName = String(deviceName || "").trim();
+            if (!normalizedUid) {
+                showToast("Invalid device UID", "error");
+                return;
+            }
+            if (!normalizedName) {
                 showToast("Please enter a device name", "error");
                 return;
             }
@@ -5051,19 +5449,27 @@
                         "Content-Type": "application/json"
                     },
                     body: JSON.stringify({
-                        deviceUid,
-                        deviceName
+                        deviceUid: normalizedUid,
+                        deviceName: normalizedName
                     })
                 });
 
                 const data = await res.json();
                 if (!res.ok) throw new Error(data.error || "Failed to rename device");
 
+                showToast("Device renamed", "success");
                 await loadDevices();
                 await loadDevicesToSelect();
             } catch (error) {
-                showToast(error.message, "error");
+                showToast(error.message || "Failed to rename device", "error");
             }
+        }
+
+        async function renameDevice(deviceUid, inputId) {
+            const input = document.getElementById(inputId);
+            if (!input) return;
+            const deviceName = input.value.trim();
+            await renameDeviceByValue(deviceUid, deviceName);
         }
 
         async function deleteDevice(deviceUid) {
@@ -5558,11 +5964,10 @@
         }
 
         initializeGlobalDeviceSelector();
+        initializeDeviceActionDialog();
         initializeScreenMirrorFloatingUI();
         initializeScreenMirrorTouchControl();
         resetScreenMirrorView();
-        setManagementTab("devices");
-        updatePanelToggleUI("devices");
         updatePanelToggleUI("commands");
         renderInstructionsPage();
         initializeSession();
