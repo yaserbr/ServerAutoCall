@@ -2835,6 +2835,19 @@
             return devices.find((device) => normalizeDeviceUidInput(device?.deviceUid || "") === normalizedTarget) || null;
         }
 
+        function sortHeaderDevicesByOnlineFirst(devices) {
+            if (!Array.isArray(devices)) return [];
+            return devices
+                .map((device, index) => ({ device, index }))
+                .sort((left, right) => {
+                    const onlineDiff =
+                        Number(Boolean(right.device?.online)) - Number(Boolean(left.device?.online));
+                    if (onlineDiff !== 0) return onlineDiff;
+                    return left.index - right.index;
+                })
+                .map((entry) => entry.device);
+        }
+
         function updateGlobalDeviceDropdownTrigger(devices, selectedUid) {
             const titleElement = document.getElementById("globalDeviceDropdownTitle");
             const subtitleElement = document.getElementById("globalDeviceDropdownSubtitle");
@@ -5516,7 +5529,7 @@
 
         function populateDeviceSelect(select, devices, previousValue) {
             if (!select) return;
-            const normalizedDevices = Array.isArray(devices) ? devices : [];
+            const normalizedDevices = sortHeaderDevicesByOnlineFirst(devices);
             globalDeviceDropdownDevices = normalizedDevices;
             select.innerHTML = "";
 
