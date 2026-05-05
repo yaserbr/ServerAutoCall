@@ -2553,12 +2553,11 @@
                             <h4 class="instructions-section-title">Required Permissions</h4>
                             <ol class="instructions-list">
                                 <li>Install AutoCall from the Download button.</li>
-                                <li>Open the AutoCall after installation.</li>
+                                <li>Open AutoCall Settings after installation.</li>
                                 <li>Allow Phone permission.</li>
                                 <li>Allow SMS permission.</li>
                                 <li>Enable Display over other apps / Appear on top.</li>
                                 <li>Set Battery usage to Unrestricted if available.</li>
-                                <li>Return to the AutoCall app and make sure the Device UID is visible.</li>
                             </ol>
                         </div>
                         <div class="instructions-image-card">
@@ -2791,7 +2790,7 @@
                         <input id="autoAnswerNotes" placeholder="optional notes" />
                     </div>
                     <div class="actions">
-                        <button onclick="sendAutoAnswer()">Apply Auto Answer</button>
+                        <button onclick="sendAutoAnswer()">Apply</button>
                     </div>
                 </div>
                 <div id="webViewTabPanel" class="tab-panel">
@@ -2805,7 +2804,7 @@
                         </div>
                     </div>
                     <div class="actions">
-                        <button id="sendWebViewCommandBtn" onclick="sendWebViewCommand()">Send OPEN URL</button>
+                        <button id="sendWebViewCommandBtn" onclick="sendWebViewCommand()">OPEN URL</button>
                         <button class="danger-button" onclick="sendCloseWebViewCommand()">CLOSE WEBVIEW</button>
                     </div>
                 </div>
@@ -2816,7 +2815,7 @@
                         <input id="openAppNotes" placeholder="optional notes" />
                     </div>
                     <div class="actions">
-                        <button onclick="sendOpenApp()">Send Oopen APP</button>
+                        <button onclick="sendOpenApp()">Open APP</button>
                         <button onclick="sendReturnToAutoCall()">Return to AutoCall</button>
                     </div>
                 </div>
@@ -2839,7 +2838,7 @@
                         </div>
                     </div>
                     <div class="actions">
-                        <button onclick="sendDownloadDataCommand()">Send DOWNLOAD_DATA</button>
+                        <button onclick="sendDownloadDataCommand()">DOWNLOA DATA</button>
                     </div>
                 </div>
             </article>
