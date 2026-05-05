@@ -125,27 +125,6 @@
             width: min(300px, 100%);
         }
 
-        .header-screen-mirror-btn {
-            width: calc(var(--control-height) * 0.85);
-            height: calc(var(--control-height) * 0.85);
-            border-radius: 12px;
-            padding: 0;
-            display: inline-flex;
-            align-items: center;
-            justify-content: center;
-            flex-shrink: 0;
-            color: var(--accent-soft);
-            border: 1px solid rgba(103, 232, 249, 0.46);
-            background: rgba(11, 18, 32, 0.5);
-            box-shadow: 0 8px 20px rgba(5, 10, 25, 0.3);
-        }
-
-        .header-screen-mirror-btn svg {
-            width: 19px;
-            height: 19px;
-            stroke: currentColor;
-        }
-
         .download-apk-btn {
             display: inline-flex;
             align-items: center;
@@ -469,7 +448,7 @@
         .session-info {
             width: min(300px, 100%);
             display: grid;
-            grid-template-columns: calc(var(--control-height) * 0.85) 1fr;
+            grid-template-columns: 1fr;
             grid-template-rows: repeat(2, calc(var(--control-height) * 0.85));
             gap: 7px;
             align-items: stretch;
@@ -480,7 +459,7 @@
             width: 100%;
             height: 100%;
             margin: 0;
-            grid-column: 2;
+            grid-column: 1;
             grid-row: 2;
             position: relative;
         }
@@ -495,14 +474,6 @@
 
         #sessionLogoutBtn {
             border-radius: 12px;
-        }
-
-        #sessionInfo #screenMirrorHeaderBtn {
-            width: 100%;
-            height: 100%;
-            margin: 0;
-            grid-column: 1;
-            grid-row: 2;
         }
 
         #globalDeviceSelect {
@@ -765,6 +736,17 @@
             background: rgba(9, 44, 66, 0.78);
             border-color: rgba(103, 232, 249, 0.62);
             box-shadow: none;
+        }
+
+        .device-dropdown-inline-action.mirror {
+            border-color: rgba(74, 222, 128, 0.48);
+            background: rgba(10, 68, 39, 0.58);
+            color: #ddffe8;
+        }
+
+        .device-dropdown-inline-action.mirror:hover {
+            border-color: rgba(134, 239, 172, 0.7);
+            background: rgba(11, 84, 45, 0.66);
         }
 
         .device-dropdown-inline-action.danger {
@@ -1879,9 +1861,151 @@
             border-radius: 16px;
         }
 
-        .header-screen-mirror-btn.active {
-            border-color: rgba(103, 232, 249, 0.85);
-            box-shadow: 0 10px 22px rgba(46, 196, 182, 0.35);
+        .screen-mirror-multi-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 10px;
+            margin-bottom: 8px;
+        }
+
+        .screen-mirror-multi-header h2 {
+            margin: 0;
+            font-size: 1rem;
+        }
+
+        .screen-mirror-multi-hint {
+            margin: 0 0 10px;
+            color: var(--muted);
+            font-size: 0.84rem;
+        }
+
+        .screen-mirror-multi-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(170px, 1fr));
+            gap: 10px;
+        }
+
+        .screen-mirror-device-tile {
+            border-radius: 14px;
+            border: 1px solid rgba(185, 218, 255, 0.28);
+            background: linear-gradient(140deg, rgba(8, 18, 34, 0.74), rgba(11, 28, 52, 0.54));
+            padding: 9px;
+            display: grid;
+            gap: 8px;
+        }
+
+        .screen-mirror-device-head {
+            display: flex;
+            justify-content: space-between;
+            gap: 8px;
+            align-items: center;
+        }
+
+        .screen-mirror-device-labels {
+            min-width: 0;
+        }
+
+        .screen-mirror-device-name {
+            margin: 0;
+            font-size: 0.86rem;
+            font-weight: 700;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            color: #f2f8ff;
+        }
+
+        .screen-mirror-device-uid {
+            margin: 2px 0 0;
+            font-size: 0.74rem;
+            color: var(--muted);
+        }
+
+        .screen-mirror-device-actions {
+            display: inline-flex;
+            gap: 6px;
+            flex-shrink: 0;
+        }
+
+        .screen-mirror-tile-btn {
+            width: 26px;
+            min-width: 26px;
+            height: 26px;
+            min-height: 26px;
+            border-radius: 8px;
+            padding: 0;
+            box-shadow: none;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            border: 1px solid rgba(103, 232, 249, 0.38);
+            background: rgba(7, 29, 46, 0.62);
+            color: #ddf5ff;
+        }
+
+        .screen-mirror-tile-btn svg {
+            width: 13px;
+            height: 13px;
+            stroke: currentColor;
+            fill: none;
+            stroke-width: 2;
+            stroke-linecap: round;
+            stroke-linejoin: round;
+        }
+
+        .screen-mirror-tile-btn.danger {
+            border-color: rgba(248, 113, 113, 0.55);
+            background: rgba(104, 24, 24, 0.56);
+            color: #ffe6e6;
+        }
+
+        .screen-mirror-tile-preview-wrap {
+            width: 100%;
+            aspect-ratio: 9 / 16.8;
+            border-radius: 12px;
+            overflow: hidden;
+            border: 1px solid rgba(189, 223, 255, 0.26);
+            background: rgba(3, 8, 22, 0.86);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .screen-mirror-tile-preview {
+            width: 100%;
+            height: 100%;
+            object-fit: contain;
+            display: block;
+        }
+
+        .screen-mirror-tile-placeholder {
+            color: rgba(214, 234, 255, 0.74);
+            font-size: 0.74rem;
+            text-align: center;
+            padding: 10px;
+        }
+
+        .screen-mirror-device-meta {
+            display: flex;
+            justify-content: space-between;
+            gap: 8px;
+            font-size: 0.72rem;
+            color: #d2e5fb;
+        }
+
+        .screen-mirror-device-status {
+            text-transform: uppercase;
+            letter-spacing: 0.04em;
+            font-weight: 700;
+        }
+
+        .screen-mirror-device-status.live,
+        .screen-mirror-device-status.running,
+        .screen-mirror-device-status.active,
+        .screen-mirror-device-status.started,
+        .screen-mirror-device-status.starting {
+            color: #8cf5a9;
         }
 
         .screen-mirror-viewer-wrap {
@@ -2241,7 +2365,7 @@
             .session-info {
                 width: 100%;
                 min-width: 0;
-                grid-template-columns: calc(var(--control-height) * 0.85) 1fr;
+                grid-template-columns: 1fr;
                 grid-template-rows: repeat(2, calc(var(--control-height) * 0.85));
             }
 
@@ -2250,13 +2374,8 @@
                 grid-row: 1;
             }
 
-            #sessionInfo #screenMirrorHeaderBtn {
-                grid-column: 1;
-                grid-row: 2;
-            }
-
             #globalDeviceDropdown {
-                grid-column: 2;
+                grid-column: 1;
                 grid-row: 2;
             }
 
@@ -2377,26 +2496,6 @@
                 <div class="header-right-tools">
                     <div id="sessionInfo" class="session-info panel-hidden">
                         <button id="sessionLogoutBtn" class="danger-button" onclick="logout()">Logout</button>
-                        <button
-                            id="screenMirrorHeaderBtn"
-                            type="button"
-                            class="header-screen-mirror-btn panel-hidden"
-                            aria-label="Open Screen Mirror card"
-                            aria-pressed="false"
-                            title="Screen Mirror"
-                            onclick="openScreenMirrorCard()">
-                            <svg
-                                xmlns="http://www.w3.org/2000/svg"
-                                viewBox="0 0 24 24"
-                                fill="none"
-                                stroke-width="2"
-                                stroke-linecap="round"
-                                stroke-linejoin="round"
-                                aria-hidden="true">
-                                <rect x="7" y="2" width="10" height="20" rx="2" ry="2"></rect>
-                                <path d="M11 18h2"></path>
-                            </svg>
-                        </button>
                         <div id="globalDeviceDropdown" class="device-dropdown">
                             <button
                                 id="globalDeviceDropdownTrigger"
@@ -2746,8 +2845,14 @@
             </article>
 
             <article id="screenMirrorCard" class="card full-width screen-mirror-toast-card panel-hidden">
-                <h2>Screen Mirror</h2>
-                <div class="screen-mirror-layout">
+                <div class="screen-mirror-multi-header">
+                    <h2>Screen Mirror Sessions</h2>
+                    <button type="button" class="danger-button" onclick="stopAllActiveScreenMirrors()">Stop All</button>
+                </div>
+                <p id="screenMirrorMultiHint" class="screen-mirror-multi-hint">Use the mirror icon from the device list to start live view.</p>
+                <div id="screenMirrorMultiGrid" class="screen-mirror-multi-grid"></div>
+
+                <div id="screenMirrorLegacyLayout" class="screen-mirror-layout panel-hidden">
                     <div class="screen-mirror-control-column">
                         <h2>Live Screen Mirror</h2>
                         <div class="screen-mirror-actions-inline">
@@ -2864,6 +2969,8 @@
         let refreshDevicesIntervalId = null;
         let screenMirrorSocket = null;
         let screenMirrorJoinedDeviceUid = "";
+        const activeScreenMirrorDeviceUids = new Set();
+        const screenMirrorDeviceStateByUid = new Map();
         let isScreenMirrorPinned = false;
         let isScreenMirrorFloatingHidden = true;
         let isScreenMirrorFloatingMinimized = false;
@@ -3111,6 +3218,18 @@
                         <span class="device-dropdown-item-actions">
                             <button
                                 type="button"
+                                class="device-dropdown-inline-action mirror"
+                                data-device-action="mirror"
+                                data-device-uid="${deviceUid}"
+                                aria-label="Mirror device"
+                                title="Start mirror">
+                                <svg viewBox="0 0 24 24" aria-hidden="true">
+                                    <rect x="7" y="2" width="10" height="20" rx="2" ry="2"></rect>
+                                    <path d="M11 18h2"></path>
+                                </svg>
+                            </button>
+                            <button
+                                type="button"
                                 class="device-dropdown-inline-action"
                                 data-device-action="rename"
                                 data-device-uid="${deviceUid}"
@@ -3254,6 +3373,12 @@
             const selectedUid = normalizeDeviceUidInput(deviceActionButton.getAttribute("data-device-uid") || "");
             if (!selectedUid) return;
 
+            if (deviceAction === "mirror") {
+                closeGlobalDeviceDropdown(false);
+                await startMirrorFromDeviceDropdown(selectedUid);
+                return;
+            }
+
             if (deviceAction === "rename") {
                 const selectedDevice = getDeviceDropdownRecordByUid(globalDeviceDropdownDevices, selectedUid);
                 closeGlobalDeviceDropdown(false);
@@ -3325,8 +3450,6 @@
                 const selectedUid = normalizeDeviceUidInput(event?.target?.value || "");
                 syncGlobalDeviceDropdown(globalDeviceDropdownDevices, selectedUid);
                 updateScreenMirrorFloatingTitle();
-                resetScreenMirrorView();
-                joinScreenMirrorDashboardRoom(selectedUid);
             });
 
             dropdownTrigger.addEventListener("pointerdown", () => {
@@ -3339,6 +3462,355 @@
                 document.addEventListener("pointerdown", handleGlobalDeviceDropdownOutsidePointerDown);
                 document.addEventListener("keydown", handleGlobalDeviceDropdownEscape);
                 hasBoundGlobalDeviceDropdownEvents = true;
+            }
+        }
+
+        function getScreenMirrorMultiGridElement() {
+            return document.getElementById("screenMirrorMultiGrid");
+        }
+
+        function getScreenMirrorDeviceState(deviceUid) {
+            const normalizedDeviceUid = normalizeDeviceUidInput(deviceUid);
+            if (!normalizedDeviceUid) return null;
+            if (!screenMirrorDeviceStateByUid.has(normalizedDeviceUid)) {
+                screenMirrorDeviceStateByUid.set(normalizedDeviceUid, {
+                    status: "idle",
+                    frameCount: 0,
+                    lastFrameAt: "--",
+                    frameSrc: "",
+                    updatedAt: 0
+                });
+            }
+            return screenMirrorDeviceStateByUid.get(normalizedDeviceUid);
+        }
+
+        function isScreenMirrorRunningStatus(status) {
+            const normalizedStatus = String(status || "").trim().toLowerCase();
+            return ["live", "running", "active", "started", "starting"].includes(normalizedStatus);
+        }
+
+        function getScreenMirrorDeviceDisplayName(deviceUid) {
+            const normalizedDeviceUid = normalizeDeviceUidInput(deviceUid);
+            if (!normalizedDeviceUid) return "Unknown device";
+            const rememberedName = toNonEmptyString(deviceNameByUid.get(normalizedDeviceUid));
+            if (rememberedName) return rememberedName;
+            const deviceRecord = getDeviceDropdownRecordByUid(globalDeviceDropdownDevices, normalizedDeviceUid);
+            const fromRecord = toNonEmptyString(deviceRecord?.deviceName);
+            if (fromRecord) return fromRecord;
+            return normalizedDeviceUid;
+        }
+
+        function renderScreenMirrorMultiGrid() {
+            const grid = getScreenMirrorMultiGridElement();
+            const hint = document.getElementById("screenMirrorMultiHint");
+            if (!grid) return;
+
+            const sortedUids = [...activeScreenMirrorDeviceUids].sort((leftUid, rightUid) =>
+                getScreenMirrorDeviceDisplayName(leftUid).localeCompare(
+                    getScreenMirrorDeviceDisplayName(rightUid),
+                    undefined,
+                    { sensitivity: "base" }
+                )
+            );
+
+            if (sortedUids.length === 0) {
+                grid.innerHTML = "";
+                if (hint) {
+                    hint.textContent = "Use the mirror icon from the device list to start live view.";
+                }
+                return;
+            }
+
+            if (hint) {
+                hint.textContent = `${sortedUids.length} active mirror session${sortedUids.length > 1 ? "s" : ""}.`;
+            }
+
+            const tilesHtml = sortedUids.map((deviceUid) => {
+                const state = getScreenMirrorDeviceState(deviceUid) || {
+                    status: "idle",
+                    frameCount: 0,
+                    lastFrameAt: "--",
+                    frameSrc: ""
+                };
+                const deviceName = getScreenMirrorDeviceDisplayName(deviceUid);
+                const statusText = toNonEmptyString(state.status).toLowerCase() || "idle";
+                const statusClass = escapeHtml(statusText.replace(/[^a-z0-9_-]/g, ""));
+                const frameCount = Number.isFinite(Number(state.frameCount))
+                    ? Math.max(0, Math.round(Number(state.frameCount)))
+                    : 0;
+                const lastFrameAt = toNonEmptyString(state.lastFrameAt) || "--";
+                const previewContent = toNonEmptyString(state.frameSrc)
+                    ? `<img class="screen-mirror-tile-preview" src="${escapeHtml(state.frameSrc)}" alt="Live mirrored screen for ${escapeHtml(deviceName)}" />`
+                    : `<span class="screen-mirror-tile-placeholder">Waiting for frames...</span>`;
+
+                return `
+                    <div class="screen-mirror-device-tile" data-device-uid="${escapeHtml(deviceUid)}">
+                        <div class="screen-mirror-device-head">
+                            <div class="screen-mirror-device-labels">
+                                <p class="screen-mirror-device-name" title="${escapeHtml(deviceName)}">${escapeHtml(deviceName)}</p>
+                                <p class="screen-mirror-device-uid">${escapeHtml(deviceUid)}</p>
+                            </div>
+                            <div class="screen-mirror-device-actions">
+                                <button
+                                    type="button"
+                                    class="screen-mirror-tile-btn danger"
+                                    data-mirror-action="stop"
+                                    data-device-uid="${escapeHtml(deviceUid)}"
+                                    title="Stop mirror"
+                                    aria-label="Stop mirror">
+                                    <svg viewBox="0 0 24 24" aria-hidden="true">
+                                        <rect x="7" y="7" width="10" height="10" rx="2"></rect>
+                                    </svg>
+                                </button>
+                                <button
+                                    type="button"
+                                    class="screen-mirror-tile-btn"
+                                    data-mirror-action="remove"
+                                    data-device-uid="${escapeHtml(deviceUid)}"
+                                    title="Remove from view"
+                                    aria-label="Remove from view">
+                                    <svg viewBox="0 0 24 24" aria-hidden="true">
+                                        <path d="M18 6 6 18"></path>
+                                        <path d="m6 6 12 12"></path>
+                                    </svg>
+                                </button>
+                            </div>
+                        </div>
+                        <div class="screen-mirror-tile-preview-wrap" data-mirror-field="previewWrap">${previewContent}</div>
+                        <div class="screen-mirror-device-meta">
+                            <span class="screen-mirror-device-status ${statusClass}" data-mirror-field="status">${escapeHtml(statusText)}</span>
+                            <span data-mirror-field="frameCount">frames: ${escapeHtml(String(frameCount))}</span>
+                            <span data-mirror-field="lastFrameAt">${escapeHtml(lastFrameAt)}</span>
+                        </div>
+                    </div>
+                `;
+            }).join("");
+
+            grid.innerHTML = tilesHtml;
+
+            grid.querySelectorAll("[data-mirror-action='stop']").forEach((button) => {
+                button.addEventListener("click", async () => {
+                    const targetUid = normalizeDeviceUidInput(button.getAttribute("data-device-uid") || "");
+                    if (!targetUid) return;
+                    button.disabled = true;
+                    try {
+                        await stopActiveScreenMirror(targetUid, { removeAfterStop: true });
+                    } finally {
+                        button.disabled = false;
+                    }
+                });
+            });
+
+            grid.querySelectorAll("[data-mirror-action='remove']").forEach((button) => {
+                button.addEventListener("click", () => {
+                    const targetUid = normalizeDeviceUidInput(button.getAttribute("data-device-uid") || "");
+                    if (!targetUid) return;
+                    activeScreenMirrorDeviceUids.delete(targetUid);
+                    renderScreenMirrorMultiGrid();
+                });
+            });
+        }
+
+        function updateScreenMirrorMultiTile(deviceUid) {
+            const normalizedDeviceUid = normalizeDeviceUidInput(deviceUid);
+            if (!normalizedDeviceUid) return;
+            const grid = getScreenMirrorMultiGridElement();
+            if (!grid) return;
+
+            const tile = grid.querySelector(`.screen-mirror-device-tile[data-device-uid="${normalizedDeviceUid}"]`);
+            if (!tile) {
+                renderScreenMirrorMultiGrid();
+                return;
+            }
+
+            const state = getScreenMirrorDeviceState(normalizedDeviceUid);
+            if (!state) return;
+            const statusText = toNonEmptyString(state.status).toLowerCase() || "idle";
+            const statusClass = statusText.replace(/[^a-z0-9_-]/g, "");
+            const frameCount = Number.isFinite(Number(state.frameCount))
+                ? Math.max(0, Math.round(Number(state.frameCount)))
+                : 0;
+            const lastFrameAt = toNonEmptyString(state.lastFrameAt) || "--";
+
+            const previewWrap = tile.querySelector("[data-mirror-field='previewWrap']");
+            if (previewWrap) {
+                if (toNonEmptyString(state.frameSrc)) {
+                    previewWrap.innerHTML = `<img class="screen-mirror-tile-preview" src="${escapeHtml(state.frameSrc)}" alt="Live mirrored screen for ${escapeHtml(getScreenMirrorDeviceDisplayName(normalizedDeviceUid))}" />`;
+                } else {
+                    previewWrap.innerHTML = `<span class="screen-mirror-tile-placeholder">Waiting for frames...</span>`;
+                }
+            }
+
+            const statusElement = tile.querySelector("[data-mirror-field='status']");
+            if (statusElement) {
+                statusElement.className = `screen-mirror-device-status ${statusClass}`;
+                statusElement.textContent = statusText;
+            }
+            const frameCountElement = tile.querySelector("[data-mirror-field='frameCount']");
+            if (frameCountElement) {
+                frameCountElement.textContent = `frames: ${frameCount}`;
+            }
+            const lastFrameElement = tile.querySelector("[data-mirror-field='lastFrameAt']");
+            if (lastFrameElement) {
+                lastFrameElement.textContent = lastFrameAt;
+            }
+        }
+
+        function applyMultiScreenMirrorStatus(payload = {}) {
+            const deviceUid = normalizeDeviceUidInput(payload?.deviceUid || "");
+            if (!deviceUid || !activeScreenMirrorDeviceUids.has(deviceUid)) {
+                return;
+            }
+
+            const state = getScreenMirrorDeviceState(deviceUid);
+            if (!state) return;
+
+            state.status =
+                typeof payload.status === "string" && payload.status.trim()
+                    ? payload.status.trim().toLowerCase()
+                    : state.status || "idle";
+            if (Number.isFinite(Number(payload.frameCount))) {
+                state.frameCount = Math.max(0, Math.round(Number(payload.frameCount)));
+            }
+
+            const rawLastFrame = payload.lastFrameAt ?? payload.timestamp ?? null;
+            if (rawLastFrame !== null && rawLastFrame !== undefined && rawLastFrame !== "") {
+                const parsed = new Date(rawLastFrame);
+                if (!Number.isNaN(parsed.getTime())) {
+                    state.lastFrameAt = parsed.toLocaleString();
+                }
+            }
+            state.updatedAt = Date.now();
+            updateScreenMirrorMultiTile(deviceUid);
+        }
+
+        function applyMultiScreenMirrorFrame(payload = {}) {
+            const deviceUid = normalizeDeviceUidInput(payload?.deviceUid || "");
+            if (!deviceUid || !activeScreenMirrorDeviceUids.has(deviceUid)) {
+                return;
+            }
+
+            const frameBase64 = typeof payload.frameBase64 === "string" ? payload.frameBase64 : "";
+            if (!frameBase64) return;
+            const state = getScreenMirrorDeviceState(deviceUid);
+            if (!state) return;
+
+            const mimeType =
+                typeof payload.mimeType === "string" && payload.mimeType.trim()
+                    ? payload.mimeType.trim()
+                    : "image/jpeg";
+            state.frameSrc = `data:${mimeType};base64,${frameBase64}`;
+            state.status = "live";
+            state.frameCount = Number.isFinite(Number(state.frameCount))
+                ? Math.max(0, Math.round(Number(state.frameCount))) + 1
+                : 1;
+            state.lastFrameAt = new Date(payload.timestamp || Date.now()).toLocaleString();
+            state.updatedAt = Date.now();
+            updateScreenMirrorMultiTile(deviceUid);
+        }
+
+        async function sendScreenMirrorCommandForDevice(deviceUid, action, type, options = {}) {
+            const normalizedDeviceUid = normalizeDeviceUidInput(deviceUid);
+            if (!normalizedDeviceUid) {
+                throw new Error("Invalid device UID");
+            }
+
+            joinScreenMirrorDashboardRoom(normalizedDeviceUid);
+            const response = await apiFetch("/commands", {
+                method: "POST",
+                headers: {
+                    "Content-Type": "application/json"
+                },
+                body: JSON.stringify({
+                    action,
+                    type,
+                    deviceUid: normalizedDeviceUid,
+                    isImmediate: true
+                })
+            });
+
+            const payload = await response.json();
+            if (!response.ok) {
+                throw new Error(parseApiErrorMessage(payload, options.defaultErrorMessage || "Failed to send screen mirror command"));
+            }
+            return payload;
+        }
+
+        async function startMirrorFromDeviceDropdown(deviceUid) {
+            const normalizedDeviceUid = normalizeDeviceUidInput(deviceUid);
+            if (!normalizedDeviceUid) {
+                showToast("Invalid device UID", "error");
+                return;
+            }
+
+            if (!activeScreenMirrorDeviceUids.has(normalizedDeviceUid)) {
+                activeScreenMirrorDeviceUids.add(normalizedDeviceUid);
+            }
+            const state = getScreenMirrorDeviceState(normalizedDeviceUid);
+            if (state) {
+                state.status = "starting";
+                state.updatedAt = Date.now();
+            }
+            renderScreenMirrorMultiGrid();
+            openScreenMirrorCard(true);
+
+            try {
+                await sendScreenMirrorCommandForDevice(
+                    normalizedDeviceUid,
+                    "start_screen_mirror",
+                    "START_SCREEN_MIRROR",
+                    { defaultErrorMessage: "Failed to start screen mirror" }
+                );
+                showToast(`Mirror started for ${normalizedDeviceUid}`, "success");
+                await loadCommands();
+            } catch (error) {
+                activeScreenMirrorDeviceUids.delete(normalizedDeviceUid);
+                renderScreenMirrorMultiGrid();
+                showToast(error.message || "Failed to start screen mirror", "error");
+            }
+        }
+
+        async function stopActiveScreenMirror(deviceUid, options = {}) {
+            const normalizedDeviceUid = normalizeDeviceUidInput(deviceUid);
+            if (!normalizedDeviceUid) {
+                return;
+            }
+            const removeAfterStop = options.removeAfterStop !== false;
+            const state = getScreenMirrorDeviceState(normalizedDeviceUid);
+            if (state) {
+                state.status = "stopping";
+                state.updatedAt = Date.now();
+            }
+            renderScreenMirrorMultiGrid();
+
+            try {
+                await sendScreenMirrorCommandForDevice(
+                    normalizedDeviceUid,
+                    "stop_screen_mirror",
+                    "STOP_SCREEN_MIRROR",
+                    { defaultErrorMessage: "Failed to stop screen mirror" }
+                );
+                if (removeAfterStop) {
+                    activeScreenMirrorDeviceUids.delete(normalizedDeviceUid);
+                }
+                showToast(`Mirror stopped for ${normalizedDeviceUid}`, "success");
+                await loadCommands();
+            } catch (error) {
+                showToast(error.message || "Failed to stop screen mirror", "error");
+            } finally {
+                renderScreenMirrorMultiGrid();
+            }
+        }
+
+        async function stopAllActiveScreenMirrors() {
+            const deviceUids = [...activeScreenMirrorDeviceUids];
+            if (deviceUids.length === 0) {
+                showToast("No active mirror sessions", "error");
+                return;
+            }
+
+            for (const deviceUid of deviceUids) {
+                await stopActiveScreenMirror(deviceUid, { removeAfterStop: true });
             }
         }
 
@@ -3404,13 +3876,15 @@
             }, 220);
         }
 
-        function openScreenMirrorCard() {
+        function openScreenMirrorCard(forceOpen = false) {
             const screenMirrorCard = document.getElementById("screenMirrorCard");
             if (!screenMirrorCard) return;
 
             const isHidden = screenMirrorCard.classList.contains("panel-hidden");
             if (!isHidden) {
-                hideScreenMirrorCard(false);
+                if (!forceOpen) {
+                    hideScreenMirrorCard(false);
+                }
                 return;
             }
 
@@ -3986,6 +4460,9 @@
                         deviceUid: screenMirrorJoinedDeviceUid
                     });
                 }
+                activeScreenMirrorDeviceUids.forEach((deviceUid) => {
+                    screenMirrorSocket.emit("dashboard:join", { deviceUid });
+                });
             });
             screenMirrorSocket.on("connect_error", (error) => {
                 const reason = String(error?.message || "").toLowerCase();
@@ -3995,6 +4472,11 @@
             });
 
             screenMirrorSocket.on("screen:status", (payload = {}) => {
+                applyMultiScreenMirrorStatus(payload);
+                const legacyLayout = document.getElementById("screenMirrorLegacyLayout");
+                if (!legacyLayout || legacyLayout.classList.contains("panel-hidden")) {
+                    return;
+                }
                 const payloadDeviceUid = normalizeDeviceUidInput(payload?.deviceUid || "");
                 if (!payloadDeviceUid || payloadDeviceUid !== screenMirrorJoinedDeviceUid) {
                     return;
@@ -4003,6 +4485,11 @@
             });
 
             screenMirrorSocket.on("screen:frame", (payload = {}) => {
+                applyMultiScreenMirrorFrame(payload);
+                const legacyLayout = document.getElementById("screenMirrorLegacyLayout");
+                if (!legacyLayout || legacyLayout.classList.contains("panel-hidden")) {
+                    return;
+                }
                 const payloadDeviceUid = normalizeDeviceUidInput(payload?.deviceUid || "");
                 if (!payloadDeviceUid || payloadDeviceUid !== screenMirrorJoinedDeviceUid) {
                     return;
@@ -4861,7 +5348,6 @@
             const authSection = document.getElementById("authSection");
             const appSection = document.getElementById("appSection");
             const sessionInfo = document.getElementById("sessionInfo");
-            const screenMirrorHeaderBtn = document.getElementById("screenMirrorHeaderBtn");
             if (authSection) {
                 authSection.classList.add("panel-hidden");
             }
@@ -4870,9 +5356,6 @@
             }
             if (sessionInfo) {
                 sessionInfo.classList.remove("panel-hidden");
-            }
-            if (screenMirrorHeaderBtn) {
-                screenMirrorHeaderBtn.classList.remove("panel-hidden");
             }
             hideScreenMirrorCard(true);
             const socket = ensureScreenMirrorSocket();
@@ -4887,15 +5370,17 @@
             deviceNameByUid.clear();
             stopDevicesSelectRefresh();
             disconnectScreenMirrorSocket();
+            activeScreenMirrorDeviceUids.clear();
+            screenMirrorDeviceStateByUid.clear();
             dockScreenMirror();
             resetScreenMirrorView();
+            renderScreenMirrorMultiGrid();
             populateDeviceSelect(getGlobalDeviceSelectElement(), [], "");
             joinScreenMirrorDashboardRoom("");
 
             const authSection = document.getElementById("authSection");
             const appSection = document.getElementById("appSection");
             const sessionInfo = document.getElementById("sessionInfo");
-            const screenMirrorHeaderBtn = document.getElementById("screenMirrorHeaderBtn");
             if (authSection) {
                 authSection.classList.remove("panel-hidden");
             }
@@ -4904,9 +5389,6 @@
             }
             if (sessionInfo) {
                 sessionInfo.classList.add("panel-hidden");
-            }
-            if (screenMirrorHeaderBtn) {
-                screenMirrorHeaderBtn.classList.add("panel-hidden");
             }
             hideScreenMirrorCard(true);
 
@@ -5877,13 +6359,10 @@
 
                 rememberDevices(data);
                 populateDeviceSelect(globalSelect, data, previousGlobalValue);
-
-                const selectedScreenMirrorUid = getSelectedGlobalDeviceUid();
-                joinScreenMirrorDashboardRoom(selectedScreenMirrorUid);
+                renderScreenMirrorMultiGrid();
             } catch (error) {
                 populateDeviceSelect(getGlobalDeviceSelectElement(), [], "");
-                joinScreenMirrorDashboardRoom("");
-                resetScreenMirrorView();
+                renderScreenMirrorMultiGrid();
             }
         }
 
@@ -6342,6 +6821,7 @@
         initializeScreenMirrorFloatingUI();
         initializeScreenMirrorTouchControl();
         resetScreenMirrorView();
+        renderScreenMirrorMultiGrid();
         updatePanelToggleUI("commands");
         renderInstructionsPage();
         initializeSession();
