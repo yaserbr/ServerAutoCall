@@ -1011,6 +1011,117 @@
             flex-wrap: wrap;
         }
 
+        #commandConfirmOverlay {
+            opacity: 0;
+            pointer-events: none;
+            transition: opacity 0.24s ease;
+        }
+
+        #commandConfirmOverlay.is-visible {
+            opacity: 1;
+            pointer-events: auto;
+        }
+
+        #commandConfirmOverlay .command-confirm-modal {
+            position: relative;
+            overflow: hidden;
+            width: min(560px, 100%);
+            padding: 20px;
+            border-radius: 24px;
+            border: 1px solid rgba(167, 223, 255, 0.34);
+            background:
+                radial-gradient(110% 100% at -10% -30%, rgba(56, 189, 248, 0.24), transparent 58%),
+                radial-gradient(110% 110% at 115% 130%, rgba(125, 211, 252, 0.16), transparent 60%),
+                linear-gradient(150deg, rgba(8, 18, 35, 0.84), rgba(10, 24, 45, 0.66));
+            box-shadow:
+                0 24px 56px rgba(2, 6, 18, 0.56),
+                inset 0 1px 0 rgba(255, 255, 255, 0.14);
+            backdrop-filter: blur(18px) saturate(140%);
+            -webkit-backdrop-filter: blur(18px) saturate(140%);
+            opacity: 0;
+            transform: translateY(14px) scale(0.982);
+            transition: opacity 0.24s ease, transform 0.24s cubic-bezier(0.22, 1, 0.36, 1);
+        }
+
+        #commandConfirmOverlay.is-visible .command-confirm-modal {
+            opacity: 1;
+            transform: translateY(0) scale(1);
+        }
+
+        #commandConfirmOverlay .command-confirm-modal::before {
+            content: "";
+            position: absolute;
+            inset: 1px;
+            border-radius: 22px;
+            border: 1px solid rgba(255, 255, 255, 0.18);
+            pointer-events: none;
+        }
+
+        .command-confirm-head {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            margin-bottom: 12px;
+        }
+
+        .command-confirm-icon {
+            width: 42px;
+            height: 42px;
+            border-radius: 13px;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            border: 1px solid rgba(147, 197, 253, 0.4);
+            background: linear-gradient(135deg, rgba(56, 189, 248, 0.32), rgba(99, 102, 241, 0.24));
+            box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.16);
+            color: #dff5ff;
+            flex-shrink: 0;
+        }
+
+        .command-confirm-icon svg {
+            width: 19px;
+            height: 19px;
+            stroke: currentColor;
+            fill: none;
+            stroke-width: 2.2;
+            stroke-linecap: round;
+            stroke-linejoin: round;
+        }
+
+        .command-confirm-title {
+            margin: 0;
+            font-size: 1.1rem;
+            color: #f8fbff;
+            letter-spacing: 0.01em;
+        }
+
+        .command-confirm-message {
+            margin: 0;
+            color: #d7e9ff;
+            font-size: 0.95rem;
+            line-height: 1.6;
+            word-break: break-word;
+        }
+
+        .command-confirm-actions {
+            margin-top: 18px;
+            display: flex;
+            justify-content: flex-end;
+            gap: 10px;
+            flex-wrap: wrap;
+        }
+
+        .command-confirm-approve {
+            color: #fff6f6;
+            background: linear-gradient(135deg, rgba(239, 68, 68, 0.92), rgba(220, 38, 38, 0.88));
+            box-shadow: 0 10px 24px rgba(220, 38, 38, 0.42);
+            border: 1px solid rgba(248, 113, 113, 0.42);
+        }
+
+        .command-confirm-approve:hover {
+            box-shadow: 0 12px 26px rgba(220, 38, 38, 0.5);
+        }
+
         .subtle-button {
             color: #eaf4ff;
             background: rgba(255, 255, 255, 0.08);
@@ -1544,6 +1655,33 @@
 
         .command-notes-text {
             max-width: 240px;
+        }
+
+        .command-notes-cell {
+            display: flex;
+            flex-direction: column;
+            align-items: flex-start;
+            gap: 8px;
+        }
+
+        .command-cancel-btn {
+            padding: 7px 11px;
+            border-radius: 10px;
+            font-size: 0.78rem;
+            color: #fff5f5;
+            background: linear-gradient(135deg, #ef4444, #dc2626);
+            box-shadow: 0 6px 18px rgba(220, 38, 38, 0.4);
+            white-space: nowrap;
+        }
+
+        .command-cancel-btn:hover {
+            box-shadow: 0 10px 22px rgba(220, 38, 38, 0.55);
+        }
+
+        .command-cancel-btn:disabled {
+            opacity: 0.7;
+            cursor: wait;
+            transform: none;
         }
 
         .status-pill {
@@ -2435,6 +2573,41 @@
             </div>
         </div>
 
+        <div
+            id="commandConfirmOverlay"
+            class="instructions-overlay panel-hidden"
+            onclick="handleCommandConfirmOverlayClick(event)">
+            <div class="instructions-modal command-confirm-modal" role="dialog" aria-modal="true" aria-labelledby="commandConfirmTitle">
+                <div class="command-confirm-head">
+                    <span class="command-confirm-icon" aria-hidden="true">
+                        <svg viewBox="0 0 24 24">
+                            <path d="M12 8v5"></path>
+                            <path d="M12 16h.01"></path>
+                            <path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path>
+                        </svg>
+                    </span>
+                    <h3 id="commandConfirmTitle" class="command-confirm-title">Confirm Action</h3>
+                </div>
+                <p id="commandConfirmMessage" class="command-confirm-message"></p>
+                <div class="command-confirm-actions">
+                    <button
+                        id="commandConfirmCancelBtn"
+                        type="button"
+                        class="subtle-button"
+                        onclick="cancelCommandConfirmDialog()">
+                        Cancel
+                    </button>
+                    <button
+                        id="commandConfirmApproveBtn"
+                        type="button"
+                        class="command-confirm-approve"
+                        onclick="confirmCommandConfirmDialog()">
+                        Confirm
+                    </button>
+                </div>
+            </div>
+        </div>
+
         <section id="authSection" class="grid">
             <article class="card full-width">
                 <h2>Login</h2>
@@ -2702,8 +2875,13 @@
         let instructionsOverlayCloseTimerId = null;
         const DEVICE_ACTION_OVERLAY_ANIMATION_MS = 220;
         let deviceActionOverlayCloseTimerId = null;
+        const COMMAND_CONFIRM_OVERLAY_ANIMATION_MS = 220;
+        let commandConfirmOverlayCloseTimerId = null;
         const deviceActionDialogState = {
             mode: "",
+            resolver: null
+        };
+        const commandConfirmDialogState = {
             resolver: null
         };
         let screenMirrorCardCloseTimerId = null;
@@ -4332,10 +4510,15 @@
             const instructionsOverlay = document.getElementById("instructionsOverlay");
             const claimDeviceOverlay = document.getElementById("claimDeviceOverlay");
             const deviceActionOverlay = document.getElementById("deviceActionOverlay");
+            const commandConfirmOverlay = document.getElementById("commandConfirmOverlay");
             const isInstructionsOpen = Boolean(instructionsOverlay && !instructionsOverlay.classList.contains("panel-hidden"));
             const isClaimDeviceOpen = Boolean(claimDeviceOverlay && !claimDeviceOverlay.classList.contains("panel-hidden"));
             const isDeviceActionOpen = Boolean(deviceActionOverlay && !deviceActionOverlay.classList.contains("panel-hidden"));
-            document.body.style.overflow = isInstructionsOpen || isClaimDeviceOpen || isDeviceActionOpen ? "hidden" : "";
+            const isCommandConfirmOpen = Boolean(commandConfirmOverlay && !commandConfirmOverlay.classList.contains("panel-hidden"));
+            document.body.style.overflow =
+                isInstructionsOpen || isClaimDeviceOpen || isDeviceActionOpen || isCommandConfirmOpen
+                    ? "hidden"
+                    : "";
         }
 
         function setClaimDeviceModalTriggerExpanded(isExpanded) {
@@ -4516,6 +4699,103 @@
                 if (event.key !== "Enter") return;
                 event.preventDefault();
                 confirmDeviceActionDialog();
+            });
+        }
+
+        function closeCommandConfirmDialog(confirmed = false) {
+            const overlay = document.getElementById("commandConfirmOverlay");
+            const approveBtn = document.getElementById("commandConfirmApproveBtn");
+
+            if (commandConfirmOverlayCloseTimerId) {
+                clearTimeout(commandConfirmOverlayCloseTimerId);
+                commandConfirmOverlayCloseTimerId = null;
+            }
+
+            if (overlay && !overlay.classList.contains("panel-hidden")) {
+                overlay.classList.remove("is-visible");
+                commandConfirmOverlayCloseTimerId = setTimeout(() => {
+                    overlay.classList.add("panel-hidden");
+                    commandConfirmOverlayCloseTimerId = null;
+                    syncOverlayScrollLock();
+                }, COMMAND_CONFIRM_OVERLAY_ANIMATION_MS);
+            }
+
+            if (approveBtn) {
+                approveBtn.disabled = false;
+                approveBtn.textContent = "Confirm";
+            }
+
+            const resolver = commandConfirmDialogState.resolver;
+            commandConfirmDialogState.resolver = null;
+            if (typeof resolver === "function") {
+                resolver(Boolean(confirmed));
+            }
+            syncOverlayScrollLock();
+        }
+
+        function cancelCommandConfirmDialog() {
+            closeCommandConfirmDialog(false);
+        }
+
+        function confirmCommandConfirmDialog() {
+            closeCommandConfirmDialog(true);
+        }
+
+        function handleCommandConfirmOverlayClick(event) {
+            const overlay = document.getElementById("commandConfirmOverlay");
+            if (!overlay) return;
+            if (event.target === overlay) {
+                cancelCommandConfirmDialog();
+            }
+        }
+
+        async function openCommandConfirmDialog(config = {}) {
+            const overlay = document.getElementById("commandConfirmOverlay");
+            const titleElement = document.getElementById("commandConfirmTitle");
+            const messageElement = document.getElementById("commandConfirmMessage");
+            const approveBtn = document.getElementById("commandConfirmApproveBtn");
+            if (!overlay || !titleElement || !messageElement || !approveBtn) {
+                return false;
+            }
+
+            if (commandConfirmOverlayCloseTimerId) {
+                clearTimeout(commandConfirmOverlayCloseTimerId);
+                commandConfirmOverlayCloseTimerId = null;
+            }
+
+            if (typeof commandConfirmDialogState.resolver === "function") {
+                commandConfirmDialogState.resolver(false);
+            }
+
+            titleElement.textContent = toNonEmptyString(config.title) || "Confirm Action";
+            messageElement.textContent = toNonEmptyString(config.message) || "Are you sure?";
+            approveBtn.textContent = toNonEmptyString(config.confirmLabel) || "Confirm";
+            approveBtn.disabled = false;
+
+            overlay.classList.remove("panel-hidden");
+            requestAnimationFrame(() => {
+                overlay.classList.add("is-visible");
+                approveBtn.focus();
+            });
+
+            syncOverlayScrollLock();
+
+            return await new Promise((resolve) => {
+                commandConfirmDialogState.resolver = resolve;
+            });
+        }
+
+        function initializeCommandConfirmDialog() {
+            const overlay = document.getElementById("commandConfirmOverlay");
+            if (!overlay) return;
+            overlay.addEventListener("keydown", (event) => {
+                if (event.key !== "Enter") return;
+                const target = event.target;
+                if (target instanceof HTMLElement && isTextEntryElement(target)) {
+                    return;
+                }
+                event.preventDefault();
+                confirmCommandConfirmDialog();
             });
         }
 
@@ -4833,6 +5113,7 @@
                 closeInstructions();
                 closeClaimDeviceModal();
                 cancelDeviceActionDialog();
+                cancelCommandConfirmDialog();
                 hideScreenMirrorCard(false);
             }
         });
@@ -5163,6 +5444,47 @@
             return toNonEmptyString(command?.notes) || "-";
         }
 
+        async function cancelPendingCommandAndSendEnd(commandId, deviceUid) {
+            const normalizedCommandId = toNonEmptyString(commandId);
+            const normalizedDeviceUid = normalizeDeviceUidInput(deviceUid || "");
+            if (!normalizedCommandId || !normalizedDeviceUid) {
+                showToast("Invalid command", "error");
+                return false;
+            }
+
+            const confirmed = await openCommandConfirmDialog({
+                title: "Cancel Pending Command",
+                message: `Cancel pending command for device ${normalizedDeviceUid} and send END command?`,
+                confirmLabel: "Cancel + Send END"
+            });
+            if (!confirmed) {
+                return false;
+            }
+
+            try {
+                const response = await apiFetch(
+                    `/commands/${encodeURIComponent(normalizedCommandId)}/cancel-and-end`,
+                    {
+                        method: "POST"
+                    }
+                );
+                const payload = await response.json();
+                if (!response.ok) {
+                    throw new Error(parseApiErrorMessage(payload, "Failed to cancel pending command"));
+                }
+
+                const message = payload?.endCommand
+                    ? "Pending command cancelled and END command queued"
+                    : "Pending command cancelled";
+                showToast(message, "success");
+                await loadCommands();
+                return true;
+            } catch (error) {
+                showToast(error.message || "Failed to cancel pending command", "error");
+                return false;
+            }
+        }
+
         function getStatusMeta(status) {
             const normalizedStatus = toNonEmptyString(status).toLowerCase();
             if (normalizedStatus === "executed") {
@@ -5227,6 +5549,23 @@
                 const statusMeta = getStatusMeta(command?.status);
                 const createdAt = asDisplayValue(command?.createdAt);
                 const notesText = getCommandNotes(command);
+                const commandId = toNonEmptyString(command?.id);
+                const canCancelAndEnd =
+                    toNonEmptyString(command?.status).toLowerCase() === "pending" &&
+                    Boolean(commandId) &&
+                    Boolean(normalizedUid);
+                const actionContent = canCancelAndEnd
+                    ? `
+                        <button
+                            type="button"
+                            class="command-cancel-btn"
+                            data-command-action="cancel-and-end"
+                            data-command-id="${escapeHtml(commandId)}"
+                            data-device-uid="${escapeHtml(normalizedUid)}">
+                            Cancel + END
+                        </button>
+                    `
+                    : "";
 
                 return `
                     <tr>
@@ -5241,7 +5580,10 @@
                         </td>
                         <td>${escapeHtml(createdAt)}</td>
                         <td>
+                            <div class="command-notes-cell">
+                                ${actionContent}
                             <span class="command-notes-text" title="${escapeHtml(notesText)}">${escapeHtml(notesText)}</span>
+                            </div>
                         </td>
                     </tr>
                 `;
@@ -5262,6 +5604,24 @@
                     <tbody>${rows}</tbody>
                 </table>
             `;
+
+            container
+                .querySelectorAll("[data-command-action='cancel-and-end']")
+                .forEach((button) => {
+                    button.addEventListener("click", async () => {
+                        const commandId = button.getAttribute("data-command-id") || "";
+                        const deviceUid = button.getAttribute("data-device-uid") || "";
+                        const originalLabel = toNonEmptyString(button.textContent) || "Cancel + END";
+                        button.disabled = true;
+                        button.textContent = "Processing...";
+                        try {
+                            await cancelPendingCommandAndSendEnd(commandId, deviceUid);
+                        } finally {
+                            button.disabled = false;
+                            button.textContent = originalLabel;
+                        }
+                    });
+                });
         }
 
         function setActionTab(tab) {
@@ -5978,6 +6338,7 @@
 
         initializeGlobalDeviceSelector();
         initializeDeviceActionDialog();
+        initializeCommandConfirmDialog();
         initializeScreenMirrorFloatingUI();
         initializeScreenMirrorTouchControl();
         resetScreenMirrorView();

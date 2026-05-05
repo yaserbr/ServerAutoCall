@@ -2311,6 +2311,114 @@ app.get("/commands", requireAuth, async (req, res) => {
   }
 });
 
+app.post("/commands/:id/cancel-and-end", requireAuth, async (req, res) => {
+  try {
+    const { id } = req.params;
+    const currentUserId = normalizeAuthUserId(req.user?.id);
+    if (!currentUserId) {
+      return res.status(401).json({ error: "Unauthorized" });
+    }
+
+    if (!mongoose.isValidObjectId(id)) {
+      return res.status(400).json({ error: "Invalid command id" });
+    }
+
+    const existingCommand = await Command.findById(id);
+    if (!existingCommand) {
+      logCommandLifecycle("cancel_pending_missing_command", {
+        commandId: id,
+        oldStatus: null,
+        newStatus: null
+      });
+      return res.status(404).json({ error: "Command not found" });
+    }
+
+    const targetDevice = await Device.findOne({ deviceUid: existingCommand.deviceUid });
+    if (!targetDevice) {
+      return res.status(404).json({ error: "Device not found" });
+    }
+
+    if (!targetDevice.ownerUserId) {
+      return res.status(403).json({ error: "Device is not claimed" });
+    }
+
+    if (!isDeviceOwnedByUser(targetDevice, currentUserId)) {
+      return res.status(403).json({ error: "Forbidden" });
+    }
+
+    const cancelledFailureReason = "Cancelled by user before execution";
+    const cancelledCommand = await Command.findOneAndUpdate(
+      { _id: existingCommand._id, status: "pending" },
+      {
+        $set: {
+          status: "failed",
+          failureReason: cancelledFailureReason
+        },
+        $unset: {
+          executedAt: 1,
+          downloadDurationSeconds: 1
+        }
+      },
+      { new: true }
+    );
+
+    if (!cancelledCommand) {
+      const latestCommand = await Command.findById(existingCommand._id);
+      const latestStatus = latestCommand?.status ?? "unknown";
+      return res.status(409).json({
+        error: `Only pending commands can be cancelled. Current status: ${latestStatus}`
+      });
+    }
+
+    logCommandLifecycle("cancelled_by_user", {
+      commandId: commandIdFrom(cancelledCommand),
+      deviceUid: cancelledCommand.deviceUid,
+      oldStatus: "pending",
+      newStatus: "failed",
+      details: {
+        failureReason: cancelledFailureReason
+      }
+    });
+
+    const cancelledIsEndCommand =
+      cancelledCommand.action === "end" || cancelledCommand.type === "END";
+    let endCommand = null;
+    if (!cancelledIsEndCommand) {
+      const cancelledCommandId = commandIdFrom(cancelledCommand) || id;
+      endCommand = await Command.create({
+        deviceUid: cancelledCommand.deviceUid,
+        action: "end",
+        type: "END",
+        status: "pending",
+        isImmediate: true,
+        notes: `Auto END after cancelling command ${cancelledCommandId}`,
+        createdAt: new Date(toUtcISOString())
+      });
+
+      logCommandLifecycle("created", {
+        commandId: commandIdFrom(endCommand),
+        deviceUid: endCommand.deviceUid,
+        oldStatus: null,
+        newStatus: "pending",
+        details: {
+          action: "end",
+          type: "END",
+          trigger: "cancel_and_end",
+          canceledCommandId: cancelledCommandId
+        }
+      });
+    }
+
+    return res.json({
+      success: true,
+      cancelledCommand: mapCommandForResponse(cancelledCommand),
+      endCommand: endCommand ? mapCommandForResponse(endCommand) : null
+    });
+  } catch (error) {
+    return handleServerError(res, error, "POST /commands/:id/cancel-and-end");
+  }
+});
+
 app.delete("/commands", requireAuth, async (req, res) => {
   try {
     const currentUserId = normalizeAuthUserId(req.user?.id);
