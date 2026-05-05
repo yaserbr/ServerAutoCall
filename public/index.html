@@ -1825,18 +1825,19 @@
             position: relative;
             width: 100%;
             max-height: none;
-            overflow: visible;
+            overflow: hidden;
             padding: 10px;
             margin-bottom: 14px;
-            opacity: 1;
-            transform: none;
-            pointer-events: auto;
-            transition: none;
+            opacity: 0;
+            transform: translateY(-10px) scale(0.985);
+            pointer-events: none;
+            transition: opacity 0.22s ease, transform 0.22s cubic-bezier(0.22, 1, 0.36, 1);
+            will-change: opacity, transform;
         }
 
         .screen-mirror-toast-card.is-visible {
             opacity: 1;
-            transform: none;
+            transform: translateY(0) scale(1);
             pointer-events: auto;
         }
 
@@ -3747,7 +3748,7 @@
                 if (hint) {
                     hint.textContent = "Use the mirror icon from the device list to start live view.";
                 }
-                hideScreenMirrorCard(true);
+                hideScreenMirrorCard(false);
                 return;
             }
 
@@ -4092,7 +4093,16 @@
 
             screenMirrorCard.classList.remove("is-visible");
             updateScreenMirrorCardToggleButtonState(false);
-            screenMirrorCard.classList.add("panel-hidden");
+
+            if (immediate) {
+                screenMirrorCard.classList.add("panel-hidden");
+                return;
+            }
+
+            screenMirrorCardCloseTimerId = setTimeout(() => {
+                screenMirrorCard.classList.add("panel-hidden");
+                screenMirrorCardCloseTimerId = null;
+            }, 220);
         }
 
         function openScreenMirrorCard(forceOpen = false) {
@@ -4105,7 +4115,9 @@
             }
 
             screenMirrorCard.classList.remove("panel-hidden");
-            screenMirrorCard.classList.add("is-visible");
+            requestAnimationFrame(() => {
+                screenMirrorCard.classList.add("is-visible");
+            });
             updateScreenMirrorCardToggleButtonState(true);
         }
 

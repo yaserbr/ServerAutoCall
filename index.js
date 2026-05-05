@@ -89,6 +89,13 @@ const DEVICE_UID_LENGTH = 5;
 const DEVICE_UID_REGEX = new RegExp(`^[a-z0-9]{${DEVICE_UID_LENGTH}}$`);
 const DEVICE_UID_FORMAT_ERROR = `deviceUid must be exactly ${DEVICE_UID_LENGTH} lowercase letters or digits`;
 const COMMAND_FETCH_WINDOW_MS = 24 * 60 * 60 * 1000;
+const COMMAND_DUPLICATE_GUARD_WINDOW_MS = (() => {
+  const parsed = Number(process.env.COMMAND_DUPLICATE_GUARD_WINDOW_MS);
+  if (!Number.isFinite(parsed)) return 3000;
+  const normalized = Math.round(parsed);
+  return Math.max(0, normalized);
+})();
+const COMMAND_DUPLICATE_EXCLUDED_ACTIONS = new Set(["screen_touch", "screen_swipe"]);
 const BCRYPT_SALT_ROUNDS = 10;
 const JWT_ACCESS_EXPIRES_IN = process.env.JWT_ACCESS_EXPIRES_IN || "7d";
 const COMMAND_CLAIM_SORT = { isImmediate: -1, scheduledAt: 1, createdAt: 1, _id: 1 };
@@ -602,6 +609,66 @@ function mapCommandForResponse(command) {
     createdAt: formatUtcForRiyadhDisplay(source.createdAt),
     executedAt: formatUtcForRiyadhDisplay(source.executedAt)
   };
+}
+
+function normalizeCommandComparableString(value, options = {}) {
+  if (typeof value !== "string") return null;
+  const normalized = value.trim();
+  if (!normalized) return null;
+  return options.toLowerCase ? normalized.toLowerCase() : normalized;
+}
+
+function normalizeCommandComparableNumber(value) {
+  if (!hasPresentValue(value)) return null;
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
+function normalizeCommandComparableDateToIso(value) {
+  if (!value) return null;
+  const parsedDate = value instanceof Date ? value : new Date(value);
+  if (Number.isNaN(parsedDate.getTime())) return null;
+  return parsedDate.toISOString();
+}
+
+function buildCommandDuplicateSignature(commandLike) {
+  const source = toPlainObject(commandLike) || {};
+
+  return JSON.stringify({
+    deviceUid: normalizeDeviceUid(source.deviceUid),
+    action: normalizeCommandComparableString(source.action, { toLowerCase: true }),
+    type: normalizeCommandComparableString(source.type),
+    isImmediate: source.isImmediate === false ? false : true,
+    scheduledAt: normalizeCommandComparableDateToIso(source.scheduledAt),
+    phoneNumber: normalizeCommandComparableString(source.phoneNumber),
+    message: normalizeCommandComparableString(source.message),
+    url: normalizeCommandComparableString(source.url),
+    appName: normalizeCommandComparableString(source.appName),
+    resolvedPackageName: normalizeCommandComparableString(source.resolvedPackageName),
+    notes: normalizeCommandComparableString(source.notes),
+    durationSeconds: normalizeCommandComparableNumber(source.durationSeconds),
+    downloadSizeMb: normalizeCommandComparableNumber(source.downloadSizeMb),
+    enabled: typeof source.enabled === "boolean" ? source.enabled : null,
+    autoHangupSeconds: normalizeCommandComparableNumber(source.autoHangupSeconds),
+    x: normalizeCommandComparableNumber(source.x),
+    y: normalizeCommandComparableNumber(source.y),
+    screenWidth: normalizeCommandComparableNumber(source.screenWidth),
+    screenHeight: normalizeCommandComparableNumber(source.screenHeight),
+    startX: normalizeCommandComparableNumber(source.startX),
+    startY: normalizeCommandComparableNumber(source.startY),
+    endX: normalizeCommandComparableNumber(source.endX),
+    endY: normalizeCommandComparableNumber(source.endY),
+    durationMs: normalizeCommandComparableNumber(source.durationMs),
+    touchTarget: normalizeCommandComparableString(source.touchTarget, { toLowerCase: true })
+  });
+}
+
+function shouldApplyCommandDuplicateGuard(action) {
+  return (
+    typeof action === "string" &&
+    action.trim() !== "" &&
+    !COMMAND_DUPLICATE_EXCLUDED_ACTIONS.has(action)
+  );
 }
 
 function redactSensitivePayload(value, depth = 0) {
@@ -2104,6 +2171,45 @@ app.post("/commands", requireAuth, async (req, res) => {
       addIfPresent(commandData, "durationMs", normalizedDurationMs);
       addIfPresent(commandData, "screenWidth", normalizedScreenWidth);
       addIfPresent(commandData, "screenHeight", normalizedScreenHeight);
+    }
+
+    const shouldCheckDuplicate =
+      COMMAND_DUPLICATE_GUARD_WINDOW_MS > 0 &&
+      shouldApplyCommandDuplicateGuard(normalizedAction);
+    if (shouldCheckDuplicate) {
+      const dedupeWindowStart = new Date(Date.now() - COMMAND_DUPLICATE_GUARD_WINDOW_MS);
+      const latestRecentCommand = await Command.findOne({
+        deviceUid: normalizedDeviceUid,
+        createdAt: { $gte: dedupeWindowStart }
+      }).sort({ createdAt: -1, _id: -1 });
+
+      if (latestRecentCommand) {
+        const incomingCommandSignature = buildCommandDuplicateSignature(commandData);
+        const latestCommandSignature = buildCommandDuplicateSignature(latestRecentCommand);
+        if (
+          incomingCommandSignature &&
+          latestCommandSignature &&
+          incomingCommandSignature === latestCommandSignature
+        ) {
+          const latestCommandResponse = mapCommandForResponse(latestRecentCommand);
+          logCommandLifecycle("duplicate_ignored", {
+            commandId: commandIdFrom(latestRecentCommand),
+            deviceUid: normalizedDeviceUid,
+            oldStatus: latestCommandResponse.status ?? null,
+            newStatus: latestCommandResponse.status ?? null,
+            details: {
+              action: normalizedAction,
+              type: commandType,
+              dedupeWindowMs: COMMAND_DUPLICATE_GUARD_WINDOW_MS
+            }
+          });
+
+          return res.json({
+            ...latestCommandResponse,
+            duplicateIgnored: true
+          });
+        }
+      }
     }
 
     const command = await Command.create(commandData);
