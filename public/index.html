@@ -1968,6 +1968,9 @@
             display: flex;
             align-items: center;
             justify-content: center;
+            touch-action: none;
+            user-select: none;
+            cursor: crosshair;
         }
 
         .screen-mirror-tile-preview {
@@ -2843,46 +2846,9 @@
             <article id="screenMirrorCard" class="card full-width screen-mirror-toast-card panel-hidden">
                 <div class="screen-mirror-multi-header">
                     <h2>Screen Mirror Sessions</h2>
-                    <button type="button" class="danger-button" onclick="stopAllActiveScreenMirrors()">Stop All</button>
                 </div>
                 <p id="screenMirrorMultiHint" class="screen-mirror-multi-hint">Use the mirror icon from the device list to start live view.</p>
                 <div id="screenMirrorMultiGrid" class="screen-mirror-multi-grid"></div>
-
-                <div id="screenMirrorLegacyLayout" class="screen-mirror-layout panel-hidden">
-                    <div class="screen-mirror-control-column">
-                        <h2>Live Screen Mirror</h2>
-                        <div class="screen-mirror-actions-inline">
-                            <button id="screenMirrorStartStopBtn" type="button" onclick="toggleScreenMirrorStartStop()">Start Screen Mirror</button>
-                        </div>
-                        <div class="screen-mirror-quick-actions">
-                            <button type="button" onclick="sendScreenQuickAction('back')">Back</button>
-                            <button type="button" onclick="sendScreenQuickAction('home')">Home</button>
-                            <button type="button" onclick="sendScreenQuickAction('recents')">Recents</button>
-                        </div>
-                        <div class="screen-mirror-status-grid">
-                            <div class="screen-mirror-status-item">Status: <span id="screenMirrorStatusText">idle</span></div>
-                        </div>
-                        <span id="screenMirrorFrameCountText" class="screen-mirror-frame-count-hidden">0</span>
-                    </div>
-                    <div id="screenMirrorViewerDockSlot" class="screen-mirror-viewer-wrap screen-mirror-viewer-slot">
-                        <div id="screenMirrorViewerNode" class="screen-mirror-viewer">
-                            <button id="screenMirrorPinToggleBtn" class="screen-mirror-pin-overlay-btn" type="button" aria-label="Pin screen" title="Pin screen" onclick="toggleScreenMirrorFloating()">
-                                <svg
-                                    xmlns="http://www.w3.org/2000/svg"
-                                    viewBox="0 0 24 24"
-                                    fill="none"
-                                    stroke-width="2"
-                                    stroke-linecap="round"
-                                    stroke-linejoin="round"
-                                    aria-hidden="true">
-                                    <path d="M21 9V6a2 2 0 0 0-2-2H4a2 2 0 0 0-2 2v10c0 1.1.9 2 2 2h4" />
-                                    <rect width="10" height="7" x="12" y="13" rx="2" />
-                                </svg>
-                            </button>
-                            <img id="screenMirrorPreview" alt="Live mirrored screen" />
-                        </div>
-                    </div>
-                </div>
             </article>
 
             <article id="managementPanel" class="card full-width">
@@ -3017,6 +2983,7 @@
             startedAtMs: 0,
             startMappedPoint: null
         };
+        const screenMirrorMultiPointerGestureById = new Map();
         const panelVisibility = {
             commands: false
         };
@@ -3474,6 +3441,8 @@
                     frameCount: 0,
                     lastFrameAt: "--",
                     frameSrc: "",
+                    frameWidth: 0,
+                    frameHeight: 0,
                     updatedAt: 0
                 });
             }
@@ -3496,6 +3465,268 @@
             return normalizedDeviceUid;
         }
 
+        function getScreenMirrorTilePreviewElement(previewWrap) {
+            if (!(previewWrap instanceof Element)) return null;
+            return previewWrap.querySelector(".screen-mirror-tile-preview");
+        }
+
+        function getScreenMirrorTileDeviceUid(previewWrap) {
+            if (!(previewWrap instanceof HTMLElement)) return "";
+            const fromDataset = normalizeDeviceUidInput(previewWrap.dataset.deviceUid || "");
+            if (fromDataset) return fromDataset;
+            const tile = previewWrap.closest(".screen-mirror-device-tile");
+            return normalizeDeviceUidInput(tile?.getAttribute("data-device-uid") || "");
+        }
+
+        function getScreenMirrorTileSourceSize(previewWrap, deviceUid) {
+            const normalizedDeviceUid = normalizeDeviceUidInput(deviceUid);
+            if (!normalizedDeviceUid) return null;
+            const state = getScreenMirrorDeviceState(normalizedDeviceUid);
+            if (!state) return null;
+
+            const explicitWidth = toValidPositiveInteger(state.frameWidth);
+            const explicitHeight = toValidPositiveInteger(state.frameHeight);
+            if (explicitWidth && explicitHeight) {
+                return { width: explicitWidth, height: explicitHeight };
+            }
+
+            const previewImage = getScreenMirrorTilePreviewElement(previewWrap);
+            const naturalWidth = toValidPositiveInteger(previewImage?.naturalWidth);
+            const naturalHeight = toValidPositiveInteger(previewImage?.naturalHeight);
+            if (naturalWidth && naturalHeight) {
+                return { width: naturalWidth, height: naturalHeight };
+            }
+
+            return null;
+        }
+
+        function mapScreenMirrorTileClientPointToDevicePoint(previewWrap, deviceUid, clientX, clientY) {
+            const previewImage = getScreenMirrorTilePreviewElement(previewWrap);
+            if (!previewImage) return null;
+            const sourceSize = getScreenMirrorTileSourceSize(previewWrap, deviceUid);
+            if (!sourceSize) return null;
+
+            const imageRect = previewImage.getBoundingClientRect();
+            if (imageRect.width <= 0 || imageRect.height <= 0) {
+                return null;
+            }
+
+            const drawScale = Math.min(
+                imageRect.width / sourceSize.width,
+                imageRect.height / sourceSize.height
+            );
+            if (!Number.isFinite(drawScale) || drawScale <= 0) {
+                return null;
+            }
+
+            const drawnWidth = sourceSize.width * drawScale;
+            const drawnHeight = sourceSize.height * drawScale;
+            const offsetX = (imageRect.width - drawnWidth) / 2;
+            const offsetY = (imageRect.height - drawnHeight) / 2;
+            const localX = clientX - imageRect.left;
+            const localY = clientY - imageRect.top;
+
+            if (
+                localX < offsetX ||
+                localX > offsetX + drawnWidth ||
+                localY < offsetY ||
+                localY > offsetY + drawnHeight
+            ) {
+                return null;
+            }
+
+            const normalizedX = (localX - offsetX) / drawnWidth;
+            const normalizedY = (localY - offsetY) / drawnHeight;
+            const mappedX = Math.min(
+                sourceSize.width - 1,
+                Math.max(0, Math.round(normalizedX * sourceSize.width))
+            );
+            const mappedY = Math.min(
+                sourceSize.height - 1,
+                Math.max(0, Math.round(normalizedY * sourceSize.height))
+            );
+
+            return {
+                x: mappedX,
+                y: mappedY,
+                screenWidth: sourceSize.width,
+                screenHeight: sourceSize.height
+            };
+        }
+
+        async function sendScreenRemoteCommandForDevice(deviceUid, payload, options = {}) {
+            const normalizedDeviceUid = normalizeDeviceUidInput(deviceUid);
+            if (!normalizedDeviceUid) {
+                return false;
+            }
+            const defaultErrorMessage =
+                typeof options.defaultErrorMessage === "string" && options.defaultErrorMessage.trim()
+                    ? options.defaultErrorMessage.trim()
+                    : "Failed to send screen control command";
+            const showErrorToast = options.showErrorToast !== false;
+
+            try {
+                const response = await apiFetch("/commands", {
+                    method: "POST",
+                    headers: {
+                        "Content-Type": "application/json"
+                    },
+                    body: JSON.stringify({
+                        ...payload,
+                        deviceUid: normalizedDeviceUid,
+                        isImmediate: true
+                    })
+                });
+                const data = await response.json();
+                if (!response.ok) {
+                    throw new Error(parseApiErrorMessage(data, defaultErrorMessage));
+                }
+                return true;
+            } catch (error) {
+                if (showErrorToast) {
+                    showToast(error.message || defaultErrorMessage, "error");
+                }
+                return false;
+            }
+        }
+
+        function clearScreenMirrorMultiPointerGesture(pointerId) {
+            if (!Number.isFinite(Number(pointerId))) return;
+            const gestureState = screenMirrorMultiPointerGestureById.get(pointerId);
+            if (!gestureState) return;
+            const previewWrap = gestureState.previewWrap;
+            if (previewWrap && typeof previewWrap.releasePointerCapture === "function") {
+                try {
+                    previewWrap.releasePointerCapture(pointerId);
+                } catch (_error) {
+                    // ignore pointer release errors
+                }
+            }
+            screenMirrorMultiPointerGestureById.delete(pointerId);
+        }
+
+        function clearAllScreenMirrorMultiPointerGestures() {
+            [...screenMirrorMultiPointerGestureById.keys()].forEach((pointerId) => {
+                clearScreenMirrorMultiPointerGesture(pointerId);
+            });
+        }
+
+        function handleMultiScreenMirrorPreviewPointerDown(event) {
+            const previewWrap = event.currentTarget;
+            if (!(previewWrap instanceof HTMLElement)) return;
+            if (event.pointerType === "mouse" && event.button !== 0) return;
+            const deviceUid = getScreenMirrorTileDeviceUid(previewWrap);
+            if (!deviceUid || !activeScreenMirrorDeviceUids.has(deviceUid)) {
+                return;
+            }
+
+            const mappedStart = mapScreenMirrorTileClientPointToDevicePoint(
+                previewWrap,
+                deviceUid,
+                event.clientX,
+                event.clientY
+            );
+            if (!mappedStart) return;
+
+            screenMirrorMultiPointerGestureById.set(event.pointerId, {
+                previewWrap,
+                deviceUid,
+                startClientX: event.clientX,
+                startClientY: event.clientY,
+                startedAtMs: Date.now(),
+                startMappedPoint: mappedStart
+            });
+
+            if (typeof previewWrap.setPointerCapture === "function") {
+                try {
+                    previewWrap.setPointerCapture(event.pointerId);
+                } catch (_error) {
+                    // ignore pointer capture errors
+                }
+            }
+
+            event.preventDefault();
+        }
+
+        async function handleMultiScreenMirrorPreviewPointerUp(event) {
+            const gestureState = screenMirrorMultiPointerGestureById.get(event.pointerId);
+            if (!gestureState) return;
+
+            clearScreenMirrorMultiPointerGesture(event.pointerId);
+            const { previewWrap, deviceUid, startClientX, startClientY, startedAtMs, startMappedPoint } = gestureState;
+            if (!deviceUid || !activeScreenMirrorDeviceUids.has(deviceUid)) {
+                return;
+            }
+
+            const mappedEnd = mapScreenMirrorTileClientPointToDevicePoint(
+                previewWrap,
+                deviceUid,
+                event.clientX,
+                event.clientY
+            );
+            const pointerDistance = Math.hypot(
+                event.clientX - startClientX,
+                event.clientY - startClientY
+            );
+            const endPointForTap = mappedEnd || startMappedPoint;
+
+            if (
+                pointerDistance <= SCREEN_TOUCH_TAP_DISTANCE_THRESHOLD_PX &&
+                endPointForTap
+            ) {
+                await sendScreenRemoteCommandForDevice(
+                    deviceUid,
+                    {
+                        action: "screen_touch",
+                        type: "SCREEN_TOUCH",
+                        x: endPointForTap.x,
+                        y: endPointForTap.y,
+                        screenWidth: endPointForTap.screenWidth,
+                        screenHeight: endPointForTap.screenHeight
+                    },
+                    {
+                        defaultErrorMessage: "Failed to send screen tap command",
+                        showErrorToast: true
+                    }
+                );
+                event.preventDefault();
+                return;
+            }
+
+            if (!startMappedPoint || !mappedEnd) {
+                return;
+            }
+
+            const elapsedMs = Math.round(Date.now() - startedAtMs);
+            const durationMs = Math.max(
+                SCREEN_TOUCH_MIN_SWIPE_DURATION_MS,
+                Math.min(SCREEN_TOUCH_MAX_SWIPE_DURATION_MS, elapsedMs)
+            );
+            await sendScreenRemoteCommandForDevice(
+                deviceUid,
+                {
+                    action: "screen_swipe",
+                    type: "SCREEN_SWIPE",
+                    startX: startMappedPoint.x,
+                    startY: startMappedPoint.y,
+                    endX: mappedEnd.x,
+                    endY: mappedEnd.y,
+                    durationMs,
+                    screenWidth: mappedEnd.screenWidth,
+                    screenHeight: mappedEnd.screenHeight
+                },
+                {
+                    defaultErrorMessage: "Failed to send screen swipe command",
+                    showErrorToast: true
+                }
+            );
+            event.preventDefault();
+        }
+
+        function handleMultiScreenMirrorPreviewPointerCancel(event) {
+            clearScreenMirrorMultiPointerGesture(event.pointerId);
+        }
+
         function renderScreenMirrorMultiGrid() {
             const grid = getScreenMirrorMultiGridElement();
             const hint = document.getElementById("screenMirrorMultiHint");
@@ -3511,6 +3742,7 @@
             );
 
             if (sortedUids.length === 0) {
+                clearAllScreenMirrorMultiPointerGestures();
                 grid.innerHTML = "";
                 if (hint) {
                     hint.textContent = "Use the mirror icon from the device list to start live view.";
@@ -3535,10 +3767,6 @@
                 const deviceName = getScreenMirrorDeviceDisplayName(deviceUid);
                 const statusText = toNonEmptyString(state.status).toLowerCase() || "idle";
                 const statusClass = escapeHtml(statusText.replace(/[^a-z0-9_-]/g, ""));
-                const frameCount = Number.isFinite(Number(state.frameCount))
-                    ? Math.max(0, Math.round(Number(state.frameCount)))
-                    : 0;
-                const lastFrameAt = toNonEmptyString(state.lastFrameAt) || "--";
                 const previewContent = toNonEmptyString(state.frameSrc)
                     ? `<img class="screen-mirror-tile-preview" src="${escapeHtml(state.frameSrc)}" alt="Live mirrored screen for ${escapeHtml(deviceName)}" />`
                     : `<span class="screen-mirror-tile-placeholder">Waiting for frames...</span>`;
@@ -3559,33 +3787,30 @@
                                     title="Stop mirror"
                                     aria-label="Stop mirror">
                                     <svg viewBox="0 0 24 24" aria-hidden="true">
-                                        <rect x="7" y="7" width="10" height="10" rx="2"></rect>
-                                    </svg>
-                                </button>
-                                <button
-                                    type="button"
-                                    class="screen-mirror-tile-btn"
-                                    data-mirror-action="remove"
-                                    data-device-uid="${escapeHtml(deviceUid)}"
-                                    title="Remove from view"
-                                    aria-label="Remove from view">
-                                    <svg viewBox="0 0 24 24" aria-hidden="true">
-                                        <path d="M18 6 6 18"></path>
-                                        <path d="m6 6 12 12"></path>
+                                        <path d="M8 8h3v4"></path>
+                                        <path d="M16 16h-3v-4"></path>
+                                        <path d="M11 10h2a2 2 0 0 1 2 2"></path>
+                                        <path d="M13 14h-2a2 2 0 0 1-2-2"></path>
+                                        <path d="M3 3 21 21"></path>
                                     </svg>
                                 </button>
                             </div>
                         </div>
-                        <div class="screen-mirror-tile-preview-wrap" data-mirror-field="previewWrap">${previewContent}</div>
+                        <div
+                            class="screen-mirror-tile-preview-wrap"
+                            data-mirror-field="previewWrap"
+                            data-device-uid="${escapeHtml(deviceUid)}"
+                            title="Tap or swipe to control this device">
+                            ${previewContent}
+                        </div>
                         <div class="screen-mirror-device-meta">
                             <span class="screen-mirror-device-status ${statusClass}" data-mirror-field="status">${escapeHtml(statusText)}</span>
-                            <span data-mirror-field="frameCount">frames: ${escapeHtml(String(frameCount))}</span>
-                            <span data-mirror-field="lastFrameAt">${escapeHtml(lastFrameAt)}</span>
                         </div>
                     </div>
                 `;
             }).join("");
 
+            clearAllScreenMirrorMultiPointerGestures();
             grid.innerHTML = tilesHtml;
 
             grid.querySelectorAll("[data-mirror-action='stop']").forEach((button) => {
@@ -3601,13 +3826,12 @@
                 });
             });
 
-            grid.querySelectorAll("[data-mirror-action='remove']").forEach((button) => {
-                button.addEventListener("click", () => {
-                    const targetUid = normalizeDeviceUidInput(button.getAttribute("data-device-uid") || "");
-                    if (!targetUid) return;
-                    activeScreenMirrorDeviceUids.delete(targetUid);
-                    renderScreenMirrorMultiGrid();
-                });
+            grid.querySelectorAll("[data-mirror-field='previewWrap']").forEach((previewWrap) => {
+                if (!(previewWrap instanceof HTMLElement)) return;
+                previewWrap.addEventListener("pointerdown", handleMultiScreenMirrorPreviewPointerDown, { passive: false });
+                previewWrap.addEventListener("pointerup", handleMultiScreenMirrorPreviewPointerUp, { passive: false });
+                previewWrap.addEventListener("pointercancel", handleMultiScreenMirrorPreviewPointerCancel);
+                previewWrap.addEventListener("dragstart", (event) => event.preventDefault());
             });
         }
 
@@ -3627,10 +3851,6 @@
             if (!state) return;
             const statusText = toNonEmptyString(state.status).toLowerCase() || "idle";
             const statusClass = statusText.replace(/[^a-z0-9_-]/g, "");
-            const frameCount = Number.isFinite(Number(state.frameCount))
-                ? Math.max(0, Math.round(Number(state.frameCount)))
-                : 0;
-            const lastFrameAt = toNonEmptyString(state.lastFrameAt) || "--";
 
             const previewWrap = tile.querySelector("[data-mirror-field='previewWrap']");
             if (previewWrap) {
@@ -3645,14 +3865,6 @@
             if (statusElement) {
                 statusElement.className = `screen-mirror-device-status ${statusClass}`;
                 statusElement.textContent = statusText;
-            }
-            const frameCountElement = tile.querySelector("[data-mirror-field='frameCount']");
-            if (frameCountElement) {
-                frameCountElement.textContent = `frames: ${frameCount}`;
-            }
-            const lastFrameElement = tile.querySelector("[data-mirror-field='lastFrameAt']");
-            if (lastFrameElement) {
-                lastFrameElement.textContent = lastFrameAt;
             }
         }
 
@@ -3699,7 +3911,18 @@
                 typeof payload.mimeType === "string" && payload.mimeType.trim()
                     ? payload.mimeType.trim()
                     : "image/jpeg";
+            const payloadWidth = Number(payload?.width);
+            const payloadHeight = Number(payload?.height);
             state.frameSrc = `data:${mimeType};base64,${frameBase64}`;
+            if (
+                Number.isFinite(payloadWidth) &&
+                Number.isFinite(payloadHeight) &&
+                payloadWidth > 0 &&
+                payloadHeight > 0
+            ) {
+                state.frameWidth = Math.max(1, Math.round(payloadWidth));
+                state.frameHeight = Math.max(1, Math.round(payloadHeight));
+            }
             state.status = "live";
             state.frameCount = Number.isFinite(Number(state.frameCount))
                 ? Math.max(0, Math.round(Number(state.frameCount))) + 1
@@ -3749,6 +3972,11 @@
             const state = getScreenMirrorDeviceState(normalizedDeviceUid);
             if (state) {
                 state.status = "starting";
+                state.frameSrc = "";
+                state.frameCount = 0;
+                state.lastFrameAt = "--";
+                state.frameWidth = 0;
+                state.frameHeight = 0;
                 state.updatedAt = Date.now();
             }
             renderScreenMirrorMultiGrid();
@@ -5329,6 +5557,7 @@
             deviceNameByUid.clear();
             stopDevicesSelectRefresh();
             disconnectScreenMirrorSocket();
+            clearAllScreenMirrorMultiPointerGestures();
             activeScreenMirrorDeviceUids.clear();
             screenMirrorDeviceStateByUid.clear();
             dockScreenMirror();
