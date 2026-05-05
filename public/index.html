@@ -1822,23 +1822,21 @@
         }
 
         .screen-mirror-toast-card {
-            position: fixed;
-            top: 92px;
-            right: 16px;
-            width: min(430px, calc(100vw - 20px));
-            max-height: calc(100vh - 104px);
-            overflow: auto;
+            position: relative;
+            width: 100%;
+            max-height: none;
+            overflow: visible;
             padding: 10px;
-            z-index: 1220;
-            opacity: 0;
-            transform: translateY(-10px) scale(0.985);
-            pointer-events: none;
-            transition: opacity 0.22s ease, transform 0.22s cubic-bezier(0.22, 1, 0.36, 1);
+            margin-bottom: 14px;
+            opacity: 1;
+            transform: none;
+            pointer-events: auto;
+            transition: none;
         }
 
         .screen-mirror-toast-card.is-visible {
             opacity: 1;
-            transform: translateY(0) scale(1);
+            transform: none;
             pointer-events: auto;
         }
 
@@ -2318,10 +2316,8 @@
             }
 
             .screen-mirror-toast-card {
-                top: 84px;
-                right: 10px;
-                width: calc(100vw - 20px);
-                max-height: calc(100vh - 98px);
+                width: 100%;
+                max-height: none;
             }
 
             .screen-mirror-viewer-wrap {
@@ -3503,7 +3499,8 @@
         function renderScreenMirrorMultiGrid() {
             const grid = getScreenMirrorMultiGridElement();
             const hint = document.getElementById("screenMirrorMultiHint");
-            if (!grid) return;
+            const screenMirrorCard = document.getElementById("screenMirrorCard");
+            if (!grid || !screenMirrorCard) return;
 
             const sortedUids = [...activeScreenMirrorDeviceUids].sort((leftUid, rightUid) =>
                 getScreenMirrorDeviceDisplayName(leftUid).localeCompare(
@@ -3518,8 +3515,11 @@
                 if (hint) {
                     hint.textContent = "Use the mirror icon from the device list to start live view.";
                 }
+                hideScreenMirrorCard(true);
                 return;
             }
+
+            openScreenMirrorCard(true);
 
             if (hint) {
                 hint.textContent = `${sortedUids.length} active mirror session${sortedUids.length > 1 ? "s" : ""}.`;
@@ -3864,29 +3864,12 @@
 
             screenMirrorCard.classList.remove("is-visible");
             updateScreenMirrorCardToggleButtonState(false);
-
-            if (immediate) {
-                screenMirrorCard.classList.add("panel-hidden");
-                return;
-            }
-
-            screenMirrorCardCloseTimerId = setTimeout(() => {
-                screenMirrorCard.classList.add("panel-hidden");
-                screenMirrorCardCloseTimerId = null;
-            }, 220);
+            screenMirrorCard.classList.add("panel-hidden");
         }
 
         function openScreenMirrorCard(forceOpen = false) {
             const screenMirrorCard = document.getElementById("screenMirrorCard");
             if (!screenMirrorCard) return;
-
-            const isHidden = screenMirrorCard.classList.contains("panel-hidden");
-            if (!isHidden) {
-                if (!forceOpen) {
-                    hideScreenMirrorCard(false);
-                }
-                return;
-            }
 
             if (screenMirrorCardCloseTimerId) {
                 clearTimeout(screenMirrorCardCloseTimerId);
@@ -3894,32 +3877,8 @@
             }
 
             screenMirrorCard.classList.remove("panel-hidden");
-            requestAnimationFrame(() => {
-                screenMirrorCard.classList.add("is-visible");
-            });
+            screenMirrorCard.classList.add("is-visible");
             updateScreenMirrorCardToggleButtonState(true);
-        }
-
-        function handleScreenMirrorCardOutsidePointerDown(event) {
-            const screenMirrorCard = document.getElementById("screenMirrorCard");
-            if (!screenMirrorCard || screenMirrorCard.classList.contains("panel-hidden")) {
-                return;
-            }
-
-            const target = event.target;
-            if (!(target instanceof Element)) {
-                return;
-            }
-
-            const headerButton = document.getElementById("screenMirrorHeaderBtn");
-            if (screenMirrorCard.contains(target)) {
-                return;
-            }
-            if (headerButton && headerButton.contains(target)) {
-                return;
-            }
-
-            hideScreenMirrorCard(false);
         }
 
         function getSelectedScreenMirrorDeviceLabel() {
@@ -5596,11 +5555,8 @@
                 closeClaimDeviceModal();
                 cancelDeviceActionDialog();
                 cancelCommandConfirmDialog();
-                hideScreenMirrorCard(false);
             }
         });
-
-        document.addEventListener("pointerdown", handleScreenMirrorCardOutsidePointerDown);
 
         function parseDateValue(dateText) {
             if (!dateText) return 0;
