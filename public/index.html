@@ -1887,9 +1887,10 @@
         }
 
         .screen-mirror-device-tile {
-            width: var(--screen-mirror-tile-width, 210px);
-            min-width: 140px;
-            max-width: min(100%, 460px);
+            box-sizing: border-box;
+            width: calc(var(--screen-mirror-tile-width, 210px) + 20px);
+            min-width: calc(140px + 20px);
+            max-width: 100%;
             flex: 0 0 auto;
             position: relative;
             border-radius: 14px;
@@ -2000,7 +2001,7 @@
 
         .screen-mirror-tile-preview-wrap {
             width: 100%;
-            aspect-ratio: 9 / 16.8;
+            aspect-ratio: var(--screen-mirror-preview-ratio, 9 / 16.8);
             border-radius: 12px;
             overflow: hidden;
             border: 1px solid rgba(189, 223, 255, 0.26);
@@ -2997,8 +2998,9 @@
         const SCREEN_MIRROR_FLOATING_MIN_WIDTH = 280;
         const SCREEN_MIRROR_FLOATING_MIN_HEIGHT = 320;
         const SCREEN_MIRROR_TILE_WIDTH_MIN = 140;
-        const SCREEN_MIRROR_TILE_WIDTH_MAX = 460;
+        const SCREEN_MIRROR_TILE_WIDTH_MAX = 760;
         const SCREEN_MIRROR_TILE_WIDTH_DEFAULT = 210;
+        const SCREEN_MIRROR_TILE_DEFAULT_ASPECT_RATIO = "9 / 16.8";
         const SCREEN_TOUCH_TAP_DISTANCE_THRESHOLD_PX = 12;
         const SCREEN_TOUCH_MIN_SWIPE_DURATION_MS = 80;
         const SCREEN_TOUCH_MAX_SWIPE_DURATION_MS = 5000;
@@ -3524,6 +3526,33 @@
             return normalizedWidth;
         }
 
+        function getScreenMirrorTileAspectRatioValue(state) {
+            const frameWidth = toValidPositiveInteger(state?.frameWidth);
+            const frameHeight = toValidPositiveInteger(state?.frameHeight);
+            if (frameWidth && frameHeight) {
+                return `${frameWidth} / ${frameHeight}`;
+            }
+            return SCREEN_MIRROR_TILE_DEFAULT_ASPECT_RATIO;
+        }
+
+        function applyScreenMirrorTileSizing(deviceUid) {
+            const normalizedDeviceUid = normalizeDeviceUidInput(deviceUid);
+            if (!normalizedDeviceUid) return;
+            const state = getScreenMirrorDeviceState(normalizedDeviceUid);
+            if (!state) return;
+            const normalizedWidth = getScreenMirrorTileWidth(normalizedDeviceUid);
+            const aspectRatio = getScreenMirrorTileAspectRatioValue(state);
+
+            const grid = getScreenMirrorMultiGridElement();
+            if (!grid) return;
+            const tile = grid.querySelector(
+                `.screen-mirror-device-tile[data-device-uid="${normalizedDeviceUid}"]`
+            );
+            if (!(tile instanceof HTMLElement)) return;
+            tile.style.setProperty("--screen-mirror-tile-width", `${normalizedWidth}px`);
+            tile.style.setProperty("--screen-mirror-preview-ratio", aspectRatio);
+        }
+
         function applyScreenMirrorTileWidth(deviceUid, width) {
             const normalizedDeviceUid = normalizeDeviceUidInput(deviceUid);
             if (!normalizedDeviceUid) return;
@@ -3533,14 +3562,7 @@
             const normalizedWidth = clampScreenMirrorTileWidth(width);
             state.tileWidth = normalizedWidth;
             state.updatedAt = Date.now();
-
-            const grid = getScreenMirrorMultiGridElement();
-            if (!grid) return;
-            const tile = grid.querySelector(
-                `.screen-mirror-device-tile[data-device-uid="${normalizedDeviceUid}"]`
-            );
-            if (!(tile instanceof HTMLElement)) return;
-            tile.style.setProperty("--screen-mirror-tile-width", `${normalizedWidth}px`);
+            applyScreenMirrorTileSizing(normalizedDeviceUid);
         }
 
         function isScreenMirrorRunningStatus(status) {
@@ -3562,6 +3584,21 @@
         function getScreenMirrorTilePreviewElement(previewWrap) {
             if (!(previewWrap instanceof Element)) return null;
             return previewWrap.querySelector(".screen-mirror-tile-preview");
+        }
+
+        function updateScreenMirrorTileFrameSizeFromImage(deviceUid, imageElement) {
+            const normalizedDeviceUid = normalizeDeviceUidInput(deviceUid);
+            if (!normalizedDeviceUid || !(imageElement instanceof HTMLImageElement)) return;
+            const naturalWidth = toValidPositiveInteger(imageElement.naturalWidth);
+            const naturalHeight = toValidPositiveInteger(imageElement.naturalHeight);
+            if (!naturalWidth || !naturalHeight) return;
+
+            const state = getScreenMirrorDeviceState(normalizedDeviceUid);
+            if (!state) return;
+            if (state.frameWidth === naturalWidth && state.frameHeight === naturalHeight) return;
+            state.frameWidth = naturalWidth;
+            state.frameHeight = naturalHeight;
+            applyScreenMirrorTileSizing(normalizedDeviceUid);
         }
 
         function getScreenMirrorTileDeviceUid(previewWrap) {
@@ -3954,6 +3991,7 @@
                 const statusText = toNonEmptyString(state.status).toLowerCase() || "idle";
                 const statusClass = escapeHtml(statusText.replace(/[^a-z0-9_-]/g, ""));
                 const tileWidth = getScreenMirrorTileWidth(deviceUid);
+                const tileAspectRatio = getScreenMirrorTileAspectRatioValue(state);
                 const previewContent = toNonEmptyString(state.frameSrc)
                     ? `<img class="screen-mirror-tile-preview" src="${escapeHtml(state.frameSrc)}" alt="Live mirrored screen for ${escapeHtml(deviceName)}" />`
                     : `<span class="screen-mirror-tile-placeholder">Waiting for frames...</span>`;
@@ -3962,7 +4000,7 @@
                     <div
                         class="screen-mirror-device-tile"
                         data-device-uid="${escapeHtml(deviceUid)}"
-                        style="--screen-mirror-tile-width:${tileWidth}px;">
+                        style="--screen-mirror-tile-width:${tileWidth}px;--screen-mirror-preview-ratio:${escapeHtml(tileAspectRatio)};">
                         <div class="screen-mirror-device-head">
                             <div class="screen-mirror-device-labels">
                                 <p class="screen-mirror-device-name" title="${escapeHtml(deviceName)}">${escapeHtml(deviceName)}</p>
@@ -4001,8 +4039,8 @@
                             class="screen-mirror-tile-resize-handle"
                             data-mirror-action="resize-tile"
                             data-device-uid="${escapeHtml(deviceUid)}"
-                            title="Drag from corner to resize"
-                            aria-label="Resize mirror card for ${escapeHtml(deviceName)}"></button>
+                            title="Drag corner to resize screen preview"
+                            aria-label="Resize mirrored screen preview for ${escapeHtml(deviceName)}"></button>
                     </div>
                 `;
             }).join("");
@@ -4054,11 +4092,22 @@
             if (!state) return;
             const statusText = toNonEmptyString(state.status).toLowerCase() || "idle";
             const statusClass = statusText.replace(/[^a-z0-9_-]/g, "");
+            applyScreenMirrorTileSizing(normalizedDeviceUid);
 
             const previewWrap = tile.querySelector("[data-mirror-field='previewWrap']");
             if (previewWrap) {
                 if (toNonEmptyString(state.frameSrc)) {
                     previewWrap.innerHTML = `<img class="screen-mirror-tile-preview" src="${escapeHtml(state.frameSrc)}" alt="Live mirrored screen for ${escapeHtml(getScreenMirrorDeviceDisplayName(normalizedDeviceUid))}" />`;
+                    const previewImage = previewWrap.querySelector(".screen-mirror-tile-preview");
+                    if (previewImage instanceof HTMLImageElement) {
+                        const syncFrameSize = () => {
+                            updateScreenMirrorTileFrameSizeFromImage(normalizedDeviceUid, previewImage);
+                        };
+                        previewImage.addEventListener("load", syncFrameSize, { once: true });
+                        if (previewImage.complete) {
+                            syncFrameSize();
+                        }
+                    }
                 } else {
                     previewWrap.innerHTML = `<span class="screen-mirror-tile-placeholder">Waiting for frames...</span>`;
                 }
