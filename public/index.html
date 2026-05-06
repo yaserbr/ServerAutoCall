@@ -1880,18 +1880,28 @@
         }
 
         .screen-mirror-multi-grid {
-            display: grid;
-            grid-template-columns: repeat(auto-fill, minmax(170px, 1fr));
+            display: flex;
+            flex-wrap: wrap;
+            align-items: flex-start;
             gap: 10px;
         }
 
         .screen-mirror-device-tile {
+            width: var(--screen-mirror-tile-width, 210px);
+            min-width: 140px;
+            max-width: min(100%, 460px);
+            flex: 0 0 auto;
+            position: relative;
             border-radius: 14px;
             border: 1px solid rgba(185, 218, 255, 0.28);
             background: linear-gradient(140deg, rgba(8, 18, 34, 0.74), rgba(11, 28, 52, 0.54));
             padding: 9px;
             display: grid;
             gap: 8px;
+        }
+
+        .screen-mirror-device-tile.is-resizing {
+            box-shadow: 0 0 0 2px rgba(103, 232, 249, 0.35);
         }
 
         .screen-mirror-device-head {
@@ -1957,6 +1967,35 @@
             border-color: rgba(248, 113, 113, 0.55);
             background: rgba(104, 24, 24, 0.56);
             color: #ffe6e6;
+        }
+
+        .screen-mirror-tile-resize-handle {
+            position: absolute;
+            right: 6px;
+            bottom: 6px;
+            width: 18px;
+            height: 18px;
+            border: 1px solid rgba(143, 206, 255, 0.55);
+            border-radius: 6px;
+            background: rgba(5, 21, 39, 0.78);
+            cursor: nwse-resize;
+            touch-action: none;
+            padding: 0;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            color: rgba(196, 236, 255, 0.95);
+            z-index: 2;
+            box-shadow: 0 6px 16px rgba(0, 0, 0, 0.35);
+        }
+
+        .screen-mirror-tile-resize-handle::before {
+            content: "";
+            width: 10px;
+            height: 10px;
+            background:
+                linear-gradient(135deg, transparent 42%, currentColor 42% 56%, transparent 56%) 0 0 / 100% 100% no-repeat,
+                linear-gradient(135deg, transparent 58%, currentColor 58% 70%, transparent 70%) 0 0 / 100% 100% no-repeat;
         }
 
         .screen-mirror-tile-preview-wrap {
@@ -2728,13 +2767,13 @@
         <section id="appSection" class="grid panel-hidden">
             <article class="card full-width">
                 <h2>Command Center</h2>
-                <div class="segmented-control" role="tablist" aria-label="Call SMS Auto Answer Open App Download Data WebView Toggle">
+                <div class="segmented-control" role="tablist" aria-label="Call Auto Answer SMS Open App Download Data WebView Toggle">
                     <button id="callTabBtn" class="segmented-option active" role="tab" aria-selected="true"
                         onclick="setActionTab('call')">Call</button>
-                    <button id="smsTabBtn" class="segmented-option" role="tab" aria-selected="false"
-                        onclick="setActionTab('sms')">SMS</button>
                     <button id="autoAnswerTabBtn" class="segmented-option" role="tab" aria-selected="false"
                         onclick="setActionTab('auto_answer')">Auto Answer</button>
+                    <button id="smsTabBtn" class="segmented-option" role="tab" aria-selected="false"
+                        onclick="setActionTab('sms')">SMS</button>
                     <button id="openAppTabBtn" class="segmented-option" role="tab" aria-selected="false"
                         onclick="setActionTab('open_app')">Open App</button>
                     <button id="downloadDataTabBtn" class="segmented-option" role="tab" aria-selected="false"
@@ -2755,6 +2794,24 @@
                         <button class="danger-button" onclick="sendEndCall()">End Call</button>
                     </div>
                 </div>
+                <div id="autoAnswerTabPanel" class="tab-panel">
+                    <h2>Auto Answer</h2>
+                    <div class="input-row auto-answer-input-grid auto-answer-three-col-grid">
+                        <div class="inline-toggle-row">
+                            <span>Auto Answer (On / Off)</span>
+                            <label class="switch">
+                                <input id="autoAnswerEnabled" type="checkbox" checked />
+                                <span class="switch-slider"></span>
+                            </label>
+                        </div>
+                        <input id="autoAnswerHangupSeconds" type="text" inputmode="numeric" pattern="[0-9]*"
+                            placeholder="Auto hangup seconds" oninput="sanitizeDurationInput(event)" />
+                        <input id="autoAnswerNotes" placeholder="optional notes" />
+                    </div>
+                    <div class="actions">
+                        <button onclick="sendAutoAnswer()">Apply</button>
+                    </div>
+                </div>
                 <div id="smsTabPanel" class="tab-panel">
                     <h2>Send SMS</h2>
                     <div class="input-row sms-input-grid">
@@ -2773,24 +2830,6 @@
                     </div>
                     <div class="actions">
                         <button onclick="sendSms()">Send SMS</button>
-                    </div>
-                </div>
-                <div id="autoAnswerTabPanel" class="tab-panel">
-                    <h2>Auto Answer</h2>
-                    <div class="input-row auto-answer-input-grid auto-answer-three-col-grid">
-                        <div class="inline-toggle-row">
-                            <span>Auto Answer (On / Off)</span>
-                            <label class="switch">
-                                <input id="autoAnswerEnabled" type="checkbox" checked />
-                                <span class="switch-slider"></span>
-                            </label>
-                        </div>
-                        <input id="autoAnswerHangupSeconds" type="text" inputmode="numeric" pattern="[0-9]*"
-                            placeholder="Auto hangup seconds" oninput="sanitizeDurationInput(event)" />
-                        <input id="autoAnswerNotes" placeholder="optional notes" />
-                    </div>
-                    <div class="actions">
-                        <button onclick="sendAutoAnswer()">Apply</button>
                     </div>
                 </div>
                 <div id="webViewTabPanel" class="tab-panel">
@@ -2957,6 +2996,9 @@
         let screenMirrorFloatingCloseTimerId = null;
         const SCREEN_MIRROR_FLOATING_MIN_WIDTH = 280;
         const SCREEN_MIRROR_FLOATING_MIN_HEIGHT = 320;
+        const SCREEN_MIRROR_TILE_WIDTH_MIN = 140;
+        const SCREEN_MIRROR_TILE_WIDTH_MAX = 460;
+        const SCREEN_MIRROR_TILE_WIDTH_DEFAULT = 210;
         const SCREEN_TOUCH_TAP_DISTANCE_THRESHOLD_PX = 12;
         const SCREEN_TOUCH_MIN_SWIPE_DURATION_MS = 80;
         const SCREEN_TOUCH_MAX_SWIPE_DURATION_MS = 5000;
@@ -2983,6 +3025,16 @@
             startMappedPoint: null
         };
         const screenMirrorMultiPointerGestureById = new Map();
+        const screenMirrorTileResizeState = {
+            active: false,
+            pointerId: null,
+            deviceUid: "",
+            startClientX: 0,
+            startClientY: 0,
+            startWidth: SCREEN_MIRROR_TILE_WIDTH_DEFAULT,
+            handle: null,
+            tile: null
+        };
         const panelVisibility = {
             commands: false
         };
@@ -3011,8 +3063,8 @@
         const supportedCommandTypes = new Set(Object.values(commandActionToType));
         const tabOrder = {
             call: 0,
-            sms: 1,
-            auto_answer: 2,
+            auto_answer: 1,
+            sms: 2,
             open_app: 3,
             download_data: 4,
             webview: 5
@@ -3442,10 +3494,53 @@
                     frameSrc: "",
                     frameWidth: 0,
                     frameHeight: 0,
+                    tileWidth: SCREEN_MIRROR_TILE_WIDTH_DEFAULT,
                     updatedAt: 0
                 });
             }
             return screenMirrorDeviceStateByUid.get(normalizedDeviceUid);
+        }
+
+        function clampScreenMirrorTileWidth(value) {
+            const parsed = Number(value);
+            if (!Number.isFinite(parsed)) {
+                return SCREEN_MIRROR_TILE_WIDTH_DEFAULT;
+            }
+            return Math.max(
+                SCREEN_MIRROR_TILE_WIDTH_MIN,
+                Math.min(SCREEN_MIRROR_TILE_WIDTH_MAX, Math.round(parsed))
+            );
+        }
+
+        function getScreenMirrorTileWidth(deviceUid) {
+            const state = getScreenMirrorDeviceState(deviceUid);
+            if (!state) return SCREEN_MIRROR_TILE_WIDTH_DEFAULT;
+            const normalizedWidth = clampScreenMirrorTileWidth(
+                Number.isFinite(Number(state.tileWidth))
+                    ? Number(state.tileWidth)
+                    : SCREEN_MIRROR_TILE_WIDTH_DEFAULT
+            );
+            state.tileWidth = normalizedWidth;
+            return normalizedWidth;
+        }
+
+        function applyScreenMirrorTileWidth(deviceUid, width) {
+            const normalizedDeviceUid = normalizeDeviceUidInput(deviceUid);
+            if (!normalizedDeviceUid) return;
+            const state = getScreenMirrorDeviceState(normalizedDeviceUid);
+            if (!state) return;
+
+            const normalizedWidth = clampScreenMirrorTileWidth(width);
+            state.tileWidth = normalizedWidth;
+            state.updatedAt = Date.now();
+
+            const grid = getScreenMirrorMultiGridElement();
+            if (!grid) return;
+            const tile = grid.querySelector(
+                `.screen-mirror-device-tile[data-device-uid="${normalizedDeviceUid}"]`
+            );
+            if (!(tile instanceof HTMLElement)) return;
+            tile.style.setProperty("--screen-mirror-tile-width", `${normalizedWidth}px`);
         }
 
         function isScreenMirrorRunningStatus(status) {
@@ -3726,6 +3821,97 @@
             clearScreenMirrorMultiPointerGesture(event.pointerId);
         }
 
+        function endScreenMirrorTileResize(event) {
+            if (!screenMirrorTileResizeState.active) return;
+            if (event && Number.isFinite(Number(event.pointerId))) {
+                if (screenMirrorTileResizeState.pointerId !== event.pointerId) {
+                    return;
+                }
+            }
+
+            const handle = screenMirrorTileResizeState.handle;
+            const pointerId = screenMirrorTileResizeState.pointerId;
+            if (handle && typeof handle.releasePointerCapture === "function" && Number.isFinite(Number(pointerId))) {
+                try {
+                    handle.releasePointerCapture(pointerId);
+                } catch (_error) {
+                    // ignore pointer release errors
+                }
+            }
+
+            if (screenMirrorTileResizeState.tile instanceof HTMLElement) {
+                screenMirrorTileResizeState.tile.classList.remove("is-resizing");
+            }
+
+            screenMirrorTileResizeState.active = false;
+            screenMirrorTileResizeState.pointerId = null;
+            screenMirrorTileResizeState.deviceUid = "";
+            screenMirrorTileResizeState.startClientX = 0;
+            screenMirrorTileResizeState.startClientY = 0;
+            screenMirrorTileResizeState.startWidth = SCREEN_MIRROR_TILE_WIDTH_DEFAULT;
+            screenMirrorTileResizeState.handle = null;
+            screenMirrorTileResizeState.tile = null;
+
+            window.removeEventListener("pointermove", handleScreenMirrorTileResizeMove);
+            window.removeEventListener("pointerup", endScreenMirrorTileResize);
+            window.removeEventListener("pointercancel", endScreenMirrorTileResize);
+        }
+
+        function handleScreenMirrorTileResizeMove(event) {
+            if (!screenMirrorTileResizeState.active) return;
+            if (screenMirrorTileResizeState.pointerId !== event.pointerId) return;
+
+            const deltaX = event.clientX - screenMirrorTileResizeState.startClientX;
+            const deltaY = event.clientY - screenMirrorTileResizeState.startClientY;
+            const dominantDelta =
+                Math.abs(deltaX) >= Math.abs(deltaY)
+                    ? deltaX
+                    : deltaY;
+            const nextWidth = screenMirrorTileResizeState.startWidth + dominantDelta;
+            applyScreenMirrorTileWidth(screenMirrorTileResizeState.deviceUid, nextWidth);
+            event.preventDefault();
+        }
+
+        function startScreenMirrorTileResize(event) {
+            const handle = event.currentTarget;
+            if (!(handle instanceof HTMLElement)) return;
+            if (event.pointerType === "mouse" && event.button !== 0) return;
+
+            const targetUid = normalizeDeviceUidInput(handle.getAttribute("data-device-uid") || "");
+            if (!targetUid) return;
+
+            endScreenMirrorTileResize();
+            const tile = handle.closest(".screen-mirror-device-tile");
+            const startWidth = getScreenMirrorTileWidth(targetUid);
+
+            screenMirrorTileResizeState.active = true;
+            screenMirrorTileResizeState.pointerId = event.pointerId;
+            screenMirrorTileResizeState.deviceUid = targetUid;
+            screenMirrorTileResizeState.startClientX = event.clientX;
+            screenMirrorTileResizeState.startClientY = event.clientY;
+            screenMirrorTileResizeState.startWidth = startWidth;
+            screenMirrorTileResizeState.handle = handle;
+            screenMirrorTileResizeState.tile = tile instanceof HTMLElement ? tile : null;
+
+            if (screenMirrorTileResizeState.tile instanceof HTMLElement) {
+                screenMirrorTileResizeState.tile.classList.add("is-resizing");
+            }
+
+            if (typeof handle.setPointerCapture === "function") {
+                try {
+                    handle.setPointerCapture(event.pointerId);
+                } catch (_error) {
+                    // ignore pointer capture errors
+                }
+            }
+
+            window.addEventListener("pointermove", handleScreenMirrorTileResizeMove, { passive: false });
+            window.addEventListener("pointerup", endScreenMirrorTileResize);
+            window.addEventListener("pointercancel", endScreenMirrorTileResize);
+            event.preventDefault();
+            event.stopPropagation();
+        }
+
         function renderScreenMirrorMultiGrid() {
             const grid = getScreenMirrorMultiGridElement();
             const hint = document.getElementById("screenMirrorMultiHint");
@@ -3742,6 +3928,7 @@
 
             if (sortedUids.length === 0) {
                 clearAllScreenMirrorMultiPointerGestures();
+                endScreenMirrorTileResize();
                 grid.innerHTML = "";
                 if (hint) {
                     hint.textContent = "Use the mirror icon from the device list to start live view.";
@@ -3766,12 +3953,16 @@
                 const deviceName = getScreenMirrorDeviceDisplayName(deviceUid);
                 const statusText = toNonEmptyString(state.status).toLowerCase() || "idle";
                 const statusClass = escapeHtml(statusText.replace(/[^a-z0-9_-]/g, ""));
+                const tileWidth = getScreenMirrorTileWidth(deviceUid);
                 const previewContent = toNonEmptyString(state.frameSrc)
                     ? `<img class="screen-mirror-tile-preview" src="${escapeHtml(state.frameSrc)}" alt="Live mirrored screen for ${escapeHtml(deviceName)}" />`
                     : `<span class="screen-mirror-tile-placeholder">Waiting for frames...</span>`;
 
                 return `
-                    <div class="screen-mirror-device-tile" data-device-uid="${escapeHtml(deviceUid)}">
+                    <div
+                        class="screen-mirror-device-tile"
+                        data-device-uid="${escapeHtml(deviceUid)}"
+                        style="--screen-mirror-tile-width:${tileWidth}px;">
                         <div class="screen-mirror-device-head">
                             <div class="screen-mirror-device-labels">
                                 <p class="screen-mirror-device-name" title="${escapeHtml(deviceName)}">${escapeHtml(deviceName)}</p>
@@ -3805,11 +3996,19 @@
                         <div class="screen-mirror-device-meta">
                             <span class="screen-mirror-device-status ${statusClass}" data-mirror-field="status">${escapeHtml(statusText)}</span>
                         </div>
+                        <button
+                            type="button"
+                            class="screen-mirror-tile-resize-handle"
+                            data-mirror-action="resize-tile"
+                            data-device-uid="${escapeHtml(deviceUid)}"
+                            title="Drag from corner to resize"
+                            aria-label="Resize mirror card for ${escapeHtml(deviceName)}"></button>
                     </div>
                 `;
             }).join("");
 
             clearAllScreenMirrorMultiPointerGestures();
+            endScreenMirrorTileResize();
             grid.innerHTML = tilesHtml;
 
             grid.querySelectorAll("[data-mirror-action='stop']").forEach((button) => {
@@ -3823,6 +4022,11 @@
                         button.disabled = false;
                     }
                 });
+            });
+
+            grid.querySelectorAll("[data-mirror-action='resize-tile']").forEach((handle) => {
+                if (!(handle instanceof HTMLElement)) return;
+                handle.addEventListener("pointerdown", startScreenMirrorTileResize, { passive: false });
             });
 
             grid.querySelectorAll("[data-mirror-field='previewWrap']").forEach((previewWrap) => {
