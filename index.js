@@ -6,6 +6,7 @@ const helmet = require("helmet");
 const mongoose = require("mongoose");
 const path = require("path");
 const http = require("http");
+const crypto = require("crypto");
 const bcrypt = require("bcrypt");
 const jwt = require("jsonwebtoken");
 const { Server: SocketIOServer } = require("socket.io");
@@ -13,13 +14,18 @@ const { Server: SocketIOServer } = require("socket.io");
 const { connectToDatabase } = require("./src/config/db");
 const Device = require("./src/models/Device");
 const Command = require("./src/models/Command");
+const PairingToken = require("./src/models/PairingToken");
 const User = require("./src/models/User");
 const { requireAuth } = require("./src/middleware/requireAuth");
 const {
   buildRequireDeviceAuth,
   extractDeviceTokenFromRequest
 } = require("./src/middleware/requireDeviceAuth");
-const { issueDeviceTokenForDevice, isDeviceTokenMatch } = require("./src/auth/deviceToken");
+const {
+  issueDeviceTokenForDevice,
+  isDeviceTokenMatch,
+  hashDeviceToken
+} = require("./src/auth/deviceToken");
 const { sanitizeRequestBody } = require("./src/security/requestSanitizer");
 const {
   authRateLimiter,
@@ -107,10 +113,16 @@ const REMOTE_TOUCH_MAX_COORDINATE = 20000;
 const REMOTE_TOUCH_MAX_DURATION_MS = 10000;
 const REMOTE_TOUCH_MIN_DURATION_MS = 50;
 const DEVICE_ONLINE_WINDOW_MS = 30 * 1000;
+const PAIRING_TOKEN_BYTES = 32;
+const PAIRING_TOKEN_TTL_MS = 5 * 60 * 1000;
+const PAIRING_TOKEN_TYPE = "AUTOCALL_PAIRING";
+const PAIRING_TOKEN_EXPIRY_CLEANUP_INTERVAL_MS = 60 * 1000;
+const DEFAULT_PUBLIC_SERVER_URL = "https://serverautocall-production.up.railway.app";
 const OPEN_APP_PACKAGE_REGEX = /^[a-zA-Z0-9_]+(\.[a-zA-Z0-9_]+)+$/;
 const DEVICE_AUTH_ALLOW_LEGACY_FALLBACK =
   String(process.env.DEVICE_AUTH_ALLOW_LEGACY_FALLBACK || "").trim().toLowerCase() === "true";
 const screenMirrorSessions = new Map();
+const pairingTokenMemoryStore = new Map();
 const requireAuthenticatedDevice = buildRequireDeviceAuth({
   allowLegacyFallback: DEVICE_AUTH_ALLOW_LEGACY_FALLBACK
 });
@@ -224,6 +236,339 @@ function normalizeHttpUrl(value) {
   } catch (_error) {
     return null;
   }
+}
+
+function normalizeServerBaseUrl(value) {
+  const normalized = normalizeHttpUrl(value);
+  if (!normalized) return null;
+  return normalized.replace(/\/+$/, "");
+}
+
+function resolvePublicServerUrl(req) {
+  const configuredServerUrl = normalizeServerBaseUrl(process.env.PUBLIC_SERVER_URL);
+  if (configuredServerUrl) {
+    return configuredServerUrl;
+  }
+
+  const forwardedHostHeader = req.headers?.["x-forwarded-host"];
+  const resolvedHost =
+    typeof forwardedHostHeader === "string" && forwardedHostHeader.trim()
+      ? forwardedHostHeader.split(",")[0].trim()
+      : typeof req.headers?.host === "string" && req.headers.host.trim()
+        ? req.headers.host.trim()
+        : "";
+
+  const forwardedProtoHeader = req.headers?.["x-forwarded-proto"];
+  const resolvedProtocol =
+    typeof forwardedProtoHeader === "string" && forwardedProtoHeader.trim()
+      ? forwardedProtoHeader.split(",")[0].trim().toLowerCase()
+      : typeof req.protocol === "string" && req.protocol.trim()
+        ? req.protocol.trim().toLowerCase()
+        : "";
+
+  if (resolvedHost && (resolvedProtocol === "http" || resolvedProtocol === "https")) {
+    return `${resolvedProtocol}://${resolvedHost}`;
+  }
+
+  if (resolvedHost) {
+    return `${req.secure ? "https" : "http"}://${resolvedHost}`;
+  }
+
+  return DEFAULT_PUBLIC_SERVER_URL;
+}
+
+function normalizePairingToken(value) {
+  if (typeof value !== "string") return "";
+  return value.trim();
+}
+
+function generatePairingToken() {
+  return crypto.randomBytes(PAIRING_TOKEN_BYTES).toString("hex");
+}
+
+function hashPairingToken(token) {
+  const normalizedToken = normalizePairingToken(token);
+  if (!normalizedToken) return "";
+  return crypto.createHash("sha256").update(normalizedToken).digest("hex");
+}
+
+function buildPairingTokenExpiryDate() {
+  return new Date(Date.now() + PAIRING_TOKEN_TTL_MS);
+}
+
+function cleanupExpiredPairingTokensInMemory(nowMs = Date.now()) {
+  for (const [tokenHash, record] of pairingTokenMemoryStore.entries()) {
+    if (!record || typeof record !== "object") {
+      pairingTokenMemoryStore.delete(tokenHash);
+      continue;
+    }
+
+    const expiresAtMs = Number(record.expiresAtMs || 0);
+    const isUsed = record.used === true;
+    if (!expiresAtMs || expiresAtMs <= nowMs || isUsed) {
+      pairingTokenMemoryStore.delete(tokenHash);
+    }
+  }
+}
+
+function getPairingTokenFailureHttpStatus(reason) {
+  if (reason === "missing_pairing_token") return 400;
+  if (reason === "invalid_pairing_token") return 404;
+  if (reason === "pairing_token_used") return 409;
+  if (reason === "pairing_token_expired") return 410;
+  return 400;
+}
+
+function getPairingTokenFailureMessage(reason) {
+  if (reason === "missing_pairing_token") return "pairingToken is required";
+  if (reason === "invalid_pairing_token") return "Invalid pairing token";
+  if (reason === "pairing_token_used") return "Pairing token already used";
+  if (reason === "pairing_token_expired") return "Pairing token expired";
+  return "Invalid pairing token";
+}
+
+async function createPairingTokenForUser(userId) {
+  const expiresAt = buildPairingTokenExpiryDate();
+  const plainToken = generatePairingToken();
+  const tokenHash = hashPairingToken(plainToken);
+  const now = new Date(toUtcISOString());
+
+  if (mongoose.connection.readyState === 1) {
+    await PairingToken.create({
+      tokenHash,
+      userId,
+      expiresAt,
+      used: false,
+      usedAt: null,
+      usedByDeviceUid: null
+    });
+  } else {
+    cleanupExpiredPairingTokensInMemory(now.getTime());
+    pairingTokenMemoryStore.set(tokenHash, {
+      userId: String(userId),
+      expiresAtMs: expiresAt.getTime(),
+      used: false,
+      usedAtMs: null,
+      usedByDeviceUid: null
+    });
+  }
+
+  return {
+    pairingToken: plainToken,
+    expiresAt
+  };
+}
+
+async function inspectPairingToken(pairingTokenValue) {
+  const normalizedPairingToken = normalizePairingToken(pairingTokenValue);
+  if (!normalizedPairingToken) {
+    return {
+      ok: false,
+      reason: "missing_pairing_token",
+      tokenHash: "",
+      userId: ""
+    };
+  }
+
+  const tokenHash = hashPairingToken(normalizedPairingToken);
+  if (!tokenHash) {
+    return {
+      ok: false,
+      reason: "invalid_pairing_token",
+      tokenHash: "",
+      userId: ""
+    };
+  }
+
+  const now = new Date(toUtcISOString());
+
+  if (mongoose.connection.readyState === 1) {
+    const record = await PairingToken.findOne({ tokenHash }).select(
+      "_id userId expiresAt used"
+    );
+    if (!record) {
+      return {
+        ok: false,
+        reason: "invalid_pairing_token",
+        tokenHash,
+        userId: ""
+      };
+    }
+
+    if (record.used) {
+      return {
+        ok: false,
+        reason: "pairing_token_used",
+        tokenHash,
+        userId: String(record.userId || "")
+      };
+    }
+
+    const expiresAtMs = Number(new Date(record.expiresAt).getTime());
+    if (!expiresAtMs || expiresAtMs <= now.getTime()) {
+      return {
+        ok: false,
+        reason: "pairing_token_expired",
+        tokenHash,
+        userId: String(record.userId || "")
+      };
+    }
+
+    return {
+      ok: true,
+      reason: "ok",
+      tokenHash,
+      userId: String(record.userId || ""),
+      expiresAt: new Date(expiresAtMs)
+    };
+  }
+
+  cleanupExpiredPairingTokensInMemory(now.getTime());
+  const memoryRecord = pairingTokenMemoryStore.get(tokenHash);
+  if (!memoryRecord) {
+    return {
+      ok: false,
+      reason: "invalid_pairing_token",
+      tokenHash,
+      userId: ""
+    };
+  }
+
+  if (memoryRecord.used === true) {
+    pairingTokenMemoryStore.delete(tokenHash);
+    return {
+      ok: false,
+      reason: "pairing_token_used",
+      tokenHash,
+      userId: String(memoryRecord.userId || "")
+    };
+  }
+
+  const expiresAtMs = Number(memoryRecord.expiresAtMs || 0);
+  if (!expiresAtMs || expiresAtMs <= now.getTime()) {
+    pairingTokenMemoryStore.delete(tokenHash);
+    return {
+      ok: false,
+      reason: "pairing_token_expired",
+      tokenHash,
+      userId: String(memoryRecord.userId || "")
+    };
+  }
+
+  return {
+    ok: true,
+    reason: "ok",
+    tokenHash,
+    userId: String(memoryRecord.userId || ""),
+    expiresAt: new Date(expiresAtMs)
+  };
+}
+
+async function consumePairingTokenByHash(tokenHash, usedByDeviceUid) {
+  const normalizedTokenHash = typeof tokenHash === "string" ? tokenHash.trim().toLowerCase() : "";
+  if (!normalizedTokenHash) {
+    return {
+      ok: false,
+      reason: "invalid_pairing_token"
+    };
+  }
+
+  const normalizedUsedByDeviceUid = normalizeDeviceUid(usedByDeviceUid);
+  const now = new Date(toUtcISOString());
+
+  if (mongoose.connection.readyState === 1) {
+    const usedRecord = await PairingToken.findOneAndUpdate(
+      {
+        tokenHash: normalizedTokenHash,
+        used: false,
+        expiresAt: { $gt: now }
+      },
+      {
+        $set: {
+          used: true,
+          usedAt: now,
+          usedByDeviceUid: normalizedUsedByDeviceUid || null
+        }
+      },
+      {
+        new: true
+      }
+    ).select("_id userId");
+
+    if (!usedRecord) {
+      const inspected = await PairingToken.findOne({ tokenHash: normalizedTokenHash }).select(
+        "used expiresAt userId"
+      );
+      if (!inspected) {
+        return {
+          ok: false,
+          reason: "invalid_pairing_token"
+        };
+      }
+      if (inspected.used) {
+        return {
+          ok: false,
+          reason: "pairing_token_used"
+        };
+      }
+
+      const expiresAtMs = Number(new Date(inspected.expiresAt).getTime());
+      if (!expiresAtMs || expiresAtMs <= now.getTime()) {
+        return {
+          ok: false,
+          reason: "pairing_token_expired"
+        };
+      }
+
+      return {
+        ok: false,
+        reason: "invalid_pairing_token"
+      };
+    }
+
+    return {
+      ok: true,
+      reason: "ok",
+      userId: String(usedRecord.userId || "")
+    };
+  }
+
+  cleanupExpiredPairingTokensInMemory(now.getTime());
+  const memoryRecord = pairingTokenMemoryStore.get(normalizedTokenHash);
+  if (!memoryRecord) {
+    return {
+      ok: false,
+      reason: "invalid_pairing_token"
+    };
+  }
+
+  const expiresAtMs = Number(memoryRecord.expiresAtMs || 0);
+  if (!expiresAtMs || expiresAtMs <= now.getTime()) {
+    pairingTokenMemoryStore.delete(normalizedTokenHash);
+    return {
+      ok: false,
+      reason: "pairing_token_expired"
+    };
+  }
+
+  if (memoryRecord.used === true) {
+    pairingTokenMemoryStore.delete(normalizedTokenHash);
+    return {
+      ok: false,
+      reason: "pairing_token_used"
+    };
+  }
+
+  memoryRecord.used = true;
+  memoryRecord.usedAtMs = now.getTime();
+  memoryRecord.usedByDeviceUid = normalizedUsedByDeviceUid || null;
+  pairingTokenMemoryStore.set(normalizedTokenHash, memoryRecord);
+
+  return {
+    ok: true,
+    reason: "ok",
+    userId: String(memoryRecord.userId || "")
+  };
 }
 
 function parseDownloadSizeMb(value) {
@@ -1239,6 +1584,33 @@ app.get("/auth/me", requireAuth, async (req, res) => {
   }
 });
 
+app.get("/pairing/qr", requireAuth, async (req, res) => {
+  try {
+    const currentUserId = normalizeAuthUserId(req.user?.id);
+    if (!currentUserId) {
+      return res.status(401).json({ error: "Unauthorized" });
+    }
+
+    const userExists = await User.exists({ _id: currentUserId });
+    if (!userExists) {
+      return res.status(401).json({ error: "Unauthorized" });
+    }
+
+    const createdToken = await createPairingTokenForUser(currentUserId);
+    const serverUrl = resolvePublicServerUrl(req);
+
+    return res.json({
+      type: PAIRING_TOKEN_TYPE,
+      pairingToken: createdToken.pairingToken,
+      serverUrl,
+      expiresAt: createdToken.expiresAt.toISOString(),
+      expiresInSeconds: Math.floor(PAIRING_TOKEN_TTL_MS / 1000)
+    });
+  } catch (error) {
+    return handleServerError(res, error, "GET /pairing/qr");
+  }
+});
+
 // =====================
 // Register device
 // =====================
@@ -1515,6 +1887,115 @@ app.post("/devices/claim", requireAuth, async (req, res) => {
     return res.status(409).json({ error: "Device already claimed by another user" });
   } catch (error) {
     return handleServerError(res, error, "POST /devices/claim");
+  }
+});
+
+app.post("/devices/pair", async (req, res) => {
+  try {
+    const payload = parseRequestBodyObject(req.body);
+    const normalizedPairingToken = normalizePairingToken(payload?.pairingToken);
+    const normalizedDeviceUid = normalizeDeviceUid(payload?.deviceUid);
+    const normalizedDeviceName = normalizeDeviceName(payload?.deviceName);
+    const normalizedPlatform = normalizeDeviceName(payload?.platform);
+    const providedDeviceToken = extractDeviceTokenFromRequest(req);
+
+    if (!normalizedPairingToken) {
+      return res.status(400).json({ error: "pairingToken is required" });
+    }
+    if (!normalizedDeviceUid) {
+      return res.status(400).json({ error: DEVICE_UID_FORMAT_ERROR });
+    }
+
+    const pairingInspection = await inspectPairingToken(normalizedPairingToken);
+    if (!pairingInspection.ok) {
+      return res
+        .status(getPairingTokenFailureHttpStatus(pairingInspection.reason))
+        .json({ error: getPairingTokenFailureMessage(pairingInspection.reason) });
+    }
+
+    const ownerUserId = normalizeAuthUserId(pairingInspection.userId);
+    if (!ownerUserId) {
+      return res.status(400).json({ error: "Invalid pairing token" });
+    }
+
+    const ownerUserExists = await User.exists({ _id: ownerUserId });
+    if (!ownerUserExists) {
+      return res.status(404).json({ error: "Pairing token user not found" });
+    }
+
+    let device = await Device.findOne({ deviceUid: normalizedDeviceUid }).select("+deviceTokenHash");
+    if (device?.deviceTokenHash) {
+      const canAuthenticate = isDeviceTokenMatch(providedDeviceToken, device.deviceTokenHash);
+      if (!canAuthenticate) {
+        logSecurityEvent("device_pair_rejected_bad_token", {
+          ip: req.ip,
+          path: req.originalUrl,
+          method: req.method,
+          deviceUid: normalizedDeviceUid
+        });
+        return res.status(401).json({ error: "Unauthorized" });
+      }
+    }
+
+    const consumeResult = await consumePairingTokenByHash(
+      pairingInspection.tokenHash,
+      normalizedDeviceUid
+    );
+    if (!consumeResult.ok) {
+      return res
+        .status(getPairingTokenFailureHttpStatus(consumeResult.reason))
+        .json({ error: getPairingTokenFailureMessage(consumeResult.reason) });
+    }
+
+    const now = new Date(toUtcISOString());
+    let issuedDeviceToken = null;
+
+    if (!device) {
+      device = new Device({
+        deviceUid: normalizedDeviceUid,
+        deviceName: normalizedDeviceName ?? buildDefaultDeviceName(normalizedDeviceUid),
+        platform: normalizedPlatform,
+        online: true,
+        ownerUserId,
+        claimedAt: now,
+        lastSeen: now
+      });
+    } else {
+      device.online = true;
+      device.lastSeen = now;
+      device.ownerUserId = ownerUserId;
+      device.claimedAt = now;
+
+      if (normalizedDeviceName) {
+        device.deviceName = normalizedDeviceName;
+      } else if (!normalizeDeviceName(device.deviceName)) {
+        device.deviceName = buildDefaultDeviceName(normalizedDeviceUid);
+      }
+
+      if (normalizedPlatform) {
+        device.platform = normalizedPlatform;
+      }
+    }
+
+    if (!device.deviceTokenHash) {
+      if (providedDeviceToken) {
+        device.deviceTokenHash = hashDeviceToken(providedDeviceToken);
+        device.deviceTokenIssuedAt = now;
+      } else {
+        issuedDeviceToken = issueDeviceTokenForDevice(device);
+      }
+    }
+
+    await device.save();
+
+    return res.json({
+      success: true,
+      message: "Device paired successfully",
+      device: mapDeviceForResponse(device),
+      ...(issuedDeviceToken ? { deviceToken: issuedDeviceToken } : {})
+    });
+  } catch (error) {
+    return handleServerError(res, error, "POST /devices/pair");
   }
 });
 
@@ -2706,6 +3187,7 @@ app.use((error, req, res, next) => {
 });
 
 const PORT = Number(process.env.PORT) || 4000;
+let pairingTokenCleanupIntervalId = null;
 
 function warnIfJwtSecretMissing() {
   if (isAuthEnabled()) {
@@ -2725,6 +3207,21 @@ function warnIfLegacyDeviceAuthFallbackEnabled() {
   console.warn(
     "[DeviceAuth] DEVICE_AUTH_ALLOW_LEGACY_FALLBACK=true. Legacy untokened device requests are temporarily allowed on protected device endpoints."
   );
+}
+
+function startPairingTokenMemoryCleanupLoop() {
+  if (pairingTokenCleanupIntervalId) {
+    clearInterval(pairingTokenCleanupIntervalId);
+    pairingTokenCleanupIntervalId = null;
+  }
+
+  pairingTokenCleanupIntervalId = setInterval(() => {
+    cleanupExpiredPairingTokensInMemory(Date.now());
+  }, PAIRING_TOKEN_EXPIRY_CLEANUP_INTERVAL_MS);
+
+  if (typeof pairingTokenCleanupIntervalId.unref === "function") {
+    pairingTokenCleanupIntervalId.unref();
+  }
 }
 
 async function cleanupLegacyDeviceUidData() {
@@ -2751,6 +3248,7 @@ async function cleanupLegacyDeviceUidData() {
 async function startServer() {
   warnIfJwtSecretMissing();
   warnIfLegacyDeviceAuthFallbackEnabled();
+  startPairingTokenMemoryCleanupLoop();
 
   httpServer.listen(PORT, "0.0.0.0", () => {
     console.log(`Server running on port ${PORT}`);

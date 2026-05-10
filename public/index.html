@@ -908,13 +908,124 @@
         }
 
         .claim-device-modal {
-            width: min(440px, 100%);
+            width: min(500px, 100%);
             padding: 16px;
         }
 
         .claim-device-modal-body {
             display: grid;
             gap: 12px;
+        }
+
+        .pairing-qr-shell {
+            display: grid;
+            gap: 10px;
+            border-radius: 16px;
+            padding: 12px;
+            border: 1px solid rgba(126, 211, 255, 0.35);
+            background: linear-gradient(150deg, rgba(9, 16, 46, 0.72), rgba(12, 33, 67, 0.66));
+        }
+
+        .pairing-qr-title {
+            margin: 0;
+            font-size: 0.94rem;
+            font-weight: 600;
+            color: #eaf6ff;
+        }
+
+        .pairing-qr-subtitle {
+            margin: 0;
+            font-size: 0.82rem;
+            color: rgba(222, 237, 255, 0.78);
+            line-height: 1.45;
+        }
+
+        .pairing-qr-canvas-wrap {
+            border-radius: 14px;
+            padding: 10px;
+            display: grid;
+            place-items: center;
+            min-height: 216px;
+            border: 1px dashed rgba(156, 211, 255, 0.5);
+            background: rgba(6, 11, 30, 0.68);
+        }
+
+        #pairingQrCanvas {
+            width: min(210px, 100%);
+            max-width: 210px;
+            background: #ffffff;
+            border-radius: 8px;
+            display: block;
+        }
+
+        .pairing-qr-status {
+            margin: 0;
+            min-height: 1.1em;
+            font-size: 0.82rem;
+            color: rgba(222, 237, 255, 0.82);
+        }
+
+        .pairing-qr-status.success {
+            color: #4bfca8;
+        }
+
+        .pairing-qr-status.error {
+            color: #ff9aa9;
+        }
+
+        .pairing-qr-meta {
+            margin: 0;
+            font-size: 0.78rem;
+            color: rgba(184, 210, 241, 0.9);
+        }
+
+        .pairing-qr-actions {
+            display: flex;
+            gap: 8px;
+            flex-wrap: wrap;
+            justify-content: flex-end;
+        }
+
+        .manual-claim-fallback {
+            border: 1px solid rgba(255, 255, 255, 0.16);
+            border-radius: 14px;
+            padding: 10px 12px;
+            background: rgba(8, 15, 44, 0.42);
+        }
+
+        .manual-claim-fallback > summary {
+            cursor: pointer;
+            color: #d8ebff;
+            font-weight: 600;
+            font-size: 0.86rem;
+            list-style: none;
+        }
+
+        .manual-claim-fallback > summary::-webkit-details-marker {
+            display: none;
+        }
+
+        .manual-claim-fallback > summary::after {
+            content: " \25BE";
+            font-size: 0.75rem;
+            color: rgba(188, 218, 251, 0.84);
+        }
+
+        .manual-claim-fallback[open] > summary::after {
+            content: " \25B4";
+        }
+
+        .manual-claim-fallback-body {
+            margin-top: 10px;
+            display: grid;
+            gap: 10px;
+        }
+
+        .manual-claim-help {
+            margin: 0;
+            font-size: 0.78rem;
+            color: rgba(197, 219, 245, 0.84);
+            line-height: 1.5;
         }
 
         .claim-device-modal-actions {
@@ -2670,14 +2781,39 @@
                     </button>
                 </div>
                 <div class="claim-device-modal-body">
-                    <div class="field-group">
-                        <label class="field-label" for="claimDeviceUidInput">Device UID</label>
-                        <input id="claimDeviceUidInput" type="text" maxlength="5" placeholder="abc12" />
+                    <div class="pairing-qr-shell">
+                        <p class="pairing-qr-title">Pair by QR Code (Recommended)</p>
+                        <p class="pairing-qr-subtitle">
+                            Open AutoCall app on your Android device, tap
+                            <strong>Scan QR to Pair Device</strong>, then scan this code.
+                        </p>
+                        <div id="pairingQrCanvasWrap" class="pairing-qr-canvas-wrap">
+                            <canvas id="pairingQrCanvas" width="210" height="210"></canvas>
+                        </div>
+                        <p id="pairingQrStatus" class="pairing-qr-status">Preparing secure pairing QR...</p>
+                        <p id="pairingQrMeta" class="pairing-qr-meta">This QR expires in 5:00</p>
+                        <div class="pairing-qr-actions">
+                            <button type="button" class="subtle-button" onclick="refreshPairingQrCode()">Refresh QR</button>
+                            <button type="button" class="subtle-button" onclick="refreshDevicesFromPairingModal()">Refresh Devices</button>
+                        </div>
                     </div>
-                    <div class="claim-device-modal-actions">
-                        <button id="claimDeviceBtn" type="button" onclick="claimDevice()">Claim / Add Device</button>
-                        <button type="button" class="subtle-button" onclick="closeClaimDeviceModal()">Cancel</button>
-                    </div>
+
+                    <details id="manualClaimFallback" class="manual-claim-fallback">
+                        <summary>Manual fallback (Device UID)</summary>
+                        <div class="manual-claim-fallback-body">
+                            <p class="manual-claim-help">
+                                Use this only if camera pairing is not available.
+                            </p>
+                            <div class="field-group">
+                                <label class="field-label" for="claimDeviceUidInput">Device UID</label>
+                                <input id="claimDeviceUidInput" type="text" maxlength="5" placeholder="abc12" />
+                            </div>
+                            <div class="claim-device-modal-actions">
+                                <button id="claimDeviceBtn" type="button" onclick="claimDevice()">Claim by UID</button>
+                                <button type="button" class="subtle-button" onclick="closeClaimDeviceModal()">Cancel</button>
+                            </div>
+                        </div>
+                    </details>
                 </div>
             </div>
         </div>
@@ -2958,6 +3094,10 @@
     <div id="toastContainer" class="toast-container" aria-live="polite" aria-atomic="true"></div>
 
     <script src="/socket.io/socket.io.js"></script>
+    <script
+        src="https://cdn.jsdelivr.net/npm/qrcode/build/qrcode.min.js"
+        data-autocall-qr-lib="true"
+        onerror="console.error('[AutoCall][QR] Failed to load QR library from CDN')"></script>
     <script>
         const SERVER =
             window.location.hostname === "localhost"
@@ -2968,6 +3108,15 @@
         let authToken = "";
         let authenticatedUser = null;
         let refreshDevicesIntervalId = null;
+        let pairingQrRefreshInProgress = false;
+        let pairingQrCountdownIntervalId = null;
+        let pairingQrExpiresAtMs = 0;
+        let pairingQrLibraryLoadPromise = null;
+        let isQrDomReady =
+            document.readyState === "interactive" || document.readyState === "complete";
+        const PAIRING_QR_EXPECTED_TYPE = "AUTOCALL_PAIRING";
+        const PAIRING_QR_DEFAULT_SECONDS = 5 * 60;
+        const PAIRING_QR_LIBRARY_CDN_URL = "https://cdn.jsdelivr.net/npm/qrcode/build/qrcode.min.js";
         let screenMirrorSocket = null;
         let screenMirrorJoinedDeviceUid = "";
         const activeScreenMirrorDeviceUids = new Set();
@@ -5467,23 +5616,290 @@
             });
         }
 
+        if (!isQrDomReady) {
+            document.addEventListener(
+                "DOMContentLoaded",
+                () => {
+                    isQrDomReady = true;
+                },
+                { once: true }
+            );
+        }
+
+        function waitForQrDomReady() {
+            if (isQrDomReady) {
+                return Promise.resolve();
+            }
+
+            return new Promise((resolve) => {
+                document.addEventListener(
+                    "DOMContentLoaded",
+                    () => {
+                        isQrDomReady = true;
+                        resolve();
+                    },
+                    { once: true }
+                );
+            });
+        }
+
+        function hasLoadedQrLibrary() {
+            const hasQRCode = Boolean(window.QRCode && typeof window.QRCode.toCanvas === "function");
+            const hasQRCodeStyling = Boolean(window.QRCodeStyling);
+            return hasQRCode || hasQRCodeStyling;
+        }
+
+        function attachQrLibraryLoadHandlers(scriptElement, onReady, onFailure) {
+            const handleLoad = () => {
+                scriptElement.dataset.autocallQrLoaded = "true";
+                if (!window.QRCode && !window.QRCodeStyling) {
+                    const loadError = new Error("QR library loaded but API is unavailable");
+                    console.error("[AutoCall][QR] CDN loaded but QR API is unavailable", loadError);
+                    onFailure(loadError);
+                    return;
+                }
+                onReady();
+            };
+
+            const handleError = () => {
+                const loadError = new Error("Failed to load QR library from CDN");
+                console.error("[AutoCall][QR] Failed to load QR library from CDN", loadError);
+                onFailure(loadError);
+            };
+
+            scriptElement.addEventListener("load", handleLoad, { once: true });
+            scriptElement.addEventListener("error", handleError, { once: true });
+        }
+
+        async function ensurePairingQrLibraryLoaded() {
+            await waitForQrDomReady();
+
+            if (hasLoadedQrLibrary()) {
+                return;
+            }
+
+            if (!window.QRCode && !window.QRCodeStyling) {
+                console.warn("[AutoCall][QR] QR library missing, retrying CDN load");
+            }
+
+            if (!pairingQrLibraryLoadPromise) {
+                pairingQrLibraryLoadPromise = new Promise((resolve, reject) => {
+                    const scriptElement = document.createElement("script");
+                    scriptElement.src = PAIRING_QR_LIBRARY_CDN_URL;
+                    scriptElement.async = true;
+                    scriptElement.dataset.autocallQrLib = "true";
+                    attachQrLibraryLoadHandlers(scriptElement, resolve, reject);
+                    document.head.appendChild(scriptElement);
+                }).catch((error) => {
+                    pairingQrLibraryLoadPromise = null;
+                    throw error;
+                });
+            }
+
+            await pairingQrLibraryLoadPromise;
+        }
+
+        function clearPairingQrCountdown() {
+            if (pairingQrCountdownIntervalId) {
+                clearInterval(pairingQrCountdownIntervalId);
+                pairingQrCountdownIntervalId = null;
+            }
+        }
+
+        function formatCountdownSeconds(totalSeconds) {
+            const safeSeconds = Number.isFinite(totalSeconds) ? Math.max(0, Math.floor(totalSeconds)) : 0;
+            const minutes = Math.floor(safeSeconds / 60);
+            const seconds = safeSeconds % 60;
+            return `${minutes}:${String(seconds).padStart(2, "0")}`;
+        }
+
+        function setPairingQrStatus(message, type = "info") {
+            const statusElement = document.getElementById("pairingQrStatus");
+            if (!statusElement) return;
+
+            statusElement.textContent = String(message || "");
+            statusElement.classList.remove("success", "error");
+            if (type === "success" || type === "error") {
+                statusElement.classList.add(type);
+            }
+        }
+
+        function clearPairingQrCanvas() {
+            const canvas = document.getElementById("pairingQrCanvas");
+            if (!(canvas instanceof HTMLCanvasElement)) return;
+            const context = canvas.getContext("2d");
+            if (!context) return;
+
+            context.fillStyle = "#ffffff";
+            context.fillRect(0, 0, canvas.width, canvas.height);
+        }
+
+        function updatePairingQrMeta() {
+            const metaElement = document.getElementById("pairingQrMeta");
+            if (!metaElement) return;
+
+            if (!pairingQrExpiresAtMs) {
+                metaElement.textContent = `This QR expires in ${formatCountdownSeconds(PAIRING_QR_DEFAULT_SECONDS)}`;
+                return;
+            }
+
+            const remainingSeconds = Math.max(0, Math.floor((pairingQrExpiresAtMs - Date.now()) / 1000));
+            if (remainingSeconds <= 0) {
+                metaElement.textContent = "QR expired. Refresh to get a new secure token.";
+                setPairingQrStatus("Pairing QR expired. Tap Refresh QR.", "error");
+                clearPairingQrCountdown();
+                return;
+            }
+
+            metaElement.textContent = `This QR expires in ${formatCountdownSeconds(remainingSeconds)}`;
+        }
+
+        function startPairingQrCountdown(expiresAtValue) {
+            clearPairingQrCountdown();
+
+            const parsedExpiresAtMs = Date.parse(String(expiresAtValue || ""));
+            if (!Number.isFinite(parsedExpiresAtMs) || parsedExpiresAtMs <= Date.now()) {
+                pairingQrExpiresAtMs = Date.now() + (PAIRING_QR_DEFAULT_SECONDS * 1000);
+            } else {
+                pairingQrExpiresAtMs = parsedExpiresAtMs;
+            }
+
+            updatePairingQrMeta();
+            pairingQrCountdownIntervalId = setInterval(() => {
+                const overlay = document.getElementById("claimDeviceOverlay");
+                if (!overlay || overlay.classList.contains("panel-hidden")) {
+                    clearPairingQrCountdown();
+                    return;
+                }
+                updatePairingQrMeta();
+            }, 1000);
+        }
+
+        async function renderPairingQrCode(payload) {
+            await ensurePairingQrLibraryLoaded();
+
+            if (!window.QRCode && !window.QRCodeStyling) {
+                const qrMissingError = new Error("QR library not loaded");
+                console.error("[AutoCall][QR] QR library not loaded", qrMissingError);
+                throw qrMissingError;
+            }
+
+            const canvas = document.getElementById("pairingQrCanvas");
+            if (!(canvas instanceof HTMLCanvasElement)) {
+                throw new Error("QR canvas not available");
+            }
+
+            if (!window.QRCode || typeof window.QRCode.toCanvas !== "function") {
+                const qrApiError = new Error("QRCode.toCanvas is not available");
+                console.error("[AutoCall][QR] QRCode.toCanvas is not available", qrApiError);
+                throw qrApiError;
+            }
+
+            await window.QRCode.toCanvas(canvas, JSON.stringify(payload), {
+                width: 210,
+                margin: 1,
+                color: {
+                    dark: "#052453",
+                    light: "#ffffff"
+                }
+            });
+        }
+
+        async function refreshPairingQrCode() {
+            if (pairingQrRefreshInProgress) {
+                return;
+            }
+
+            await waitForQrDomReady();
+            pairingQrRefreshInProgress = true;
+            setPairingQrStatus("Generating secure pairing QR...");
+            clearPairingQrCanvas();
+
+            try {
+                const response = await apiFetch("/pairing/qr");
+                let payload = {};
+                try {
+                    payload = await response.json();
+                } catch (_error) {
+                    payload = {};
+                }
+                if (!response.ok) {
+                    throw new Error(parseApiErrorMessage(payload, "Failed to load pairing QR"));
+                }
+
+                const normalizedType = typeof payload?.type === "string" ? payload.type.trim() : "";
+                const normalizedPairingToken =
+                    typeof payload?.pairingToken === "string" ? payload.pairingToken.trim() : "";
+                const normalizedServerUrl =
+                    typeof payload?.serverUrl === "string" && payload.serverUrl.trim()
+                        ? payload.serverUrl.trim()
+                        : SERVER;
+
+                if (normalizedType !== PAIRING_QR_EXPECTED_TYPE || !normalizedPairingToken) {
+                    throw new Error("Invalid pairing QR payload");
+                }
+
+                await renderPairingQrCode({
+                    type: normalizedType,
+                    pairingToken: normalizedPairingToken,
+                    serverUrl: normalizedServerUrl
+                });
+
+                startPairingQrCountdown(payload?.expiresAt);
+                setPairingQrStatus("Scan QR from mobile app to pair this device.", "success");
+            } catch (error) {
+                clearPairingQrCountdown();
+                pairingQrExpiresAtMs = 0;
+                updatePairingQrMeta();
+                setPairingQrStatus(error?.message || "Failed to generate pairing QR", "error");
+            } finally {
+                pairingQrRefreshInProgress = false;
+            }
+        }
+
+        async function refreshDevicesFromPairingModal() {
+            await loadDevices();
+            await loadDevicesToSelect();
+            showToast("Devices refreshed", "success");
+        }
+
+        function resetPairingQrState() {
+            clearPairingQrCountdown();
+            pairingQrRefreshInProgress = false;
+            pairingQrExpiresAtMs = 0;
+            clearPairingQrCanvas();
+            setPairingQrStatus("Preparing secure pairing QR...");
+            updatePairingQrMeta();
+        }
+
         function openClaimDeviceModal() {
             const overlay = document.getElementById("claimDeviceOverlay");
             const input = document.getElementById("claimDeviceUidInput");
+            const manualFallback = document.getElementById("manualClaimFallback");
             if (!overlay) return;
             overlay.classList.remove("panel-hidden");
             setClaimDeviceModalTriggerExpanded(true);
             syncOverlayScrollLock();
-            if (input) input.focus();
+            if (input) input.value = "";
+            if (manualFallback instanceof HTMLDetailsElement) {
+                manualFallback.open = false;
+            }
+            resetPairingQrState();
+            void refreshPairingQrCode();
         }
 
         function closeClaimDeviceModal() {
             const overlay = document.getElementById("claimDeviceOverlay");
             const input = document.getElementById("claimDeviceUidInput");
+            const manualFallback = document.getElementById("manualClaimFallback");
             if (!overlay) return;
             overlay.classList.add("panel-hidden");
             setClaimDeviceModalTriggerExpanded(false);
             if (input) input.value = "";
+            if (manualFallback instanceof HTMLDetailsElement) {
+                manualFallback.open = false;
+            }
+            resetPairingQrState();
             syncOverlayScrollLock();
         }
 
