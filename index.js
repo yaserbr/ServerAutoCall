@@ -3224,6 +3224,66 @@ function startPairingTokenMemoryCleanupLoop() {
   }
 }
 
+function isExpiresAtAscendingSingleFieldIndex(indexInfo) {
+  if (!indexInfo || typeof indexInfo !== "object") return false;
+  if (!indexInfo.key || typeof indexInfo.key !== "object") return false;
+
+  const keyEntries = Object.entries(indexInfo.key);
+  if (keyEntries.length !== 1) return false;
+
+  const [fieldName, direction] = keyEntries[0];
+  return fieldName === "expiresAt" && Number(direction) === 1;
+}
+
+async function ensurePairingTokenExpiryTtlIndex() {
+  if (mongoose.connection.readyState !== 1) {
+    return;
+  }
+
+  try {
+    const collection = PairingToken.collection;
+    let indexes = [];
+    try {
+      indexes = await collection.indexes();
+    } catch (error) {
+      const message = String(error?.message || "");
+      const isNamespaceMissing =
+        Number(error?.code) === 26 ||
+        /ns not found/i.test(message) ||
+        /namespace/i.test(message);
+      if (!isNamespaceMissing) {
+        throw error;
+      }
+    }
+
+    const expiresAtIndexes = indexes.filter(isExpiresAtAscendingSingleFieldIndex);
+    const hasCorrectTtlIndex = expiresAtIndexes.some(
+      (indexInfo) => Number(indexInfo.expireAfterSeconds) === 0
+    );
+
+    if (hasCorrectTtlIndex) {
+      return;
+    }
+
+    for (const indexInfo of expiresAtIndexes) {
+      if (!indexInfo?.name) continue;
+      await collection.dropIndex(indexInfo.name);
+    }
+
+    await collection.createIndex(
+      { expiresAt: 1 },
+      {
+        expireAfterSeconds: 0,
+        name: "expiresAt_1"
+      }
+    );
+
+    console.log("[PairingToken] TTL index ensured for expiresAt");
+  } catch (error) {
+    console.error("[PairingToken] Failed to ensure TTL index:", error?.message || error);
+  }
+}
+
 async function cleanupLegacyDeviceUidData() {
   if (mongoose.connection.readyState !== 1) {
     return;
@@ -3255,6 +3315,7 @@ async function startServer() {
   });
 
   await connectToDatabase();
+  await ensurePairingTokenExpiryTtlIndex();
   await cleanupLegacyDeviceUidData();
 }
 
