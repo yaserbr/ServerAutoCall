@@ -1143,15 +1143,93 @@ function isDeviceOnlineByLastSeen(lastSeenValue) {
   return Date.now() - parsedDate.getTime() <= DEVICE_ONLINE_WINDOW_MS;
 }
 
-function mapDeviceForResponse(device) {
+function mapLinkedAccountForResponse(linkedAccountLike) {
+  if (!linkedAccountLike) return null;
+
+  const source = toPlainObject(linkedAccountLike);
+  const resolvedIdSource =
+    source?._id ??
+    source?.id ??
+    (typeof linkedAccountLike === "string" ? linkedAccountLike : "");
+  const resolvedId = String(resolvedIdSource || "").trim();
+  const resolvedUsername =
+    typeof source?.username === "string" ? source.username.trim() : "";
+
+  if (!resolvedId || !resolvedUsername) {
+    return null;
+  }
+
+  return {
+    id: resolvedId,
+    username: resolvedUsername
+  };
+}
+
+async function resolveLinkedAccountByOwnerUserId(ownerUserId) {
+  const normalizedOwnerUserId = normalizeAuthUserId(String(ownerUserId || ""));
+  if (!normalizedOwnerUserId) return null;
+
+  const ownerUser = await User.findById(normalizedOwnerUserId).select("_id username");
+  return mapLinkedAccountForResponse(ownerUser);
+}
+
+async function mapDeviceForResponseWithLinkedAccount(device) {
   const source = toPlainObject(device);
+  const linkedAccount = await resolveLinkedAccountByOwnerUserId(source?.ownerUserId);
+  return mapDeviceForResponse(source, linkedAccount);
+}
+
+async function mapDeviceListForResponseWithLinkedAccount(devices) {
+  const deviceList = Array.isArray(devices) ? devices : [];
+  if (deviceList.length === 0) return [];
+
+  const ownerUserIds = Array.from(
+    new Set(
+      deviceList
+        .map((device) => normalizeAuthUserId(String(toPlainObject(device)?.ownerUserId || "")))
+        .filter(Boolean)
+    )
+  );
+
+  let linkedAccountByOwnerId = new Map();
+  if (ownerUserIds.length > 0) {
+    const users = await User.find({ _id: { $in: ownerUserIds } }).select("_id username");
+    linkedAccountByOwnerId = new Map(
+      users
+        .map((user) => {
+          const mapped = mapLinkedAccountForResponse(user);
+          return mapped ? [mapped.id, mapped] : null;
+        })
+        .filter(Boolean)
+    );
+  }
+
+  return deviceList.map((device) => {
+    const source = toPlainObject(device);
+    const ownerUserId = normalizeAuthUserId(String(source?.ownerUserId || ""));
+    const linkedAccount = ownerUserId ? linkedAccountByOwnerId.get(ownerUserId) ?? null : null;
+    return mapDeviceForResponse(source, linkedAccount);
+  });
+}
+
+function mapDeviceForResponse(device, linkedAccount) {
+  const source = toPlainObject(device);
+  const linkedAccountSource =
+    linkedAccount === undefined
+      ? source?.linkedAccount ??
+        (source?.ownerUserId && typeof source.ownerUserId === "object"
+          ? source.ownerUserId
+          : null)
+      : linkedAccount;
+  const normalizedLinkedAccount = mapLinkedAccountForResponse(linkedAccountSource);
 
   return {
     deviceUid: source.deviceUid,
     deviceName: ensureDeviceName(source),
     platform: source.platform ?? null,
     online: isDeviceOnlineByLastSeen(source.lastSeen),
-    lastSeen: formatUtcForRiyadhDisplay(source.lastSeen)
+    lastSeen: formatUtcForRiyadhDisplay(source.lastSeen),
+    linkedAccount: normalizedLinkedAccount
   };
 }
 
@@ -1978,10 +2056,11 @@ app.post("/devices/register", async (req, res) => {
       mode: wasExisting ? "updated_existing" : "created_new",
       platform: device.platform ?? null
     });
+    const mappedDevice = await mapDeviceForResponseWithLinkedAccount(device);
 
     return res.json({
       success: true,
-      device: mapDeviceForResponse(device),
+      device: mappedDevice,
       ...(issuedDeviceToken ? { deviceToken: issuedDeviceToken } : {})
     });
   } catch (error) {
@@ -2039,10 +2118,11 @@ app.post("/devices/heartbeat", requireAuthenticatedDeviceAllowBootstrap, async (
     console.log("[DeviceHeartbeat] Updated existing device:", {
       deviceUid: normalizedDeviceUid
     });
+    const mappedDevice = await mapDeviceForResponseWithLinkedAccount(device);
 
     return res.json({
       success: true,
-      device: mapDeviceForResponse(device),
+      device: mappedDevice,
       ...(issuedDeviceToken ? { deviceToken: issuedDeviceToken } : {})
     });
   } catch (error) {
@@ -2067,8 +2147,9 @@ app.get("/devices", requireAuth, async (req, res) => {
         ? { $or: [{ ownerUserId: currentUserId }, { ownerUserId: null }] }
         : { ownerUserId: currentUserId })
     });
+    const mappedDevices = await mapDeviceListForResponseWithLinkedAccount(devices);
 
-    return res.json(devices.map(mapDeviceForResponse));
+    return res.json(mappedDevices);
   } catch (error) {
     return handleServerError(res, error, "GET /devices");
   }
@@ -2201,11 +2282,12 @@ app.post("/devices/pair", async (req, res) => {
     }
 
     await device.save();
+    const mappedDevice = await mapDeviceForResponseWithLinkedAccount(device);
 
     return res.json({
       success: true,
       message: "Device paired successfully",
-      device: mapDeviceForResponse(device),
+      device: mappedDevice,
       ...(issuedDeviceToken ? { deviceToken: issuedDeviceToken } : {})
     });
   } catch (error) {
