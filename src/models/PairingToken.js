@@ -12,6 +12,14 @@ const pairingTokenSchema = new mongoose.Schema(
       maxlength: 64,
       index: true
     },
+    manualCodeHash: {
+      type: String,
+      default: null,
+      trim: true,
+      lowercase: true,
+      minlength: 64,
+      maxlength: 64
+    },
     userId: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "User",
@@ -46,5 +54,14 @@ const pairingTokenSchema = new mongoose.Schema(
 
 pairingTokenSchema.index({ expiresAt: 1 }, { expireAfterSeconds: 0 });
 pairingTokenSchema.index({ userId: 1, createdAt: -1 });
+pairingTokenSchema.index(
+  { manualCodeHash: 1 },
+  {
+    unique: true,
+    partialFilterExpression: {
+      manualCodeHash: { $type: "string" }
+    }
+  }
+);
 
 module.exports = mongoose.model("PairingToken", pairingTokenSchema);

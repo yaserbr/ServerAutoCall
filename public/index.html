@@ -991,34 +991,24 @@
             border-radius: 14px;
             padding: 10px 12px;
             background: rgba(8, 15, 44, 0.42);
+            display: grid;
+            gap: 8px;
         }
 
-        .manual-claim-fallback > summary {
-            cursor: pointer;
+        .manual-pairing-code-title {
+            margin: 0;
             color: #d8ebff;
             font-weight: 600;
             font-size: 0.86rem;
-            list-style: none;
         }
 
-        .manual-claim-fallback > summary::-webkit-details-marker {
-            display: none;
-        }
-
-        .manual-claim-fallback > summary::after {
-            content: " \25BE";
-            font-size: 0.75rem;
-            color: rgba(188, 218, 251, 0.84);
-        }
-
-        .manual-claim-fallback[open] > summary::after {
-            content: " \25B4";
-        }
-
-        .manual-claim-fallback-body {
-            margin-top: 10px;
-            display: grid;
-            gap: 10px;
+        .manual-pairing-code-value {
+            margin: 0;
+            font-size: 1.35rem;
+            font-weight: 700;
+            letter-spacing: 0.1em;
+            color: #ffffff;
+            font-family: "Courier New", Consolas, monospace;
         }
 
         .manual-claim-help {
@@ -1026,13 +1016,6 @@
             font-size: 0.78rem;
             color: rgba(197, 219, 245, 0.84);
             line-height: 1.5;
-        }
-
-        .claim-device-modal-actions {
-            display: flex;
-            gap: 8px;
-            flex-wrap: wrap;
-            justify-content: flex-end;
         }
 
         #deviceActionOverlay {
@@ -2798,22 +2781,13 @@
                         </div>
                     </div>
 
-                    <details id="manualClaimFallback" class="manual-claim-fallback">
-                        <summary>Manual fallback (Device UID)</summary>
-                        <div class="manual-claim-fallback-body">
-                            <p class="manual-claim-help">
-                                Use this only if camera pairing is not available.
-                            </p>
-                            <div class="field-group">
-                                <label class="field-label" for="claimDeviceUidInput">Device UID</label>
-                                <input id="claimDeviceUidInput" type="text" maxlength="5" placeholder="abc12" />
-                            </div>
-                            <div class="claim-device-modal-actions">
-                                <button id="claimDeviceBtn" type="button" onclick="claimDevice()">Claim by UID</button>
-                                <button type="button" class="subtle-button" onclick="closeClaimDeviceModal()">Cancel</button>
-                            </div>
-                        </div>
-                    </details>
+                    <div class="manual-claim-fallback">
+                        <p class="manual-pairing-code-title">Manual Pairing Code</p>
+                        <p id="manualPairingCodeValue" class="manual-pairing-code-value">------</p>
+                        <p class="manual-claim-help">
+                            Enter this code manually in the app if QR scanning fails.
+                        </p>
+                    </div>
                 </div>
             </div>
         </div>
@@ -3116,6 +3090,8 @@
             document.readyState === "interactive" || document.readyState === "complete";
         const PAIRING_QR_EXPECTED_TYPE = "AUTOCALL_PAIRING";
         const PAIRING_QR_DEFAULT_SECONDS = 5 * 60;
+        const MANUAL_PAIRING_CODE_REGEX = /^\d{6}$/;
+        const MANUAL_PAIRING_CODE_PLACEHOLDER = "------";
         const PAIRING_QR_LIBRARY_CDN_URL = "https://cdn.jsdelivr.net/npm/qrcode/build/qrcode.min.js";
         let screenMirrorSocket = null;
         let screenMirrorJoinedDeviceUid = "";
@@ -5724,6 +5700,16 @@
             }
         }
 
+        function setManualPairingCodeValue(value) {
+            const codeElement = document.getElementById("manualPairingCodeValue");
+            if (!codeElement) return;
+
+            const normalizedCode = typeof value === "string" ? value.trim() : "";
+            codeElement.textContent = MANUAL_PAIRING_CODE_REGEX.test(normalizedCode)
+                ? normalizedCode
+                : MANUAL_PAIRING_CODE_PLACEHOLDER;
+        }
+
         function clearPairingQrCanvas() {
             const canvas = document.getElementById("pairingQrCanvas");
             if (!(canvas instanceof HTMLCanvasElement)) return;
@@ -5830,6 +5816,10 @@
                 const normalizedType = typeof payload?.type === "string" ? payload.type.trim() : "";
                 const normalizedPairingToken =
                     typeof payload?.pairingToken === "string" ? payload.pairingToken.trim() : "";
+                const normalizedManualPairingCode =
+                    typeof payload?.manualPairingCode === "string"
+                        ? payload.manualPairingCode.trim()
+                        : "";
                 const normalizedServerUrl =
                     typeof payload?.serverUrl === "string" && payload.serverUrl.trim()
                         ? payload.serverUrl.trim()
@@ -5845,12 +5835,14 @@
                     serverUrl: normalizedServerUrl
                 });
 
+                setManualPairingCodeValue(normalizedManualPairingCode);
                 startPairingQrCountdown(payload?.expiresAt);
                 setPairingQrStatus("Scan QR from mobile app to pair this device.", "success");
             } catch (error) {
                 clearPairingQrCountdown();
                 pairingQrExpiresAtMs = 0;
                 updatePairingQrMeta();
+                setManualPairingCodeValue("");
                 setPairingQrStatus(error?.message || "Failed to generate pairing QR", "error");
             } finally {
                 pairingQrRefreshInProgress = false;
@@ -5869,36 +5861,25 @@
             pairingQrExpiresAtMs = 0;
             clearPairingQrCanvas();
             setPairingQrStatus("Preparing secure pairing QR...");
+            setManualPairingCodeValue("");
             updatePairingQrMeta();
         }
 
         function openClaimDeviceModal() {
             const overlay = document.getElementById("claimDeviceOverlay");
-            const input = document.getElementById("claimDeviceUidInput");
-            const manualFallback = document.getElementById("manualClaimFallback");
             if (!overlay) return;
             overlay.classList.remove("panel-hidden");
             setClaimDeviceModalTriggerExpanded(true);
             syncOverlayScrollLock();
-            if (input) input.value = "";
-            if (manualFallback instanceof HTMLDetailsElement) {
-                manualFallback.open = false;
-            }
             resetPairingQrState();
             void refreshPairingQrCode();
         }
 
         function closeClaimDeviceModal() {
             const overlay = document.getElementById("claimDeviceOverlay");
-            const input = document.getElementById("claimDeviceUidInput");
-            const manualFallback = document.getElementById("manualClaimFallback");
             if (!overlay) return;
             overlay.classList.add("panel-hidden");
             setClaimDeviceModalTriggerExpanded(false);
-            if (input) input.value = "";
-            if (manualFallback instanceof HTMLDetailsElement) {
-                manualFallback.open = false;
-            }
             resetPairingQrState();
             syncOverlayScrollLock();
         }
@@ -7109,43 +7090,6 @@
                 setRawFallback("devices", {
                     error: error.message
                 }, true);
-            }
-        }
-
-        async function claimDevice() {
-            const claimInput = document.getElementById("claimDeviceUidInput");
-            const deviceUid = normalizeDeviceUidInput(claimInput?.value || "");
-            if (!deviceUid) {
-                showToast("Please enter a valid device UID", "error");
-                return;
-            }
-
-            try {
-                const res = await apiFetch("/devices/claim", {
-                    method: "POST",
-                    headers: {
-                        "Content-Type": "application/json"
-                    },
-                    body: JSON.stringify({
-                        deviceUid
-                    })
-                });
-
-                const data = await res.json();
-                if (!res.ok) {
-                    throw new Error(parseApiErrorMessage(data, "Failed to claim device"));
-                }
-
-                if (claimInput) {
-                    claimInput.value = "";
-                }
-
-                closeClaimDeviceModal();
-                showToast("Device claimed successfully", "success");
-                await loadDevices();
-                await loadDevicesToSelect();
-            } catch (error) {
-                showToast(error.message || "Failed to claim device", "error");
             }
         }
 

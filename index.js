@@ -116,6 +116,9 @@ const DEVICE_ONLINE_WINDOW_MS = 30 * 1000;
 const PAIRING_TOKEN_BYTES = 32;
 const PAIRING_TOKEN_TTL_MS = 5 * 60 * 1000;
 const PAIRING_TOKEN_TYPE = "AUTOCALL_PAIRING";
+const MANUAL_PAIRING_CODE_LENGTH = 6;
+const MANUAL_PAIRING_CODE_REGEX = new RegExp(`^\\d{${MANUAL_PAIRING_CODE_LENGTH}}$`);
+const PAIRING_TOKEN_GENERATION_MAX_ATTEMPTS = 10;
 const PAIRING_TOKEN_EXPIRY_CLEANUP_INTERVAL_MS = 60 * 1000;
 const DEFAULT_PUBLIC_SERVER_URL = "https://serverautocall-production.up.railway.app";
 const OPEN_APP_PACKAGE_REGEX = /^[a-zA-Z0-9_]+(\.[a-zA-Z0-9_]+)+$/;
@@ -282,14 +285,32 @@ function normalizePairingToken(value) {
   return value.trim();
 }
 
+function normalizeManualPairingCode(value) {
+  if (typeof value !== "string") return "";
+  const normalized = value.trim();
+  return MANUAL_PAIRING_CODE_REGEX.test(normalized) ? normalized : "";
+}
+
 function generatePairingToken() {
   return crypto.randomBytes(PAIRING_TOKEN_BYTES).toString("hex");
+}
+
+function generateManualPairingCode() {
+  const max = 10 ** MANUAL_PAIRING_CODE_LENGTH;
+  const value = crypto.randomInt(0, max);
+  return String(value).padStart(MANUAL_PAIRING_CODE_LENGTH, "0");
 }
 
 function hashPairingToken(token) {
   const normalizedToken = normalizePairingToken(token);
   if (!normalizedToken) return "";
   return crypto.createHash("sha256").update(normalizedToken).digest("hex");
+}
+
+function hashManualPairingCode(code) {
+  const normalizedCode = normalizeManualPairingCode(code);
+  if (!normalizedCode) return "";
+  return crypto.createHash("sha256").update(normalizedCode).digest("hex");
 }
 
 function buildPairingTokenExpiryDate() {
@@ -311,52 +332,115 @@ function cleanupExpiredPairingTokensInMemory(nowMs = Date.now()) {
   }
 }
 
-function getPairingTokenFailureHttpStatus(reason) {
+function translatePairingTokenReasonToCodeReason(reason) {
+  if (reason === "missing_pairing_token") return "missing_pairing_code";
+  if (reason === "invalid_pairing_token") return "invalid_pairing_code";
+  if (reason === "pairing_token_used") return "pairing_code_used";
+  if (reason === "pairing_token_expired") return "pairing_code_expired";
+  return reason;
+}
+
+function getPairingCredentialFailureHttpStatus(reason) {
   if (reason === "missing_pairing_token") return 400;
+  if (reason === "missing_pairing_code") return 400;
+  if (reason === "missing_pairing_credential") return 400;
   if (reason === "invalid_pairing_token") return 404;
+  if (reason === "invalid_pairing_code") return 404;
   if (reason === "pairing_token_used") return 409;
+  if (reason === "pairing_code_used") return 409;
   if (reason === "pairing_token_expired") return 410;
+  if (reason === "pairing_code_expired") return 410;
   return 400;
 }
 
-function getPairingTokenFailureMessage(reason) {
+function getPairingCredentialFailureMessage(reason) {
   if (reason === "missing_pairing_token") return "pairingToken is required";
+  if (reason === "missing_pairing_code") return "pairingCode is required";
+  if (reason === "missing_pairing_credential") return "pairingToken or pairingCode is required";
   if (reason === "invalid_pairing_token") return "Invalid pairing token";
+  if (reason === "invalid_pairing_code") return "Invalid pairing code";
   if (reason === "pairing_token_used") return "Pairing token already used";
+  if (reason === "pairing_code_used") return "Pairing code already used";
   if (reason === "pairing_token_expired") return "Pairing token expired";
+  if (reason === "pairing_code_expired") return "Pairing code expired";
   return "Invalid pairing token";
+}
+
+function getPairingCredentialFailureMessageForType(reason, credentialType = "token") {
+  if (credentialType === "code") {
+    return getPairingCredentialFailureMessage(translatePairingTokenReasonToCodeReason(reason));
+  }
+  return getPairingCredentialFailureMessage(reason);
 }
 
 async function createPairingTokenForUser(userId) {
   const expiresAt = buildPairingTokenExpiryDate();
-  const plainToken = generatePairingToken();
-  const tokenHash = hashPairingToken(plainToken);
   const now = new Date(toUtcISOString());
 
   if (mongoose.connection.readyState === 1) {
-    await PairingToken.create({
-      tokenHash,
-      userId,
-      expiresAt,
-      used: false,
-      usedAt: null,
-      usedByDeviceUid: null
-    });
+    for (let attempt = 0; attempt < PAIRING_TOKEN_GENERATION_MAX_ATTEMPTS; attempt += 1) {
+      const pairingToken = generatePairingToken();
+      const tokenHash = hashPairingToken(pairingToken);
+      const manualPairingCode = generateManualPairingCode();
+      const manualCodeHash = hashManualPairingCode(manualPairingCode);
+
+      try {
+        await PairingToken.create({
+          tokenHash,
+          manualCodeHash,
+          userId,
+          expiresAt,
+          used: false,
+          usedAt: null,
+          usedByDeviceUid: null
+        });
+
+        return {
+          pairingToken,
+          manualPairingCode,
+          expiresAt
+        };
+      } catch (error) {
+        if (error?.code === 11000 && attempt < PAIRING_TOKEN_GENERATION_MAX_ATTEMPTS - 1) {
+          continue;
+        }
+        throw error;
+      }
+    }
   } else {
     cleanupExpiredPairingTokensInMemory(now.getTime());
-    pairingTokenMemoryStore.set(tokenHash, {
-      userId: String(userId),
-      expiresAtMs: expiresAt.getTime(),
-      used: false,
-      usedAtMs: null,
-      usedByDeviceUid: null
-    });
+
+    for (let attempt = 0; attempt < PAIRING_TOKEN_GENERATION_MAX_ATTEMPTS; attempt += 1) {
+      const pairingToken = generatePairingToken();
+      const tokenHash = hashPairingToken(pairingToken);
+      const manualPairingCode = generateManualPairingCode();
+      const manualCodeHash = hashManualPairingCode(manualPairingCode);
+      const hasManualCodeCollision = Array.from(pairingTokenMemoryStore.values()).some(
+        (record) => record?.manualCodeHash === manualCodeHash
+      );
+
+      if (pairingTokenMemoryStore.has(tokenHash) || hasManualCodeCollision) {
+        continue;
+      }
+
+      pairingTokenMemoryStore.set(tokenHash, {
+        userId: String(userId),
+        expiresAtMs: expiresAt.getTime(),
+        manualCodeHash,
+        used: false,
+        usedAtMs: null,
+        usedByDeviceUid: null
+      });
+
+      return {
+        pairingToken,
+        manualPairingCode,
+        expiresAt
+      };
+    }
   }
 
-  return {
-    pairingToken: plainToken,
-    expiresAt
-  };
+  throw new Error("Unable to generate secure pairing token");
 }
 
 async function inspectPairingToken(pairingTokenValue) {
@@ -461,6 +545,162 @@ async function inspectPairingToken(pairingTokenValue) {
     tokenHash,
     userId: String(memoryRecord.userId || ""),
     expiresAt: new Date(expiresAtMs)
+  };
+}
+
+async function inspectPairingCode(pairingCodeValue) {
+  const normalizedPairingCode = normalizeManualPairingCode(pairingCodeValue);
+  if (!normalizedPairingCode) {
+    return {
+      ok: false,
+      reason: "missing_pairing_code",
+      tokenHash: "",
+      userId: ""
+    };
+  }
+
+  const manualCodeHash = hashManualPairingCode(normalizedPairingCode);
+  if (!manualCodeHash) {
+    return {
+      ok: false,
+      reason: "invalid_pairing_code",
+      tokenHash: "",
+      userId: ""
+    };
+  }
+
+  const now = new Date(toUtcISOString());
+
+  if (mongoose.connection.readyState === 1) {
+    const records = await PairingToken.find({ manualCodeHash })
+      .select("_id tokenHash userId expiresAt used createdAt")
+      .sort({ createdAt: -1 })
+      .limit(2);
+
+    if (!records || records.length === 0) {
+      return {
+        ok: false,
+        reason: "invalid_pairing_code",
+        tokenHash: "",
+        userId: ""
+      };
+    }
+
+    if (records.length > 1) {
+      return {
+        ok: false,
+        reason: "invalid_pairing_code",
+        tokenHash: "",
+        userId: ""
+      };
+    }
+
+    const record = records[0];
+    if (record.used) {
+      return {
+        ok: false,
+        reason: "pairing_code_used",
+        tokenHash: String(record.tokenHash || ""),
+        userId: String(record.userId || "")
+      };
+    }
+
+    const expiresAtMs = Number(new Date(record.expiresAt).getTime());
+    if (!expiresAtMs || expiresAtMs <= now.getTime()) {
+      return {
+        ok: false,
+        reason: "pairing_code_expired",
+        tokenHash: String(record.tokenHash || ""),
+        userId: String(record.userId || "")
+      };
+    }
+
+    return {
+      ok: true,
+      reason: "ok",
+      tokenHash: String(record.tokenHash || ""),
+      userId: String(record.userId || ""),
+      expiresAt: new Date(expiresAtMs)
+    };
+  }
+
+  cleanupExpiredPairingTokensInMemory(now.getTime());
+  const matches = [];
+  for (const [tokenHash, record] of pairingTokenMemoryStore.entries()) {
+    if (record?.manualCodeHash === manualCodeHash) {
+      matches.push({ tokenHash, record });
+      if (matches.length > 1) {
+        break;
+      }
+    }
+  }
+
+  if (matches.length !== 1) {
+    return {
+      ok: false,
+      reason: "invalid_pairing_code",
+      tokenHash: "",
+      userId: ""
+    };
+  }
+
+  const match = matches[0];
+  const memoryRecord = match.record;
+  if (memoryRecord.used === true) {
+    pairingTokenMemoryStore.delete(match.tokenHash);
+    return {
+      ok: false,
+      reason: "pairing_code_used",
+      tokenHash: match.tokenHash,
+      userId: String(memoryRecord.userId || "")
+    };
+  }
+
+  const expiresAtMs = Number(memoryRecord.expiresAtMs || 0);
+  if (!expiresAtMs || expiresAtMs <= now.getTime()) {
+    pairingTokenMemoryStore.delete(match.tokenHash);
+    return {
+      ok: false,
+      reason: "pairing_code_expired",
+      tokenHash: match.tokenHash,
+      userId: String(memoryRecord.userId || "")
+    };
+  }
+
+  return {
+    ok: true,
+    reason: "ok",
+    tokenHash: match.tokenHash,
+    userId: String(memoryRecord.userId || ""),
+    expiresAt: new Date(expiresAtMs)
+  };
+}
+
+async function inspectPairingCredential(pairingTokenValue, pairingCodeValue) {
+  const normalizedPairingToken = normalizePairingToken(pairingTokenValue);
+  if (normalizedPairingToken) {
+    const inspection = await inspectPairingToken(normalizedPairingToken);
+    return {
+      ...inspection,
+      credentialType: "token"
+    };
+  }
+
+  const normalizedPairingCode = normalizeManualPairingCode(pairingCodeValue);
+  if (normalizedPairingCode) {
+    const inspection = await inspectPairingCode(normalizedPairingCode);
+    return {
+      ...inspection,
+      credentialType: "code"
+    };
+  }
+
+  return {
+    ok: false,
+    reason: "missing_pairing_credential",
+    tokenHash: "",
+    userId: "",
+    credentialType: "token"
   };
 }
 
@@ -1602,6 +1842,7 @@ app.get("/pairing/qr", requireAuth, async (req, res) => {
     return res.json({
       type: PAIRING_TOKEN_TYPE,
       pairingToken: createdToken.pairingToken,
+      manualPairingCode: createdToken.manualPairingCode,
       serverUrl,
       expiresAt: createdToken.expiresAt.toISOString(),
       expiresInSeconds: Math.floor(PAIRING_TOKEN_TTL_MS / 1000)
@@ -1835,56 +2076,9 @@ app.get("/devices", requireAuth, async (req, res) => {
 
 app.post("/devices/claim", requireAuth, async (req, res) => {
   try {
-    const payload = parseRequestBodyObject(req.body);
-    const normalizedDeviceUid = normalizeDeviceUid(payload?.deviceUid);
-    const currentUserId = normalizeAuthUserId(req.user?.id);
-
-    if (!currentUserId) {
-      return res.status(401).json({ error: "Unauthorized" });
-    }
-    if (!normalizedDeviceUid) {
-      return res.status(400).json({ error: DEVICE_UID_FORMAT_ERROR });
-    }
-
-    const existingDevice = await Device.findOne({ deviceUid: normalizedDeviceUid });
-    if (!existingDevice) {
-      return res.status(404).json({ error: "Device not found" });
-    }
-
-    if (!existingDevice.ownerUserId) {
-      const claimedAt = new Date(toUtcISOString());
-      const claimedDevice = await Device.findOneAndUpdate(
-        { deviceUid: normalizedDeviceUid, ownerUserId: null },
-        {
-          $set: {
-            ownerUserId: currentUserId,
-            claimedAt
-          }
-        },
-        { new: true }
-      );
-
-      if (claimedDevice) {
-        return res.json({ success: true, device: mapDeviceForResponse(claimedDevice) });
-      }
-
-      const refreshedDevice = await Device.findOne({ deviceUid: normalizedDeviceUid });
-      if (!refreshedDevice) {
-        return res.status(404).json({ error: "Device not found" });
-      }
-
-      if (isDeviceOwnedByUser(refreshedDevice, currentUserId)) {
-        return res.json({ success: true, device: mapDeviceForResponse(refreshedDevice) });
-      }
-
-      return res.status(409).json({ error: "Device already claimed by another user" });
-    }
-
-    if (isDeviceOwnedByUser(existingDevice, currentUserId)) {
-      return res.json({ success: true, device: mapDeviceForResponse(existingDevice) });
-    }
-
-    return res.status(409).json({ error: "Device already claimed by another user" });
+    return res.status(410).json({
+      error: "Legacy device claim is disabled. Use secure pairing."
+    });
   } catch (error) {
     return handleServerError(res, error, "POST /devices/claim");
   }
@@ -1894,28 +2088,35 @@ app.post("/devices/pair", async (req, res) => {
   try {
     const payload = parseRequestBodyObject(req.body);
     const normalizedPairingToken = normalizePairingToken(payload?.pairingToken);
+    const normalizedPairingCode = normalizeManualPairingCode(payload?.pairingCode);
     const normalizedDeviceUid = normalizeDeviceUid(payload?.deviceUid);
     const normalizedDeviceName = normalizeDeviceName(payload?.deviceName);
     const normalizedPlatform = normalizeDeviceName(payload?.platform);
     const providedDeviceToken = extractDeviceTokenFromRequest(req);
 
-    if (!normalizedPairingToken) {
-      return res.status(400).json({ error: "pairingToken is required" });
-    }
     if (!normalizedDeviceUid) {
       return res.status(400).json({ error: DEVICE_UID_FORMAT_ERROR });
     }
 
-    const pairingInspection = await inspectPairingToken(normalizedPairingToken);
+    const pairingInspection = await inspectPairingCredential(
+      normalizedPairingToken,
+      normalizedPairingCode
+    );
     if (!pairingInspection.ok) {
       return res
-        .status(getPairingTokenFailureHttpStatus(pairingInspection.reason))
-        .json({ error: getPairingTokenFailureMessage(pairingInspection.reason) });
+        .status(getPairingCredentialFailureHttpStatus(pairingInspection.reason))
+        .json({ error: getPairingCredentialFailureMessage(pairingInspection.reason) });
     }
 
+    const pairingCredentialType = pairingInspection.credentialType === "code" ? "code" : "token";
     const ownerUserId = normalizeAuthUserId(pairingInspection.userId);
     if (!ownerUserId) {
-      return res.status(400).json({ error: "Invalid pairing token" });
+      return res
+        .status(400)
+        .json({
+          error:
+            pairingCredentialType === "code" ? "Invalid pairing code" : "Invalid pairing token"
+        });
     }
 
     const ownerUserExists = await User.exists({ _id: ownerUserId });
@@ -1924,6 +2125,15 @@ app.post("/devices/pair", async (req, res) => {
     }
 
     let device = await Device.findOne({ deviceUid: normalizedDeviceUid }).select("+deviceTokenHash");
+    if (pairingCredentialType === "code") {
+      if (!providedDeviceToken) {
+        return res.status(401).json({ error: "Unauthorized" });
+      }
+      if (!device?.deviceTokenHash) {
+        return res.status(401).json({ error: "Unauthorized" });
+      }
+    }
+
     if (device?.deviceTokenHash) {
       const canAuthenticate = isDeviceTokenMatch(providedDeviceToken, device.deviceTokenHash);
       if (!canAuthenticate) {
@@ -1942,9 +2152,13 @@ app.post("/devices/pair", async (req, res) => {
       normalizedDeviceUid
     );
     if (!consumeResult.ok) {
+      const reasonForResponse =
+        pairingCredentialType === "code"
+          ? translatePairingTokenReasonToCodeReason(consumeResult.reason)
+          : consumeResult.reason;
       return res
-        .status(getPairingTokenFailureHttpStatus(consumeResult.reason))
-        .json({ error: getPairingTokenFailureMessage(consumeResult.reason) });
+        .status(getPairingCredentialFailureHttpStatus(reasonForResponse))
+        .json({ error: getPairingCredentialFailureMessageForType(consumeResult.reason, pairingCredentialType) });
     }
 
     const now = new Date(toUtcISOString());
