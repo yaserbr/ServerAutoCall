@@ -1024,18 +1024,21 @@
             line-height: 1.5;
         }
 
-        #deviceActionOverlay {
+        #deviceActionOverlay,
+        #contactSaveOverlay {
             opacity: 0;
             pointer-events: none;
             transition: opacity 0.22s ease;
         }
 
-        #deviceActionOverlay.is-visible {
+        #deviceActionOverlay.is-visible,
+        #contactSaveOverlay.is-visible {
             opacity: 1;
             pointer-events: auto;
         }
 
-        #deviceActionOverlay .instructions-modal {
+        #deviceActionOverlay .instructions-modal,
+        #contactSaveOverlay .instructions-modal {
             position: relative;
             opacity: 0;
             transform: translateY(10px) scale(0.985);
@@ -1049,7 +1052,8 @@
             transition: opacity 0.22s ease, transform 0.22s cubic-bezier(0.22, 1, 0.36, 1);
         }
 
-        #deviceActionOverlay.is-visible .instructions-modal {
+        #deviceActionOverlay.is-visible .instructions-modal,
+        #contactSaveOverlay.is-visible .instructions-modal {
             opacity: 1;
             transform: translateY(0) scale(1);
         }
@@ -1108,7 +1112,8 @@
             padding: 10px 14px;
         }
 
-        #deviceActionOverlay .instructions-modal::before {
+        #deviceActionOverlay .instructions-modal::before,
+        #contactSaveOverlay .instructions-modal::before {
             content: none;
         }
 
@@ -3404,6 +3409,35 @@
         </div>
 
         <div
+            id="contactSaveOverlay"
+            class="instructions-overlay panel-hidden"
+            onclick="handleContactSaveOverlayClick(event)">
+            <div class="instructions-modal device-action-modal" role="dialog" aria-modal="true" aria-labelledby="contactSaveTitle">
+                <div class="instructions-header">
+                    <h3 id="contactSaveTitle" class="instructions-title">Save Contact</h3>
+                    <button
+                        type="button"
+                        class="instructions-close"
+                        aria-label="Close contact save dialog"
+                        onclick="cancelContactSaveDialog()">
+                        X
+                    </button>
+                </div>
+                <div class="device-action-body">
+                    <p id="contactSaveMessage" class="device-action-message"></p>
+                    <div id="contactSaveInputWrap" class="device-action-input-wrap">
+                        <label class="field-label" for="contactSaveNameInput">Contact Name</label>
+                        <input id="contactSaveNameInput" type="text" maxlength="60" placeholder="Enter contact name" />
+                    </div>
+                    <div class="device-action-actions">
+                        <button type="button" class="subtle-button" onclick="cancelContactSaveDialog()">Cancel</button>
+                        <button id="contactSaveConfirmBtn" type="button" onclick="confirmContactSaveDialog()">Save</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div
             id="commandConfirmOverlay"
             class="instructions-overlay panel-hidden"
             onclick="handleCommandConfirmOverlayClick(event)">
@@ -3729,6 +3763,11 @@
             resolver: null
         };
         const commandConfirmDialogState = {
+            resolver: null
+        };
+        const CONTACT_SAVE_OVERLAY_ANIMATION_MS = 220;
+        let contactSaveOverlayCloseTimerId = null;
+        const contactSaveDialogState = {
             resolver: null
         };
         let screenMirrorCardCloseTimerId = null;
@@ -6188,12 +6227,14 @@
             const claimDeviceOverlay = document.getElementById("claimDeviceOverlay");
             const deviceActionOverlay = document.getElementById("deviceActionOverlay");
             const commandConfirmOverlay = document.getElementById("commandConfirmOverlay");
+            const contactSaveOverlay = document.getElementById("contactSaveOverlay");
             const isInstructionsOpen = Boolean(instructionsOverlay && !instructionsOverlay.classList.contains("panel-hidden"));
             const isClaimDeviceOpen = Boolean(claimDeviceOverlay && !claimDeviceOverlay.classList.contains("panel-hidden"));
             const isDeviceActionOpen = Boolean(deviceActionOverlay && !deviceActionOverlay.classList.contains("panel-hidden"));
             const isCommandConfirmOpen = Boolean(commandConfirmOverlay && !commandConfirmOverlay.classList.contains("panel-hidden"));
+            const isContactSaveOpen = Boolean(contactSaveOverlay && !contactSaveOverlay.classList.contains("panel-hidden"));
             document.body.style.overflow =
-                isInstructionsOpen || isClaimDeviceOpen || isDeviceActionOpen || isCommandConfirmOpen
+                isInstructionsOpen || isClaimDeviceOpen || isDeviceActionOpen || isCommandConfirmOpen || isContactSaveOpen
                     ? "hidden"
                     : "";
         }
@@ -6651,6 +6692,111 @@
             });
         }
 
+        function closeContactSaveDialog(result = { confirmed: false }) {
+            const overlay = document.getElementById("contactSaveOverlay");
+            const input = document.getElementById("contactSaveNameInput");
+
+            if (contactSaveOverlayCloseTimerId) {
+                clearTimeout(contactSaveOverlayCloseTimerId);
+                contactSaveOverlayCloseTimerId = null;
+            }
+
+            if (overlay && !overlay.classList.contains("panel-hidden")) {
+                overlay.classList.remove("is-visible");
+                contactSaveOverlayCloseTimerId = setTimeout(() => {
+                    overlay.classList.add("panel-hidden");
+                    contactSaveOverlayCloseTimerId = null;
+                    syncOverlayScrollLock();
+                }, CONTACT_SAVE_OVERLAY_ANIMATION_MS);
+            }
+
+            if (input) input.value = "";
+
+            const resolver = contactSaveDialogState.resolver;
+            contactSaveDialogState.resolver = null;
+            if (typeof resolver === "function") {
+                resolver(result);
+            }
+            syncOverlayScrollLock();
+        }
+
+        function cancelContactSaveDialog() {
+            closeContactSaveDialog({ confirmed: false });
+        }
+
+        function handleContactSaveOverlayClick(event) {
+            const overlay = document.getElementById("contactSaveOverlay");
+            if (!overlay) return;
+            if (event.target === overlay) {
+                cancelContactSaveDialog();
+            }
+        }
+
+        async function openContactSaveDialog(config = {}) {
+            const overlay = document.getElementById("contactSaveOverlay");
+            const title = document.getElementById("contactSaveTitle");
+            const message = document.getElementById("contactSaveMessage");
+            const input = document.getElementById("contactSaveNameInput");
+            const confirmBtn = document.getElementById("contactSaveConfirmBtn");
+            if (!overlay || !title || !message || !input || !confirmBtn) {
+                return { confirmed: false };
+            }
+
+            if (contactSaveOverlayCloseTimerId) {
+                clearTimeout(contactSaveOverlayCloseTimerId);
+                contactSaveOverlayCloseTimerId = null;
+            }
+
+            if (typeof contactSaveDialogState.resolver === "function") {
+                contactSaveDialogState.resolver({ confirmed: false });
+            }
+
+            const phoneNumber = toNonEmptyString(config.phoneNumber) || "-";
+            const safePhone = escapeHtml(phoneNumber);
+
+            title.textContent = "Save Contact";
+            message.innerHTML = `Create a contact name for the number <span class="device-action-target">${safePhone}</span>`;
+            input.value = "";
+            confirmBtn.textContent = "Save";
+
+            overlay.classList.remove("panel-hidden");
+
+            requestAnimationFrame(() => {
+                overlay.classList.add("is-visible");
+                input.focus();
+            });
+
+            syncOverlayScrollLock();
+
+            return await new Promise((resolve) => {
+                contactSaveDialogState.resolver = resolve;
+            });
+        }
+
+        function confirmContactSaveDialog() {
+            const input = document.getElementById("contactSaveNameInput");
+            const name = String(input?.value || "").trim();
+            if (!name) {
+                showToast("Please enter a contact name", "error");
+                if (input) input.focus();
+                return;
+            }
+            closeContactSaveDialog({
+                confirmed: true,
+                value: name
+            });
+        }
+
+        function initializeContactSaveDialog() {
+            const input = document.getElementById("contactSaveNameInput");
+            if (!input) return;
+            input.addEventListener("keydown", (event) => {
+                if (event.key !== "Enter") return;
+                event.preventDefault();
+                confirmContactSaveDialog();
+            });
+        }
+
         function closeCommandConfirmDialog(confirmed = false) {
             const overlay = document.getElementById("commandConfirmOverlay");
             const approveBtn = document.getElementById("commandConfirmApproveBtn");
@@ -7081,6 +7227,7 @@
                 closeClaimDeviceModal();
                 cancelDeviceActionDialog();
                 cancelCommandConfirmDialog();
+                cancelContactSaveDialog();
                 closeAddressBookModal();
             }
         });
@@ -8033,10 +8180,13 @@
                 return;
             }
 
-            const name = prompt("Enter a contact name for this number:");
-            if (name === null) return; // User cancelled
+            // Open custom modal and wait for result
+            const dialogResult = await openContactSaveDialog({ phoneNumber });
+            if (!dialogResult || !dialogResult.confirmed) {
+                return; // User cancelled
+            }
 
-            const trimmedName = name.trim();
+            const trimmedName = typeof dialogResult.value === "string" ? dialogResult.value.trim() : "";
             if (!trimmedName) {
                 showToast("Contact name cannot be empty", "error");
                 return;
@@ -8465,6 +8615,7 @@
         initializeGlobalDeviceSelector();
         initializeDeviceActionDialog();
         initializeCommandConfirmDialog();
+        initializeContactSaveDialog();
         initializeScreenMirrorFloatingUI();
         initializeScreenMirrorTouchControl();
         resetScreenMirrorView();

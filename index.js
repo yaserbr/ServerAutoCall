@@ -121,7 +121,7 @@ const MANUAL_PAIRING_CODE_LENGTH = 6;
 const MANUAL_PAIRING_CODE_REGEX = new RegExp(`^\\d{${MANUAL_PAIRING_CODE_LENGTH}}$`);
 const PAIRING_TOKEN_GENERATION_MAX_ATTEMPTS = 10;
 const PAIRING_TOKEN_EXPIRY_CLEANUP_INTERVAL_MS = 60 * 1000;
-const DEFAULT_PUBLIC_SERVER_URL = "https://serverautocall-production.up.railway.app";
+const DEFAULT_PUBLIC_SERVER_URL = "https://autocall--serverautocall--yh4cgzrdywjc.code.run";
 const OPEN_APP_PACKAGE_REGEX = /^[a-zA-Z0-9_]+(\.[a-zA-Z0-9_]+)+$/;
 const DEVICE_AUTH_ALLOW_LEGACY_FALLBACK =
   String(process.env.DEVICE_AUTH_ALLOW_LEGACY_FALLBACK || "").trim().toLowerCase() === "true";
