@@ -16,6 +16,7 @@ const Device = require("./src/models/Device");
 const Command = require("./src/models/Command");
 const PairingToken = require("./src/models/PairingToken");
 const User = require("./src/models/User");
+const Contact = require("./src/models/Contact");
 const { requireAuth } = require("./src/middleware/requireAuth");
 const {
   buildRequireDeviceAuth,
@@ -3464,6 +3465,98 @@ app.post("/commands/:id/status", requireAuthenticatedDevice, async (req, res) =>
     return res.json(mapCommandForResponse(command));
   } catch (error) {
     return handleServerError(res, error, "POST /commands/:id/status");
+  }
+});
+
+// ==========================================
+// Address Book (Contacts) Routes
+// ==========================================
+app.get(["/contacts", "/api/contacts"], requireAuth, async (req, res) => {
+  try {
+    const currentUserId = normalizeAuthUserId(req.user?.id);
+    if (!currentUserId) {
+      return res.status(401).json({ error: "Unauthorized" });
+    }
+
+    const contacts = await Contact.find({ userId: currentUserId }).sort({ name: 1 });
+    return res.json(contacts);
+  } catch (error) {
+    return handleServerError(res, error, "GET /contacts");
+  }
+});
+
+app.post(["/contacts", "/api/contacts"], requireAuth, async (req, res) => {
+  try {
+    const currentUserId = normalizeAuthUserId(req.user?.id);
+    if (!currentUserId) {
+      return res.status(401).json({ error: "Unauthorized" });
+    }
+
+    const { name, phoneNumber } = req.body;
+    if (typeof name !== "string" || !name.trim()) {
+      return res.status(400).json({ error: "Contact name is required and must be a non-empty string" });
+    }
+    if (typeof phoneNumber !== "string" || !phoneNumber.trim()) {
+      return res.status(400).json({ error: "Phone number is required and must be a non-empty string" });
+    }
+
+    const trimmedName = name.trim();
+    const trimmedPhoneNumber = phoneNumber.trim();
+
+    // Check if a contact with this phone number already exists for this user
+    let contact = await Contact.findOne({ userId: currentUserId, phoneNumber: trimmedPhoneNumber });
+    
+    if (contact) {
+      // If same phone number exists, overwrite/update the contact's name to the new one
+      contact.name = trimmedName;
+      await contact.save();
+    } else {
+      // Otherwise, check if a contact with this name already exists for this user
+      contact = await Contact.findOne({ userId: currentUserId, name: trimmedName });
+      if (contact) {
+        // If same name exists, overwrite/update the phone number
+        contact.phoneNumber = trimmedPhoneNumber;
+        await contact.save();
+      } else {
+        // Create a new contact
+        contact = await Contact.create({
+          userId: currentUserId,
+          name: trimmedName,
+          phoneNumber: trimmedPhoneNumber
+        });
+      }
+    }
+
+    return res.status(201).json(contact);
+  } catch (error) {
+    return handleServerError(res, error, "POST /contacts");
+  }
+});
+
+app.delete(["/contacts/:id", "/api/contacts/:id"], requireAuth, async (req, res) => {
+  try {
+    const currentUserId = normalizeAuthUserId(req.user?.id);
+    if (!currentUserId) {
+      return res.status(401).json({ error: "Unauthorized" });
+    }
+
+    const { id } = req.params;
+    if (!mongoose.Types.ObjectId.isValid(id)) {
+      return res.status(400).json({ error: "Invalid contact ID format" });
+    }
+
+    const deletedContact = await Contact.findOneAndDelete({
+      _id: id,
+      userId: currentUserId
+    });
+
+    if (!deletedContact) {
+      return res.status(404).json({ error: "Contact not found or access denied" });
+    }
+
+    return res.json({ success: true, message: "Contact deleted successfully", contact: deletedContact });
+  } catch (error) {
+    return handleServerError(res, error, "DELETE /contacts/:id");
   }
 });
 

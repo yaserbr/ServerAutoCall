@@ -448,7 +448,7 @@
         .session-info {
             width: min(300px, 100%);
             display: grid;
-            grid-template-columns: 1fr;
+            grid-template-columns: 1fr calc(var(--control-height) * 0.85);
             grid-template-rows: repeat(2, calc(var(--control-height) * 0.85));
             gap: 7px;
             align-items: stretch;
@@ -462,6 +462,12 @@
             grid-column: 1;
             grid-row: 2;
             position: relative;
+        }
+
+        #contactAddressBookBtn {
+            grid-column: 2;
+            grid-row: 2;
+            border-radius: 12px;
         }
 
         #sessionLogoutBtn {
@@ -1046,6 +1052,60 @@
         #deviceActionOverlay.is-visible .instructions-modal {
             opacity: 1;
             transform: translateY(0) scale(1);
+        }
+
+        #contactsOverlay {
+            opacity: 0;
+            pointer-events: none;
+            transition: opacity 0.22s ease;
+        }
+
+        #contactsOverlay.is-visible {
+            opacity: 1;
+            pointer-events: auto;
+        }
+
+        #contactsOverlay .instructions-modal {
+            position: relative;
+            opacity: 0;
+            transform: translateY(10px) scale(0.985);
+            border-radius: 20px;
+            border: 1px solid var(--glass-border);
+            border-bottom: 1px solid rgba(255, 255, 255, 0.22);
+            background: var(--glass);
+            box-shadow: var(--glass-shadow);
+            backdrop-filter: var(--glass-blur);
+            -webkit-backdrop-filter: var(--glass-blur);
+            transition: opacity 0.22s ease, transform 0.22s cubic-bezier(0.22, 1, 0.36, 1);
+            overflow: visible; /* Prevent scrollbar on modal container */
+
+            /* Centering & dynamic width wrapping */
+            width: fit-content;
+            min-width: min(320px, 95vw);
+            max-width: min(520px, 95vw);
+            margin: 0 auto;
+        }
+
+        #contactsOverlay.is-visible .instructions-modal {
+            opacity: 1;
+            transform: translateY(0) scale(1);
+        }
+
+        #contactsOverlay .table-wrapper {
+            overflow: visible; /* Prevent any scrollbar on the table wrapper */
+        }
+
+        #contactsOverlay .data-table {
+            width: 100%;
+            min-width: 0; /* Overrides global min-width: 700px which was stretching columns */
+            table-layout: auto;
+        }
+
+        /* Narrow columns snug layout, no wrapping */
+        #contactsOverlay th,
+        #contactsOverlay td {
+            white-space: nowrap;
+            padding: 10px 14px;
         }
 
         #deviceActionOverlay .instructions-modal::before {
@@ -2613,10 +2673,493 @@
                 animation: none !important;
             }
         }
+
+        /* ==========================================
+           DAY/NIGHT THEME TOGGLE SWITCH
+           ========================================== */
+        .theme-toggle-container {
+            position: fixed;
+            top: 24px;
+            right: 24px;
+            z-index: 1000;
+            display: inline-flex;
+            align-items: center;
+        }
+
+        .theme-toggle-label {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            cursor: pointer;
+            width: 54px;
+            height: 28px;
+            background-color: rgba(255, 255, 255, 0.08);
+            border: 1px solid var(--glass-border);
+            border-radius: 999px;
+            position: relative;
+            padding: 5px;
+            transition: background-color 0.3s cubic-bezier(0.4, 0, 0.2, 1), border-color 0.3s ease;
+            box-shadow: var(--glass-shadow);
+        }
+
+        .theme-toggle-label .sun-icon,
+        .theme-toggle-label .moon-icon {
+            width: 14px;
+            height: 14px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: var(--muted);
+            transition: color 0.25s ease;
+            pointer-events: none;
+        }
+
+        .theme-toggle-label .theme-toggle-ball {
+            width: 20px;
+            height: 20px;
+            background-color: var(--accent);
+            position: absolute;
+            top: 3px;
+            left: 4px;
+            border-radius: 50%;
+            transition: transform 0.32s cubic-bezier(0.22, 1, 0.36, 1), background-color 0.25s ease;
+            box-shadow: 0 2px 6px rgba(0, 0, 0, 0.3);
+        }
+
+        #themeToggleCheckbox {
+            display: none !important;
+        }
+
+        /* Hover states */
+        .theme-toggle-label:hover {
+            border-color: rgba(103, 232, 249, 0.6);
+            background-color: rgba(255, 255, 255, 0.12);
+        }
+
+        /* Checkbox Activated (Light Mode Active) */
+        #themeToggleCheckbox:checked + .theme-toggle-label {
+            background-color: #cbd5e1;
+            border-color: rgba(15, 23, 42, 0.16);
+        }
+
+        #themeToggleCheckbox:checked + .theme-toggle-label .theme-toggle-ball {
+            transform: translateX(24px);
+            background-color: #0f172a;
+        }
+
+        #themeToggleCheckbox:checked + .theme-toggle-label .sun-icon {
+            color: #0f172a;
+        }
+
+        /* Smooth background transitions for body */
+        body {
+            transition: background 0.3s cubic-bezier(0.4, 0, 0.2, 1), color 0.3s ease;
+        }
+
+        /* ==========================================
+           LIGHT THEME OVERRIDES (SCOPED)
+           ========================================== */
+        body.light-mode {
+            --bg-1: #f8fafc;
+            --bg-2: #e2e8f0;
+            --text: #0f172a;
+            --muted: #475569;
+            --glass: rgba(255, 255, 255, 0.85);
+            --glass-border: rgba(15, 23, 42, 0.12);
+            --glass-shadow: 0 14px 36px rgba(15, 23, 42, 0.06);
+            
+            background:
+                radial-gradient(circle at 15% 20%, rgba(46, 196, 182, 0.12), transparent 35%),
+                radial-gradient(circle at 85% 10%, rgba(103, 232, 249, 0.12), transparent 30%),
+                linear-gradient(135deg, var(--bg-1), var(--bg-2));
+            color: var(--text);
+        }
+
+        /* Forms, inputs and controllers in Light Mode */
+        body.light-mode input,
+        body.light-mode select,
+        body.light-mode textarea {
+            background: rgba(255, 255, 255, 0.9);
+            border-color: #cbd5e1;
+            color: #0f172a;
+        }
+
+        body.light-mode input::placeholder {
+            color: #64748b;
+        }
+
+        body.light-mode input:focus,
+        body.light-mode select:focus,
+        body.light-mode textarea:focus {
+            border-color: var(--accent);
+            box-shadow: 0 0 0 3px rgba(46, 196, 182, 0.15);
+        }
+
+        /* Typography & Layout Scoping */
+        body.light-mode .card h2,
+        body.light-mode .header h1,
+        body.light-mode .header p,
+        body.light-mode .field-label {
+            color: #0f172a;
+        }
+
+        /* Data Tables Scoping */
+        body.light-mode pre,
+        body.light-mode .table-wrapper {
+            background: rgba(255, 255, 255, 0.95);
+            border-color: #cbd5e1;
+            color: #0f172a;
+        }
+
+        body.light-mode .data-table th {
+            background: rgba(15, 23, 42, 0.05);
+            color: #0f172a;
+            border-bottom: 1px solid rgba(15, 23, 42, 0.12);
+        }
+
+        body.light-mode .data-table td {
+            color: #334155;
+            border-bottom: 1px solid rgba(15, 23, 42, 0.08);
+        }
+
+        body.light-mode .device-name-line,
+        body.light-mode .command-type-text {
+            color: #0f172a;
+        }
+
+        body.light-mode .data-table tbody tr:nth-child(even) td {
+            background: rgba(15, 23, 42, 0.02);
+        }
+
+        body.light-mode .data-table tbody tr:hover td {
+            background: rgba(46, 196, 182, 0.08);
+        }
+
+        /* Device Dropdown Scoping */
+        body.light-mode .device-dropdown-trigger {
+            background: rgba(255, 255, 255, 0.9);
+            border-color: rgba(15, 23, 42, 0.12);
+            box-shadow: 0 10px 24px rgba(15, 23, 42, 0.04);
+            color: #0f172a;
+        }
+
+        body.light-mode .device-dropdown-title {
+            color: #0f172a;
+        }
+
+        body.light-mode .device-dropdown-subtitle {
+            color: #475569;
+        }
+
+        body.light-mode .device-dropdown-menu {
+            background: rgba(255, 255, 255, 0.98);
+            border-color: rgba(15, 23, 42, 0.12);
+            box-shadow: 0 20px 40px rgba(15, 23, 42, 0.1);
+        }
+
+        body.light-mode .device-dropdown-item {
+            background: rgba(255, 255, 255, 0.7);
+            border-color: rgba(15, 23, 42, 0.06);
+            color: #0f172a;
+        }
+
+        body.light-mode .device-dropdown-item:hover {
+            background: rgba(46, 196, 182, 0.06);
+            border-color: var(--accent);
+        }
+
+        body.light-mode .device-dropdown-item-title {
+            color: #0f172a;
+        }
+
+        body.light-mode .device-dropdown-item-sub {
+            color: #475569;
+        }
+
+        /* Segmented Controls (Tabs) */
+        body.light-mode .segmented-control {
+            background: rgba(15, 23, 42, 0.04);
+            border-color: rgba(15, 23, 42, 0.12);
+            box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.4);
+        }
+
+        body.light-mode .segmented-option {
+            color: #475569;
+        }
+
+        body.light-mode .segmented-option.active {
+            background: #0f172a;
+            color: #ffffff;
+            box-shadow: 0 8px 18px rgba(15, 23, 42, 0.15);
+        }
+
+        /* ==========================================
+           ADDITIONAL LIGHT MODE OVERRIDES
+           ========================================== */
+        body.light-mode .device-dropdown-status-pill {
+            background: rgba(15, 23, 42, 0.06);
+            border-color: rgba(15, 23, 42, 0.12);
+            color: #475569;
+        }
+
+        body.light-mode .device-dropdown-chevron {
+            color: #475569;
+        }
+
+        body.light-mode .device-dropdown.is-open .device-dropdown-chevron {
+            color: #0f172a;
+        }
+
+        body.light-mode .device-dropdown-empty {
+            background: rgba(15, 23, 42, 0.04);
+            border-color: rgba(15, 23, 42, 0.08);
+            color: #475569;
+        }
+
+        body.light-mode .instructions-modal {
+            background: var(--glass);
+            border-color: var(--glass-border);
+            box-shadow: var(--glass-shadow);
+            backdrop-filter: var(--glass-blur);
+            -webkit-backdrop-filter: var(--glass-blur);
+        }
+
+        body.light-mode .instructions-title,
+        body.light-mode .instructions-section-title,
+        body.light-mode .command-confirm-title {
+            color: #0f172a;
+        }
+
+        body.light-mode .instructions-text {
+            background: rgba(255, 255, 255, 0.7);
+            border-color: rgba(15, 23, 42, 0.12);
+        }
+
+        body.light-mode #instructionsOverlay .instructions-text,
+        body.light-mode #instructionsOverlay .instructions-image-card {
+            background: rgba(255, 255, 255, 0.7);
+            border-color: rgba(15, 23, 42, 0.12);
+            box-shadow: 0 4px 12px rgba(15, 23, 42, 0.03);
+        }
+
+        body.light-mode .instructions-close {
+            border-color: rgba(15, 23, 42, 0.15);
+            background: rgba(15, 23, 42, 0.05);
+            color: #475569;
+        }
+
+        body.light-mode .instructions-close:hover {
+            background: rgba(15, 23, 42, 0.1);
+            color: #0f172a;
+        }
+
+        body.light-mode .instructions-list {
+            color: #0f172a;
+        }
+
+        body.light-mode .instructions-page-indicator {
+            color: #475569;
+            border-color: rgba(15, 23, 42, 0.15);
+            background: rgba(15, 23, 42, 0.05);
+        }
+
+        body.light-mode .pairing-qr-shell {
+            border-color: rgba(46, 196, 182, 0.25);
+            background: linear-gradient(150deg, rgba(255, 255, 255, 0.95), rgba(241, 245, 249, 0.95));
+            box-shadow: 0 4px 16px rgba(15, 23, 42, 0.04);
+        }
+
+        body.light-mode .pairing-qr-title {
+            color: #0f172a;
+        }
+
+        body.light-mode .pairing-qr-subtitle {
+            color: #475569;
+        }
+
+        body.light-mode .pairing-qr-canvas-wrap {
+            border-color: rgba(46, 196, 182, 0.35);
+            background: rgba(255, 255, 255, 0.8);
+        }
+
+        body.light-mode .pairing-qr-status {
+            color: #475569;
+        }
+
+        body.light-mode .pairing-qr-status.success {
+            color: #16a34a;
+        }
+
+        body.light-mode .pairing-qr-status.error {
+            color: #dc2626;
+        }
+
+        body.light-mode .pairing-qr-meta {
+            color: #64748b;
+        }
+
+        body.light-mode .manual-claim-fallback {
+            border-color: rgba(15, 23, 42, 0.12);
+            background: rgba(255, 255, 255, 0.6);
+        }
+
+        body.light-mode .manual-pairing-code-title {
+            color: #475569;
+        }
+
+        body.light-mode .manual-pairing-code-value {
+            color: #0f172a;
+        }
+
+        body.light-mode .manual-claim-help {
+            color: #475569;
+        }
+
+        body.light-mode .device-action-message {
+            color: #475569;
+        }
+
+        body.light-mode .device-action-target {
+            color: #0f172a;
+        }
+
+        body.light-mode #commandConfirmOverlay .command-confirm-modal {
+            background: var(--glass);
+            border-color: var(--glass-border);
+            box-shadow: var(--glass-shadow);
+            backdrop-filter: var(--glass-blur);
+            -webkit-backdrop-filter: var(--glass-blur);
+        }
+
+        body.light-mode #commandConfirmOverlay .command-confirm-modal::before {
+            content: none;
+        }
+
+        body.light-mode .command-confirm-message {
+            color: #475569;
+        }
+
+        body.light-mode .command-confirm-icon {
+            border-color: rgba(46, 196, 182, 0.3);
+            background: linear-gradient(135deg, rgba(46, 196, 182, 0.15), rgba(103, 232, 249, 0.1));
+            color: #0f172a;
+            box-shadow: none;
+        }
+
+        body.light-mode .subtle-button {
+            color: #475569;
+            background: rgba(15, 23, 42, 0.05);
+            border: 1px solid rgba(15, 23, 42, 0.1);
+        }
+
+        body.light-mode .subtle-button:hover {
+            background: rgba(15, 23, 42, 0.08);
+            color: #0f172a;
+        }
+
+        body.light-mode .info-help-btn {
+            border-color: rgba(15, 23, 42, 0.15);
+            background: rgba(255, 255, 255, 0.8);
+            color: #475569;
+            box-shadow: 0 8px 20px rgba(15, 23, 42, 0.04);
+        }
+
+        body.light-mode .info-help-btn:hover {
+            background: rgba(15, 23, 42, 0.05);
+            color: #0f172a;
+            border-color: var(--accent);
+        }
+
+        body.light-mode .download-apk-btn {
+            background: rgba(255, 255, 255, 0.8);
+            border-color: rgba(46, 196, 182, 0.3);
+            color: #475569;
+            box-shadow: 0 8px 20px rgba(15, 23, 42, 0.04);
+        }
+
+        body.light-mode .download-apk-btn:hover {
+            background: rgba(15, 23, 42, 0.03);
+            color: #0f172a;
+            border-color: var(--accent);
+        }
+
+        body.light-mode .download-apk-icon {
+            border-color: rgba(46, 196, 182, 0.4);
+            background: rgba(46, 196, 182, 0.1);
+        }
+
+        body.light-mode .toggle-button.active {
+            color: #ffffff;
+            background: linear-gradient(135deg, #1e293b, #0f172a);
+            box-shadow: 0 6px 16px rgba(15, 23, 42, 0.15);
+        }
+
+        body.light-mode .toggle-button.inactive {
+            box-shadow: 0 8px 18px rgba(46, 196, 182, 0.25);
+        }
+
+        body.light-mode .toast {
+            border-color: rgba(15, 23, 42, 0.12);
+            background: rgba(255, 255, 255, 0.95);
+            color: #0f172a;
+            box-shadow: 0 12px 26px rgba(15, 23, 42, 0.08);
+        }
+
+        body.light-mode .toast.toast-success {
+            border-color: rgba(34, 197, 94, 0.4);
+            background: rgba(240, 253, 244, 0.96);
+            color: #166534;
+        }
+
+        body.light-mode .toast.toast-error {
+            border-color: rgba(239, 68, 68, 0.4);
+            background: rgba(254, 242, 242, 0.96);
+            color: #991b1b;
+        }
+
+        body.light-mode .toast.toast-info {
+            border-color: rgba(56, 189, 248, 0.4);
+            background: rgba(240, 249, 255, 0.96);
+            color: #0369a1;
+        }
+
+        body.light-mode .instructions-overlay {
+            background: rgba(15, 23, 42, 0.3);
+            backdrop-filter: blur(4px);
+            -webkit-backdrop-filter: blur(4px);
+        }
     </style>
 </head>
 
 <body>
+    <!-- Day/Night Mode Switch -->
+    <div class="theme-toggle-container">
+        <input type="checkbox" id="themeToggleCheckbox" />
+        <label for="themeToggleCheckbox" class="theme-toggle-label" aria-label="Toggle light and dark mode">
+            <!-- Sun Icon (SVG) -->
+            <span class="sun-icon">
+                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <circle cx="12" cy="12" r="4"></circle>
+                    <path d="M12 2v2"></path>
+                    <path d="M12 20v2"></path>
+                    <path d="M4.93 4.93l1.41 1.41"></path>
+                    <path d="M17.66 17.66l1.41 1.41"></path>
+                    <path d="M2 12h2"></path>
+                    <path d="M20 12h2"></path>
+                    <path d="M6.34 17.66l-1.41 1.41"></path>
+                    <path d="M19.07 4.93l-1.41 1.41"></path>
+                </svg>
+            </span>
+            <!-- Moon Icon (SVG) -->
+            <span class="moon-icon">
+                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M12 3a6.36 6.36 0 0 0 9 9 9 9 0 1 1-9-9Z"></path>
+                </svg>
+            </span>
+            <div class="theme-toggle-ball"></div>
+        </label>
+    </div>
+
     <main class="container">
         <section class="header">
             <div class="header-title-row">
@@ -2661,6 +3204,19 @@
                             <div id="globalDeviceDropdownMenu" class="device-dropdown-menu panel-hidden" role="listbox" aria-label="Device list"></div>
                             <select id="globalDeviceSelect"></select>
                         </div>
+                        <button
+                            id="contactAddressBookBtn"
+                            type="button"
+                            class="device-dropdown-trigger"
+                            style="padding: 0; display: flex; align-items: center; justify-content: center; width: 100%; height: 100%;"
+                            title="Open Address Book"
+                            onclick="openAddressBookModal()">
+                            <!-- Book/Contact Icon (SVG) -->
+                            <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                <path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"></path>
+                                <path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"></path>
+                            </svg>
+                        </button>
                     </div>
                 </div>
             </div>
@@ -2743,6 +3299,32 @@
                             onclick="goToInstructionsPage(2)">
                             Next &#8594;
                         </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div
+            id="contactsOverlay"
+            class="instructions-overlay panel-hidden"
+            onclick="handleContactsOverlayClick(event)">
+            <div class="instructions-modal device-action-modal" role="dialog" aria-modal="true" aria-labelledby="contactsOverlayTitle">
+                <div class="instructions-header">
+                    <h3 id="contactsOverlayTitle" class="instructions-title">Address Book</h3>
+                    <button
+                        type="button"
+                        class="instructions-close"
+                        aria-label="Close Address Book"
+                        onclick="closeAddressBookModal()">
+                        X
+                    </button>
+                </div>
+                <div class="device-action-body">
+                    <div class="actions" style="margin-bottom: 12px; display: flex; justify-content: flex-end;">
+                        <button class="subtle-button" style="height: 32px; padding: 0 12px; font-size: 0.75rem;" onclick="loadContactsList()">Refresh</button>
+                    </div>
+                    <div id="contactsTable" class="table-wrapper">
+                        <p class="table-empty">Loading contacts...</p>
                     </div>
                 </div>
             </div>
@@ -2895,7 +3477,7 @@
                 <div id="callTabPanel" class="tab-panel active">
                     <h2>Send Call</h2>
                     <div class="input-row call-command-grid">
-                        <input id="phone" type="text" placeholder="phone number" />
+                        <input id="phone" type="text" placeholder="phone number" list="contactsDatalist" />
                         <input id="durationSeconds" type="text" inputmode="numeric" pattern="[0-9]*" placeholder="Call duration (seconds)" oninput="sanitizeDurationInput(event)" />
                         <input type="datetime-local" id="scheduleTime" />
                         <input id="callNotes" placeholder="optional notes" />
@@ -2903,6 +3485,7 @@
                     <div class="actions">
                         <button onclick="sendCall()">Call</button>
                         <button class="danger-button" onclick="sendEndCall()">End Call</button>
+                        <button class="subtle-button" onclick="promptSaveContact('phone')">Save Contact</button>
                     </div>
                 </div>
                 <div id="autoAnswerTabPanel" class="tab-panel">
@@ -2927,7 +3510,7 @@
                     <h2>Send SMS</h2>
                     <div class="input-row sms-input-grid">
                         <div class="field-group">
-                            <input id="smsPhone" placeholder="phone number" />
+                            <input id="smsPhone" placeholder="phone number" list="contactsDatalist" />
                         </div>
                         <div class="field-group">
                             <input id="smsMessage" placeholder="SMS message" />
@@ -2941,6 +3524,7 @@
                     </div>
                     <div class="actions">
                         <button onclick="sendSms()">Send SMS</button>
+                        <button class="subtle-button" onclick="promptSaveContact('smsPhone')">Save Contact</button>
                     </div>
                 </div>
                 <div id="webViewTabPanel" class="tab-panel">
@@ -3066,6 +3650,7 @@
         <div id="screenMirrorFloatingResizeHandle" class="screen-mirror-floating-resize-handle" aria-hidden="true"></div>
     </div>
     <div id="toastContainer" class="toast-container" aria-live="polite" aria-atomic="true"></div>
+    <datalist id="contactsDatalist"></datalist>
 
     <script src="/socket.io/socket.io.js"></script>
     <script
@@ -3073,10 +3658,39 @@
         data-autocall-qr-lib="true"
         onerror="console.error('[AutoCall][QR] Failed to load QR library from CDN')"></script>
     <script>
+        // --- Day/Night Mode Switch Logic ---
+        document.addEventListener("DOMContentLoaded", () => {
+            const themeToggleCheckbox = document.getElementById("themeToggleCheckbox");
+            
+            // Load and apply initial saved preference
+            const savedTheme = localStorage.getItem("themePreference");
+            if (savedTheme === "light") {
+                document.body.classList.add("light-mode");
+                if (themeToggleCheckbox) {
+                    themeToggleCheckbox.checked = true;
+                }
+            }
+
+            // Listen for user clicks to toggle themes
+            if (themeToggleCheckbox) {
+                themeToggleCheckbox.addEventListener("change", () => {
+                    if (themeToggleCheckbox.checked) {
+                        document.body.classList.add("light-mode");
+                        localStorage.setItem("themePreference", "light");
+                    } else {
+                        document.body.classList.remove("light-mode");
+                        localStorage.setItem("themePreference", "dark");
+                    }
+                });
+            }
+        });
+
         const SERVER =
-            window.location.hostname === "localhost"
+            window.location.hostname === "localhost" ||
+            window.location.hostname === "127.0.0.1" ||
+            window.location.protocol === "file:"
                 ? "http://localhost:4000"
-                : "https://serverautocall-production.up.railway.app";
+                : window.location.origin;
         const AUTH_TOKEN_STORAGE_KEY = "autocall.accessToken";
         let activeTab = "call";
         let authToken = "";
@@ -3163,7 +3777,8 @@
             tile: null
         };
         const panelVisibility = {
-            commands: false
+            commands: false,
+            contacts: false
         };
         const prioritizeActiveStatuses = true;
         const statusPriority = {
@@ -6209,6 +6824,9 @@
             if (socket && !socket.connected) {
                 socket.connect();
             }
+
+            // Load saved contacts for address book autocomplete
+            void loadContacts();
         }
 
         function clearAuthenticatedUser(removeStoredToken = true) {
@@ -6244,6 +6862,25 @@
             renderCommandsTable([]);
             setRawFallback("devices", [], false);
             setRawFallback("commands", [], false);
+
+            panelVisibility.commands = false;
+            panelVisibility.contacts = false;
+            updatePanelToggleUI("commands");
+            updatePanelToggleUI("contacts");
+            
+            const commandsContent = document.getElementById("commandsPanelContent");
+            if (commandsContent) {
+                commandsContent.classList.remove("is-open");
+                commandsContent.style.maxHeight = "0px";
+            }
+            const contactsContent = document.getElementById("contactsPanelContent");
+            if (contactsContent) {
+                contactsContent.classList.remove("is-open");
+                contactsContent.style.maxHeight = "0px";
+            }
+
+            // Clear address book autocomplete datalist
+            clearContactsDatalist();
 
             if (removeStoredToken) {
                 localStorage.removeItem(AUTH_TOKEN_STORAGE_KEY);
@@ -6444,6 +7081,7 @@
                 closeClaimDeviceModal();
                 cancelDeviceActionDialog();
                 cancelCommandConfirmDialog();
+                closeAddressBookModal();
             }
         });
 
@@ -7012,12 +7650,9 @@
         }
 
         function updatePanelToggleUI(panelName) {
-            if (panelName !== "commands") {
-                return;
-            }
-
-            const buttonId = "toggleCommandsBtn";
-            const labelId = "toggleCommandsLabel";
+            const capitalizedName = panelName.charAt(0).toUpperCase() + panelName.slice(1);
+            const buttonId = `toggle${capitalizedName}Btn`;
+            const labelId = `toggle${capitalizedName}Label`;
             const isVisible = Boolean(panelVisibility[panelName]);
 
             const button = document.getElementById(buttonId);
@@ -7059,11 +7694,8 @@
         }
 
         async function togglePanel(panelName) {
-            if (panelName !== "commands") {
-                return;
-            }
-
-            const contentId = "commandsPanelContent";
+            const capitalizedName = panelName.charAt(0).toUpperCase() + panelName.slice(1);
+            const contentId = `${panelName}PanelContent`;
 
             panelVisibility[panelName] = !panelVisibility[panelName];
             const isVisible = panelVisibility[panelName];
@@ -7073,7 +7705,11 @@
             updatePanelToggleUI(panelName);
 
             if (isVisible) {
-                await loadCommands();
+                if (panelName === "commands") {
+                    await loadCommands();
+                } else if (panelName === "contacts") {
+                    await loadContactsList();
+                }
             }
         }
 
@@ -7225,6 +7861,209 @@
                 setRawFallback("commands", {
                     error: error.message
                 }, true);
+            }
+        }
+
+        async function loadContacts() {
+            try {
+                const res = await apiFetch("/contacts");
+                if (!res.ok) throw new Error("Failed to load contacts");
+                const data = await res.json();
+                populateContactsDatalist(data);
+            } catch (error) {
+                console.error("Failed to load contacts:", error);
+                clearContactsDatalist();
+            }
+        }
+
+        async function loadContactsList() {
+            try {
+                const res = await apiFetch("/contacts");
+                if (!res.ok) throw new Error("Failed to load contacts");
+                const data = await res.json();
+                renderContactsTable(data);
+            } catch (error) {
+                console.error("Failed to load contacts list:", error);
+                const container = document.getElementById("contactsTable");
+                if (container) {
+                    container.innerHTML = `<p class="table-empty">Error: ${error.message}</p>`;
+                }
+            }
+        }
+
+        function renderContactsTable(contacts) {
+            const container = document.getElementById("contactsTable");
+            if (!container) return;
+
+            if (!Array.isArray(contacts) || contacts.length === 0) {
+                container.innerHTML = "<p class='table-empty'>No contacts saved.</p>";
+                return;
+            }
+
+            const rows = contacts.map(contact => {
+                const id = escapeHtml(contact._id);
+                const name = escapeHtml(contact.name);
+                const phoneNumber = escapeHtml(contact.phoneNumber);
+                return `
+                    <tr>
+                        <td>${name}</td>
+                        <td>${phoneNumber}</td>
+                        <td class="table-action-cell">
+                            <button
+                                type="button"
+                                class="device-delete-btn contact-delete-btn"
+                                onclick="deleteContactByUI('${id}')">
+                                Delete
+                            </button>
+                        </td>
+                    </tr>
+                `;
+            }).join("");
+
+            container.innerHTML = `
+                <table class="data-table">
+                    <thead>
+                        <tr>
+                            <th>Name</th>
+                            <th>Phone Number</th>
+                            <th>Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody>${rows}</tbody>
+                </table>
+            `;
+        }
+
+        async function deleteContactByUI(contactId) {
+            if (!confirm("Are you sure you want to delete this contact?")) {
+                return;
+            }
+
+            try {
+                const res = await apiFetch(`/contacts/${contactId}`, {
+                    method: "DELETE"
+                });
+
+                const payload = await res.json();
+                if (!res.ok) {
+                    throw new Error(payload.error || "Failed to delete contact");
+                }
+
+                showToast("Contact deleted successfully!", "success");
+
+                await loadContacts();
+                const contactsOverlay = document.getElementById("contactsOverlay");
+                if (contactsOverlay && !contactsOverlay.classList.contains("panel-hidden")) {
+                    await loadContactsList();
+                }
+            } catch (error) {
+                showToast(error.message || "Failed to delete contact", "error");
+            }
+        }
+
+        let contactsOverlayCloseTimerId = null;
+
+        function openAddressBookModal() {
+            const overlay = document.getElementById("contactsOverlay");
+            if (!overlay) return;
+            if (contactsOverlayCloseTimerId) {
+                clearTimeout(contactsOverlayCloseTimerId);
+                contactsOverlayCloseTimerId = null;
+            }
+            void loadContactsList();
+            overlay.classList.remove("panel-hidden");
+            requestAnimationFrame(() => {
+                overlay.classList.add("is-visible");
+            });
+            syncOverlayScrollLock();
+        }
+
+        function closeAddressBookModal() {
+            const overlay = document.getElementById("contactsOverlay");
+            if (!overlay) return;
+            overlay.classList.remove("is-visible");
+            if (contactsOverlayCloseTimerId) {
+                clearTimeout(contactsOverlayCloseTimerId);
+            }
+            contactsOverlayCloseTimerId = setTimeout(() => {
+                overlay.classList.add("panel-hidden");
+                contactsOverlayCloseTimerId = null;
+                syncOverlayScrollLock();
+            }, INSTRUCTIONS_OVERLAY_ANIMATION_MS);
+            syncOverlayScrollLock();
+        }
+
+        function handleContactsOverlayClick(event) {
+            const overlay = document.getElementById("contactsOverlay");
+            if (!overlay) return;
+            if (event.target === overlay) {
+                closeAddressBookModal();
+            }
+        }
+
+        function populateContactsDatalist(contacts) {
+            const datalist = document.getElementById("contactsDatalist");
+            if (!datalist) return;
+            datalist.innerHTML = "";
+
+            if (!Array.isArray(contacts)) return;
+
+            contacts.forEach(contact => {
+                const option = document.createElement("option");
+                option.value = contact.phoneNumber;
+                option.textContent = contact.name;
+                datalist.appendChild(option);
+            });
+        }
+
+        function clearContactsDatalist() {
+            const datalist = document.getElementById("contactsDatalist");
+            if (datalist) {
+                datalist.innerHTML = "";
+            }
+        }
+
+        async function promptSaveContact(inputId) {
+            const input = document.getElementById(inputId);
+            if (!input) return;
+
+            const phoneNumber = typeof input.value === "string" ? input.value.trim() : "";
+            if (!phoneNumber) {
+                showToast("Please enter a phone number first", "error");
+                return;
+            }
+
+            const name = prompt("Enter a contact name for this number:");
+            if (name === null) return; // User cancelled
+
+            const trimmedName = name.trim();
+            if (!trimmedName) {
+                showToast("Contact name cannot be empty", "error");
+                return;
+            }
+
+            try {
+                const res = await apiFetch("/contacts", {
+                    method: "POST",
+                    headers: {
+                        "Content-Type": "application/json"
+                    },
+                    body: JSON.stringify({ name: trimmedName, phoneNumber })
+                });
+
+                const payload = await res.json();
+                if (!res.ok) {
+                    throw new Error(parseApiErrorMessage(payload, "Failed to save contact"));
+                }
+
+                showToast("Contact saved successfully!", "success");
+                await loadContacts();
+                const contactsOverlay = document.getElementById("contactsOverlay");
+                if (contactsOverlay && !contactsOverlay.classList.contains("panel-hidden")) {
+                    await loadContactsList();
+                }
+            } catch (error) {
+                showToast(error.message || "Failed to save contact", "error");
             }
         }
 
