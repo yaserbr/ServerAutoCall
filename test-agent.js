@@ -1,15 +1,15 @@
 /**
  * test-agent.js
  * 
- * Standalone verification script for ServerAutoCall's Autonomous AI Agent service.
- * Verifies that agentService compiles, initializes correctly, formats payloads, and handles parameters.
+ * Standalone verification script for ServerAutoCall's Autonomous AI Agent service (DeepSeek migration).
+ * Verifies that agentService compiles, initializes correctly, and validates environments.
  */
 
 const assert = require("assert");
 const { runAgentOrchestrator } = require("./src/services/agentService");
 
 async function runTests() {
-  console.log("🚀 Starting Agent Service Verification Tests...\n");
+  console.log("🚀 Starting DeepSeek Agent Service Verification Tests...\n");
 
   // Mock data setup
   const mockContacts = [
@@ -22,10 +22,10 @@ async function runTests() {
   ];
 
   // Test Case 1: Checking environment variable requirement
-  console.log("Test Case 1: Verification of missing GEMINI_API_KEY boundary...");
+  console.log("Test Case 1: Verification of missing DEEPSEEK_API_KEY boundary...");
   try {
-    const originalKey = process.env.GEMINI_API_KEY;
-    delete process.env.GEMINI_API_KEY;
+    const originalKey = process.env.DEEPSEEK_API_KEY;
+    delete process.env.DEEPSEEK_API_KEY;
     
     await runAgentOrchestrator({
       prompt: "Call Ali",
@@ -35,13 +35,13 @@ async function runTests() {
     });
     
     // If it did not throw, fail test
-    assert.fail("Should have thrown an error when GEMINI_API_KEY is missing");
+    assert.fail("Should have thrown an error when DEEPSEEK_API_KEY is missing");
   } catch (error) {
-    assert.match(error.message, /GEMINI_API_KEY environment variable is not defined/);
-    console.log("✅ Passed: Throws error correctly if API key is missing.\n");
+    assert.match(error.message, /DEEPSEEK_API_KEY environment variable is not defined/);
+    console.log("✅ Passed: Throws error correctly if DeepSeek API key is missing.\n");
   }
 
-  // Test Case 2: Verification of SDK and REST coexistence structure
+  // Test Case 2: Verification of function loading
   console.log("Test Case 2: Service loads and exports correctly...");
   assert.strictEqual(typeof runAgentOrchestrator, "function");
   console.log("✅ Passed: Orchestrator entry point is a valid function.\n");

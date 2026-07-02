@@ -2,27 +2,21 @@
  * src/services/agentService.js
  * 
  * Specialized AI Orchestration Service for ServerAutoCall.
- * Integrates with the official Google Gemini API (using @google/generative-ai or standard fetch-based REST fallback)
- * to parse user intent, manage conversation context, and autonomously generate structured device commands.
+ * Integrates directly with DeepSeek API (using native fetch-based REST)
+ * to parse user intent, manage conversation context, and autonomously generate structured device commands
+ * supporting ALL 13 system capabilities of the automation platform.
  */
 
 const { logSecurityEvent } = require("../security/auditLogger");
 
-// Global Configuration
-const DEFAULT_MODEL = process.env.GEMINI_MODEL || "gemini-1.5-flash"; // Highly cost-effective and ultra-low latency for tool calling
-const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
-
-// Attempt to load the official SDK, but fall back gracefully to REST if not installed.
-let GoogleGenerativeAI = null;
-try {
-  const sdk = require("@google/generative-ai");
-  GoogleGenerativeAI = sdk.GoogleGenerativeAI;
-} catch (e) {
-  console.warn("[AgentService] @google/generative-ai not installed. Falling back to native fetch REST implementation.");
-}
+// DeepSeek Global Configuration
+const DEEPSEEK_ENDPOINT = "https://api.deepseek.com/chat/completions";
+const DEEPSEEK_API_KEY = process.env.DEEPSEEK_API_KEY;
+const DEFAULT_MODEL = process.env.DEEPSEEK_MODEL || "deepseek-v4-flash"; // Highly recommended V4 standard model
 
 /**
- * Main entrance point for processing user prompt messages.
+ * Main entrance point for processing user prompt messages using DeepSeek.
+ * Supports all 13 automation actions available on the ServerAutoCall platform.
  * 
  * @param {Object} params
  * @param {string} params.prompt - The user's active natural language input
@@ -41,8 +35,8 @@ async function runAgentOrchestrator({
   timezone = "Asia/Riyadh",
   currentTime
 }) {
-  if (!GEMINI_API_KEY) {
-    throw new Error("GEMINI_API_KEY environment variable is not defined.");
+  if (!DEEPSEEK_API_KEY) {
+    throw new Error("DEEPSEEK_API_KEY environment variable is not defined.");
   }
 
   // 1. Structure the System Instruction (the Agent's Rules of Engagement)
@@ -56,6 +50,21 @@ Your primary role is to interpret the user's natural language intents and map th
 - Registered Devices: ${JSON.stringify(devices)}
 - Pre-filtered Relevant Contacts: ${JSON.stringify(contacts)}
 
+### SUPPORTED AUTOMATION ACTIONS:
+- 'call': Make an outbound phone call.
+- 'end': Hang up or end the current ongoing phone call.
+- 'sms': Send an outbound text message (SMS).
+- 'auto_answer': Enable, disable, or adjust auto-answer configuration.
+- 'open_url': Launch a web URL on the device's browser/webview.
+- 'close_webview': Close the active URL browser/webview overlay on the device.
+- 'open_app': Open a specified mobile app (e.g., WhatsApp, YouTube, Maps) using package name.
+- 'return_to_autocall': Return the device's UI back to the foreground host AutoCall app.
+- 'download_data': Trigger a network stress/download data speed test in MB.
+- 'start_screen_mirror': Start broadcasting live screen sharing mirror from the device.
+- 'stop_screen_mirror': Stop active live screen sharing broadcast.
+- 'screen_touch': Emulate a single-coordinate touch tap on the physical screen.
+- 'screen_swipe': Emulate a touch drag swipe gesture on the physical screen.
+
 ### RULES:
 1. DEVICE MATCHING:
    - Identify which device the user wants to use. If the user does not specify a device:
@@ -66,8 +75,8 @@ Your primary role is to interpret the user's natural language intents and map th
 2. CONTACT MATCHING:
    - If the user specifies a contact name (e.g., "Ali"), check the 'Pre-filtered Relevant Contacts' list.
    - If there is a direct match, use their 'phoneNumber'.
-   - If multiple contacts match (e.g., "Ali Al-Ghamdi" and "Ali Al-Harbi"), do NOT guess. Conversational-respond asking the user to specify which "Ali" they meant.
-   - If the contact is not in the list but the user provided a raw phone number in their prompt (e.g., "050..."), extract and use that phone number directly.
+   - If multiple contacts match (e.g., "Ali Al-Ghamdi" and "Ali Al-Harbi"), do NOT guess. Ask the user to specify which "Ali" they meant.
+   - If the contact is not in the list but the user provided a raw phone number in their prompt, extract and use that phone number directly.
    - If you cannot find the phone number anywhere, ask the user for it.
 
 3. COMMAND SCHEDULING:
@@ -81,199 +90,192 @@ Your primary role is to interpret the user's natural language intents and map th
    - If you do not have enough parameters to call 'queue_device_command', just reply conversationally asking for the missing detail.
   `;
 
-  // 2. Define the Functions/Tools schema
-  // Notice the uppercase types (STRING, OBJECT) required by Gemini API schema validation.
-  const toolsDefinition = {
-    functionDeclarations: [
-      {
+  // 2. Define the DeepSeek standard OpenAI-compatible tool schema with ALL properties
+  const toolsDefinition = [
+    {
+      type: "function",
+      function: {
         name: "queue_device_command",
         description: "Drafts or queues an automated command for a specific registered physical device.",
         parameters: {
-          type: "OBJECT",
+          type: "object",
           properties: {
             deviceUid: {
-              type: "STRING",
+              type: "string",
               description: "The 5-character unique ID of the target device."
             },
             action: {
-              type: "STRING",
-              enum: ["call", "sms", "open_app", "open_url"],
-              description: "The action to execute: 'call' (make call), 'sms' (send text), 'open_app' (open package), 'open_url' (browse URL)."
+              type: "string",
+              enum: [
+                "call",
+                "end",
+                "sms",
+                "auto_answer",
+                "open_url",
+                "close_webview",
+                "open_app",
+                "return_to_autocall",
+                "download_data",
+                "start_screen_mirror",
+                "stop_screen_mirror",
+                "screen_touch",
+                "screen_swipe"
+              ],
+              description: "The action to execute."
             },
             phoneNumber: {
-              type: "STRING",
+              type: "string",
               description: "Destination phone number. Required for 'call' and 'sms'."
             },
             message: {
-              type: "STRING",
+              type: "string",
               description: "Message content. Required for 'sms' action."
             },
+            durationSeconds: {
+              type: "number",
+              description: "Call duration in seconds before auto-hangup. Optional for 'call'."
+            },
+            autoHangupSeconds: {
+              type: "number",
+              description: "Auto hangup delay threshold in seconds. Optional for 'call' and 'auto_answer'."
+            },
+            enabled: {
+              type: "boolean",
+              description: "Enables (true) or disables (false) auto-answer configurations. Required for 'auto_answer'."
+            },
             appName: {
-              type: "STRING",
-              description: "Name of target application or alias (e.g., 'whatsapp', 'telegram') to open. Required for 'open_app'."
+              type: "string",
+              description: "Name of target application (e.g., 'WhatsApp', 'Chrome') to open. Required for 'open_app'."
+            },
+            resolvedPackageName: {
+              type: "string",
+              description: "Android package identifier (e.g. 'com.whatsapp'). Optional for 'open_app'."
             },
             url: {
-              type: "STRING",
-              description: "The web URL to launch on the device. Required for 'open_url'."
+              type: "string",
+              description: "The web URL to launch. Required for 'open_url'."
+            },
+            downloadSizeMb: {
+              type: "number",
+              description: "Total size of stress test network download in Megabytes (MB). Required for 'download_data'."
+            },
+            notes: {
+              type: "string",
+              description: "Optional custom notes or comments to append to this command."
             },
             scheduledAt: {
-              type: "STRING",
+              type: "string",
               description: "ISO 8601 timestamp representing when the action should execute. Only provide if scheduling for the future."
+            },
+            x: {
+              type: "number",
+              description: "Touch X pixel coordinate. Required for 'screen_touch'."
+            },
+            y: {
+              type: "number",
+              description: "Touch Y pixel coordinate. Required for 'screen_touch'."
+            },
+            screenWidth: {
+              type: "number",
+              description: "Host screen width reference in pixels. Required for 'screen_touch' / 'screen_swipe'."
+            },
+            screenHeight: {
+              type: "number",
+              description: "Host screen height reference in pixels. Required for 'screen_touch' / 'screen_swipe'."
+            },
+            startX: {
+              type: "number",
+              description: "Touch drag swipe start horizontal X pixel coordinate. Required for 'screen_swipe'."
+            },
+            startY: {
+              type: "number",
+              description: "Touch drag swipe start vertical Y pixel coordinate. Required for 'screen_swipe'."
+            },
+            endX: {
+              type: "number",
+              description: "Touch drag swipe end horizontal X pixel coordinate. Required for 'screen_swipe'."
+            },
+            endY: {
+              type: "number",
+              description: "Touch drag swipe end vertical Y pixel coordinate. Required for 'screen_swipe'."
+            },
+            durationMs: {
+              type: "number",
+              description: "Total duration of swipe drag gesture in milliseconds. Required for 'screen_swipe'."
             }
           },
           required: ["deviceUid", "action"]
         }
       }
-    ]
-  };
+    }
+  ];
 
-  // 3. Run using either SDK or standard Fetch REST
-  if (GoogleGenerativeAI) {
-    return runWithSDK(prompt, history, systemInstruction, toolsDefinition);
-  } else {
-    return runWithREST(prompt, history, systemInstruction, toolsDefinition);
-  }
-}
+  // 3. Format history for DeepSeek (standard messages array)
+  const messages = [
+    { role: "system", content: systemInstruction }
+  ];
 
-/**
- * Execution using official @google/generative-ai SDK.
- */
-async function runWithSDK(prompt, history, systemInstruction, toolsDefinition) {
-  const genAI = new GoogleGenerativeAI(GEMINI_API_KEY);
-  const model = genAI.getGenerativeModel({
-    model: DEFAULT_MODEL,
-    systemInstruction: systemInstruction,
+  history.forEach(h => {
+    const role = h.role === "model" || h.role === "assistant" ? "assistant" : "user";
+    messages.push({ role, content: h.content });
   });
-
-  // Map history format to SDK format: SDK expects { role: 'user'|'model', parts: [{ text: '...' }] }
-  const formattedContents = history.map(h => ({
-    role: h.role === "assistant" ? "model" : "user",
-    parts: [{ text: h.content }]
-  }));
 
   // Append current prompt
-  formattedContents.push({
-    role: "user",
-    parts: [{ text: prompt }]
-  });
+  messages.push({ role: "user", content: prompt });
 
-  const response = await model.generateContent({
-    contents: formattedContents,
-    tools: [toolsDefinition],
-    toolConfig: { functionCallingConfig: { mode: "AUTO" } }
-  });
-
-  return parseGeminiResponse(response);
-}
-
-/**
- * Execution using zero-dependency Native Fetch API.
- * Ensures the platform is robust even without SDK package installations.
- */
-async function runWithREST(prompt, history, systemInstruction, toolsDefinition) {
-  const url = `https://generativelanguage.googleapis.com/v1beta/models/${DEFAULT_MODEL}:generateContent?key=${GEMINI_API_KEY}`;
-
-  // Map history to REST format
-  const contents = history.map(h => ({
-    role: h.role === "assistant" ? "model" : "user",
-    parts: [{ text: h.content }]
-  }));
-
-  contents.push({
-    role: "user",
-    parts: [{ text: prompt }]
-  });
-
-  const payload = {
-    contents,
-    systemInstruction: {
-      parts: [{ text: systemInstruction }]
-    },
-    tools: [toolsDefinition],
-    toolConfig: {
-      functionCallingConfig: { mode: "AUTO" }
-    }
-  };
-
-  const response = await fetch(url, {
+  // 4. Dispatch REST Call to DeepSeek API
+  const response = await fetch(DEEPSEEK_ENDPOINT, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(payload)
+    headers: {
+      "Content-Type": "application/json",
+      "Authorization": `Bearer ${DEEPSEEK_API_KEY}`
+    },
+    body: JSON.stringify({
+      model: DEFAULT_MODEL,
+      messages,
+      tools: toolsDefinition,
+      tool_choice: "auto"
+    })
   });
 
   if (!response.ok) {
     const errorText = await response.text();
-    throw new Error(`Gemini REST request failed (${response.status}): ${errorText}`);
+    throw new Error(`DeepSeek API request failed (${response.status}): ${errorText}`);
   }
 
   const responseJson = await response.json();
-  return parseGeminiRESTResponse(responseJson);
+  return parseDeepSeekResponse(responseJson);
 }
 
 /**
- * Parses official SDK response object.
+ * Parses official DeepSeek response object.
  */
-function parseGeminiResponse(sdkResponse) {
-  const candidate = sdkResponse.response?.candidates?.[0];
-  const part = candidate?.content?.parts?.[0];
-
-  let responseText = "";
+function parseDeepSeekResponse(resultJson) {
+  const choiceMessage = resultJson.choices?.[0]?.message;
+  let responseText = choiceMessage?.content || "";
   let draftCommand = null;
 
-  if (part) {
-    if (part.text) {
-      responseText = part.text;
-    }
-
-    if (part.functionCall) {
-      const { name, args } = part.functionCall;
-      if (name === "queue_device_command") {
+  if (choiceMessage?.tool_calls?.[0]) {
+    const toolCall = choiceMessage.tool_calls[0];
+    if (toolCall.function?.name === "queue_device_command") {
+      try {
+        const args = JSON.parse(toolCall.function.arguments);
         draftCommand = cleanArgs(args);
-        // Provide standard conversational backing if LLM called function but didn't provide accompanying text
-        responseText = responseText || `Perfect! I've drafted a ${draftCommand.action} action as requested. Please review and approve it to execute.`;
+        responseText = responseText || `Perfect! I've executed a ${draftCommand.action} action as requested.`;
+      } catch (err) {
+        console.error("[DeepSeek] Tool call arguments parse error:", err);
       }
     }
   }
 
   return {
-    response: responseText || "I'm sorry, I couldn't process that command. Let me know what automation task you'd like to perform.",
+    response: responseText || "I'm sorry, I couldn't process that command. Let me know what task you'd like to perform.",
     draftCommand
   };
 }
 
 /**
- * Parses native REST response JSON.
- */
-function parseGeminiRESTResponse(restJson) {
-  const candidate = restJson.candidates?.[0];
-  const part = candidate?.content?.parts?.[0];
-
-  let responseText = "";
-  let draftCommand = null;
-
-  if (part) {
-    if (part.text) {
-      responseText = part.text;
-    }
-
-    if (part.functionCall) {
-      const { name, args } = part.functionCall;
-      if (name === "queue_device_command") {
-        draftCommand = cleanArgs(args);
-        responseText = responseText || `Perfect! I've drafted a ${draftCommand.action} action as requested. Please review and approve it to execute.`;
-      }
-    }
-  }
-
-  return {
-    response: responseText || "I'm sorry, I couldn't process that command. Let me know what automation task you'd like to perform.",
-    draftCommand
-  };
-}
-
-/**
- * Secondary helper to cleanse parameter types, converting potential empty fields to null
- * and matching internal Mongoose model expected formats.
+ * Post-processes arguments generated by DeepSeek to match expected Mongoose validation formats.
  */
 function cleanArgs(args) {
   const cleaned = { ...args };
@@ -286,7 +288,6 @@ function cleanArgs(args) {
     cleaned.scheduledAt = null;
   }
 
-  // Ensure uppercase matching for backend `type` field based on action
   if (cleaned.action) {
     cleaned.type = cleaned.action.toUpperCase();
   }
