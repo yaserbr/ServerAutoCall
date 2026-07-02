@@ -41,6 +41,7 @@ const {
   resolveAuthenticatedDeviceUidFromSocket,
   canDashboardJoinDevice
 } = require("./src/socket/auth");
+const { runAgentOrchestrator } = require("./src/services/agentService");
 
 const app = express();
 const httpServer = http.createServer(app);
@@ -3557,6 +3558,193 @@ app.delete(["/contacts/:id", "/api/contacts/:id"], requireAuth, async (req, res)
     return res.json({ success: true, message: "Contact deleted successfully", contact: deletedContact });
   } catch (error) {
     return handleServerError(res, error, "DELETE /contacts/:id");
+  }
+});
+
+// ==========================================
+// Autonomous AI Agent Chat Endpoint
+// ==========================================
+app.post("/agent/chat", requireAuth, async (req, res) => {
+  try {
+    const currentUserId = normalizeAuthUserId(req.user?.id);
+    if (!currentUserId) {
+      return res.status(401).json({ error: "Unauthorized" });
+    }
+
+    const { message, history = [] } = req.body;
+    if (typeof message !== "string" || !message.trim()) {
+      return res.status(400).json({ error: "Message prompt is required and must be a string" });
+    }
+
+    // 1. Context Compilation - Fetch user's registered devices
+    const devices = await Device.find({ ownerUserId: currentUserId });
+    const formattedDevices = devices.map(d => ({
+      deviceUid: d.deviceUid,
+      deviceName: d.deviceName || buildDefaultDeviceName(d.deviceUid),
+      platform: d.platform,
+      online: isDeviceOnlineByLastSeen(d.lastSeen)
+    }));
+
+    if (formattedDevices.length === 0) {
+      return res.json({
+        response: "I couldn't find any paired devices for your account. Please pair a device first to execute automation commands.",
+        status: "no_devices",
+        draftCommand: null
+      });
+    }
+
+    // 2. Context Compilation - Pre-filter matching contacts to reduce token usage & hallucinations
+    // Simple extraction of capitalized words to identify potential contact names in the message
+    const capitalizedWords = (message.match(/[A-Z][a-z]+/g) || []).map(w => w.trim());
+    const uniquePotentialNames = [...new Set(capitalizedWords)];
+    
+    let contacts = [];
+    if (uniquePotentialNames.length > 0) {
+      const regexPool = uniquePotentialNames.map(name => new RegExp(name, "i"));
+      contacts = await Contact.find({
+        userId: currentUserId,
+        name: { $in: regexPool }
+      }).limit(5).lean();
+    } else {
+      contacts = await Contact.find({ userId: currentUserId }).sort({ name: 1 }).limit(10).lean();
+    }
+
+    // 3. Hand over to LLM Orchestrator Service
+    const agentResult = await runAgentOrchestrator({
+      prompt: message.trim(),
+      history: Array.isArray(history) ? history : [],
+      contacts: contacts.map(c => ({ name: c.name, phoneNumber: c.phoneNumber })),
+      devices: formattedDevices,
+      timezone: RIYADH_TIMEZONE,
+      currentTime: new Date().toISOString()
+    });
+
+    // 4. Implement Immediate Auto-Execution for all Agent Commands
+    if (agentResult.draftCommand) {
+      // Validate that the AI resolved a real deviceUid owned by this user
+      const targetDevice = devices.find(d => d.deviceUid === agentResult.draftCommand.deviceUid);
+      if (!targetDevice) {
+        return res.status(400).json({
+          error: "Agent targeted an invalid or unauthorized deviceUid.",
+          response: "I apologize, but I couldn't target the requested device safely.",
+          draftCommand: null
+        });
+      }
+
+      // Auto-Execute Command Immediately
+      const finalCommandData = {
+        ...agentResult.draftCommand,
+        deviceUid: targetDevice.deviceUid,
+        status: "pending",
+        isImmediate: agentResult.draftCommand.isImmediate !== false,
+        createdAt: new Date(toUtcISOString())
+      };
+
+      const command = await Command.create(finalCommandData);
+
+      logCommandLifecycle("created", {
+        commandId: commandIdFrom(command),
+        deviceUid: targetDevice.deviceUid,
+        oldStatus: null,
+        newStatus: "pending",
+        details: {
+          action: command.action,
+          type: command.type,
+          agentAutoExecuted: true
+        }
+      });
+
+      // Real-time Push to physical device room & dashboard room if connected
+      io.to(`device:${targetDevice.deviceUid}`).emit("command:new", mapCommandForResponse(command));
+      io.to(`dashboard:${targetDevice.deviceUid}`).emit("command:created", mapCommandForResponse(command));
+
+      return res.json({
+        response: agentResult.response,
+        status: "auto_executed",
+        command: mapCommandForResponse(command),
+        draftCommand: null
+      });
+    }
+
+    // Return the response for general conversational queries
+    return res.json({
+      response: agentResult.response,
+      status: "conversation",
+      draftCommand: null
+    });
+
+  } catch (error) {
+    return handleServerError(res, error, "POST /agent/chat");
+  }
+});
+
+// ==========================================
+// Autonomous AI Agent Confirmation Endpoint
+// ==========================================
+app.post("/agent/chat/confirm", requireAuth, async (req, res) => {
+  try {
+    const currentUserId = normalizeAuthUserId(req.user?.id);
+    if (!currentUserId) {
+      return res.status(401).json({ error: "Unauthorized" });
+    }
+
+    const { draftCommand } = req.body;
+    if (!draftCommand || typeof draftCommand !== "object") {
+      return res.status(400).json({ error: "draftCommand object is required" });
+    }
+
+    const normalizedDeviceUid = normalizeDeviceUid(draftCommand.deviceUid);
+    if (!normalizedDeviceUid) {
+      return res.status(400).json({ error: DEVICE_UID_FORMAT_ERROR });
+    }
+
+    // Verify target device ownership
+    const targetDevice = await Device.findOne({ deviceUid: normalizedDeviceUid });
+    if (!targetDevice) {
+      return res.status(404).json({ error: "Device not found" });
+    }
+
+    if (!targetDevice.ownerUserId) {
+      return res.status(403).json({ error: "Device is not claimed" });
+    }
+
+    if (!isDeviceOwnedByUser(targetDevice, currentUserId)) {
+      return res.status(403).json({ error: "Forbidden" });
+    }
+
+    // Build finalized command data
+    const finalCommandData = {
+      ...draftCommand,
+      deviceUid: targetDevice.deviceUid,
+      status: "pending",
+      createdAt: new Date(toUtcISOString())
+    };
+
+    const command = await Command.create(finalCommandData);
+
+    logCommandLifecycle("created", {
+      commandId: commandIdFrom(command),
+      deviceUid: targetDevice.deviceUid,
+      oldStatus: null,
+      newStatus: "pending",
+      details: {
+        action: command.action,
+        type: command.type,
+        agentConfirmed: true
+      }
+    });
+
+    // Real-time Push to physical device room & dashboard room if connected
+    io.to(`device:${targetDevice.deviceUid}`).emit("command:new", mapCommandForResponse(command));
+    io.to(`dashboard:${targetDevice.deviceUid}`).emit("command:created", mapCommandForResponse(command));
+
+    return res.json({
+      success: true,
+      command: mapCommandForResponse(command)
+    });
+
+  } catch (error) {
+    return handleServerError(res, error, "POST /agent/chat/confirm");
   }
 });
 
