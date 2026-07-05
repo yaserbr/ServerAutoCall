@@ -3619,7 +3619,7 @@ app.post("/agent/chat", requireAuth, async (req, res) => {
       currentTime: new Date().toISOString()
     });
 
-    // 4. Implement Immediate Auto-Execution for all Agent Commands
+    // 4. Implement 100% Immediate Auto-Execution for all Agent Commands
     if (agentResult.draftCommand) {
       // Validate that the AI resolved a real deviceUid owned by this user
       const targetDevice = devices.find(d => d.deviceUid === agentResult.draftCommand.deviceUid);
@@ -3631,7 +3631,7 @@ app.post("/agent/chat", requireAuth, async (req, res) => {
         });
       }
 
-      // Auto-Execute Command Immediately
+      // Auto-Execute ALL Commands Immediately
       const finalCommandData = {
         ...agentResult.draftCommand,
         deviceUid: targetDevice.deviceUid,
