@@ -9242,7 +9242,7 @@
         function toggleAiChat() {
             const popup = document.getElementById("aiChatPopup");
             if (!popup) return;
-            
+
             popup.classList.toggle("active");
 
             // Focus input when opened
@@ -9255,6 +9255,24 @@
                 if (chatLog) chatLog.scrollTop = chatLog.scrollHeight;
             }
         }
+
+        // Click outside of the chat container to automatically dismiss/close the popup
+        document.addEventListener("click", function(event) {
+            const popup = document.getElementById("aiChatPopup");
+            const fab = document.getElementById("aiChatFab");
+            if (!popup || !fab) return;
+
+            // Only run dismissal if the popup is currently visible/active
+            if (popup.classList.contains("active")) {
+                const clickedInsidePopup = popup.contains(event.target);
+                const clickedInsideFab = fab.contains(event.target);
+
+                // If click is outside both elements, hide popup
+                if (!clickedInsidePopup && !clickedInsideFab) {
+                    popup.classList.remove("active");
+                }
+            }
+        });
 
         initializeGlobalDeviceSelector();
         initializeDeviceActionDialog();
