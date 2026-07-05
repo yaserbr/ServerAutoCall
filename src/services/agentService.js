@@ -25,6 +25,7 @@ const DEFAULT_MODEL = process.env.DEEPSEEK_MODEL || "deepseek-v4-flash"; // High
  * @param {Array} params.devices - List of registered Device documents from MongoDB
  * @param {string} params.timezone - Default timezone (e.g., "Asia/Riyadh")
  * @param {string} params.currentTime - ISO string representation of the current time
+ * @param {string} params.activeDeviceUid - Optional currently selected active device UID from client
  * @returns {Promise<Object>} { response: string, draftCommand: Object|null }
  */
 async function runAgentOrchestrator({
@@ -33,45 +34,43 @@ async function runAgentOrchestrator({
   contacts = [],
   devices = [],
   timezone = "Asia/Riyadh",
-  currentTime
+  currentTime,
+  activeDeviceUid
 }) {
   if (!DEEPSEEK_API_KEY) {
     throw new Error("DEEPSEEK_API_KEY environment variable is not defined.");
   }
 
   // 1. Structure the System Instruction (the Agent's Rules of Engagement)
+  // Hardened with forceful instructions to use tools instead of conversational text.
   const systemInstruction = `
 You are the ServerAutoCall AI Agent, an advanced virtual operator integrated directly into the user's remote device automation server.
-Your primary role is to interpret the user's natural language intents and map them to device automation actions (tools).
+Your primary role is to interpret the user's natural language intents and map them to device automation actions by CALLING THE 'queue_device_command' TOOL.
+
+### MANDATORY TOOL CALLING DIRECTIVE:
+You MUST ALWAYS invoke the 'queue_device_command' tool if the user's request matches any of our supported actions. Under no circumstances should you reply conversationally saying you have executed, started, or drafted an action in text without calling the tool. Do NOT answer conversationally when you can execute a tool.
 
 ### CONTEXTUAL DATA PROVIDED:
 - Current Time: ${currentTime}
 - Timezone: ${timezone}
 - Registered Devices: ${JSON.stringify(devices)}
 - Pre-filtered Relevant Contacts: ${JSON.stringify(contacts)}
+- Active Selected Device UID: ${activeDeviceUid || "None"}
 
-### SUPPORTED AUTOMATION ACTIONS:
-- 'call': Make an outbound phone call.
-- 'end': Hang up or end the current ongoing phone call.
-- 'sms': Send an outbound text message (SMS).
-- 'auto_answer': Enable, disable, or adjust auto-answer configuration.
-- 'webview' (or 'open_url'): Launch a web URL on the device's browser/webview overlay. Requires a 'url' parameter.
-- 'close_webview': Close the active URL browser/webview overlay on the device.
-- 'open_app': Open a specified mobile app (e.g., WhatsApp, YouTube, Maps) using package name.
-- 'return_to_autocall': Return the device's UI back to the foreground host AutoCall app.
-- 'download_data': Trigger a network stress/download data speed test in MB. Requires 'size' or 'amount' (in MB).
-- 'start_screen_mirror': Start broadcasting live screen sharing mirror from the device.
-- 'stop_screen_mirror': Stop active live screen sharing broadcast.
-- 'screen_touch': Emulate a single-coordinate touch tap on the physical screen.
-- 'screen_swipe': Emulate a touch drag swipe gesture on the physical screen.
+### CONVERSATIONAL INTENT MAPPING RULES:
+- If the user says "return", "go back", "return to autocall", or "close app", you MUST call 'queue_device_command' with action 'return_to_autocall'.
+- If the user says "turn on auto answer", "enable auto-answer", or "auto answer in 23 seconds", you MUST call 'queue_device_command' with action 'auto_answer' and 'enabled' as true.
+- If the user says "turn off auto answer" or "disable auto-answer", you MUST call 'queue_device_command' with action 'auto_answer' and 'enabled' as false.
+- If the user says "stop sharing", "stop mirror", or "end screen sharing", you MUST call 'queue_device_command' with action 'stop_screen_mirror'.
+- If the user says "mirror", "start mirror", or "share screen", you MUST call 'queue_device_command' with action 'start_screen_mirror'.
 
 ### RULES:
 1. DEVICE MATCHING:
-   - Identify which device the user wants to use. If the user does not specify a device:
+   - You MUST target the Active Selected Device UID ('${activeDeviceUid || ""}') as the target 'deviceUid' for your tool call, unless the user explicitly names a different registered device.
+   - If no active selected device is specified, and the user did not specify a device:
      * If there is only one device, use its 'deviceUid'.
      * If there are multiple devices, check which one is 'online: true' and prefer it.
-     * If there is still ambiguity, ask the user to clarify which device they want to control.
-   
+
 2. CONTACT MATCHING:
    - If the user specifies a contact name (e.g., "Ali"), check the 'Pre-filtered Relevant Contacts' list.
    - If there is a direct match, use their 'phoneNumber'.
@@ -97,7 +96,7 @@ Your primary role is to interpret the user's natural language intents and map th
    - If you do not have enough parameters to call 'queue_device_command', just reply conversationally asking for the missing detail.
   `;
 
-  // 2. Define the DeepSeek standard OpenAI-compatible tool schema with ALL properties
+  // 2. Define the DeepSeek standard OpenAI-compatible tool schema with highly detailed property descriptions
   const toolsDefinition = [
     {
       type: "function",
@@ -129,7 +128,20 @@ Your primary role is to interpret the user's natural language intents and map th
                 "screen_touch",
                 "screen_swipe"
               ],
-              description: "The action to execute."
+              description: "The automation action to execute. Must be one of:\n" +
+                           "- 'call' (make an outbound call)\n" +
+                           "- 'end' (hang up current call)\n" +
+                           "- 'sms' (send outbound text)\n" +
+                           "- 'auto_answer' (configure auto answer enablement/hangup settings)\n" +
+                           "- 'webview' or 'open_url' (open URL in browser overlay)\n" +
+                           "- 'close_webview' (close the active URL overlay)\n" +
+                           "- 'open_app' (open a specific app package)\n" +
+                           "- 'return_to_autocall' (return foreground focus to AutoCall app)\n" +
+                           "- 'download_data' (network stress download test)\n" +
+                           "- 'start_screen_mirror' (start screen sharing)\n" +
+                           "- 'stop_screen_mirror' (end screen sharing)\n" +
+                           "- 'screen_touch' (simulate screen coordinate tap)\n" +
+                           "- 'screen_swipe' (simulate screen coordinate swipe gesture)"
             },
             phoneNumber: {
               type: "string",
@@ -260,13 +272,13 @@ Your primary role is to interpret the user's natural language intents and map th
   }
 
   const responseJson = await response.json();
-  return parseDeepSeekResponse(responseJson);
+  return parseDeepSeekResponse(responseJson, prompt);
 }
 
 /**
  * Parses official DeepSeek response object.
  */
-function parseDeepSeekResponse(resultJson) {
+function parseDeepSeekResponse(resultJson, prompt) {
   const choiceMessage = resultJson.choices?.[0]?.message;
   let responseText = choiceMessage?.content || "";
   let draftCommand = null;
@@ -276,8 +288,8 @@ function parseDeepSeekResponse(resultJson) {
     if (toolCall.function?.name === "queue_device_command") {
       try {
         const args = JSON.parse(toolCall.function.arguments);
-        draftCommand = cleanArgs(args);
-        responseText = responseText || `Perfect! I've drafted a ${draftCommand.action} action as requested.`;
+        draftCommand = cleanArgs(args, prompt);
+        responseText = responseText || `Perfect! I've executed a ${draftCommand.action} action as requested.`;
       } catch (err) {
         console.error("[DeepSeek] Tool call arguments parse error:", err);
       }
@@ -294,7 +306,7 @@ function parseDeepSeekResponse(resultJson) {
  * Post-processes arguments generated by DeepSeek to match expected Mongoose validation formats.
  * Transparently translates requested 'webview' and 'download_data' parameters.
  */
-function cleanArgs(args) {
+function cleanArgs(args, prompt = "") {
   const cleaned = { ...args };
 
   // 1. Map 'webview' action to internal Mongoose expected 'open_url'
@@ -313,7 +325,25 @@ function cleanArgs(args) {
     }
   }
 
-  // 3. Normalize schedules
+  // 3. Fallback parameter mapping for auto_answer configs
+  if (cleaned.action === "auto_answer") {
+    // If the model parsed delay/seconds into durationSeconds, map it to autoHangupSeconds
+    if (cleaned.autoHangupSeconds === undefined && cleaned.durationSeconds !== undefined) {
+      cleaned.autoHangupSeconds = cleaned.durationSeconds;
+      delete cleaned.durationSeconds;
+    }
+    // Defensive smart default for enabled if missing
+    if (cleaned.enabled === undefined) {
+      const lowerPrompt = String(prompt).toLowerCase();
+      if (lowerPrompt.includes("off") || lowerPrompt.includes("disable") || lowerPrompt.includes("stop") || lowerPrompt.includes("turn off")) {
+        cleaned.enabled = false;
+      } else {
+        cleaned.enabled = true;
+      }
+    }
+  }
+
+  // 4. Normalize schedules
   if (cleaned.scheduledAt) {
     cleaned.scheduledAt = new Date(cleaned.scheduledAt);
     cleaned.isImmediate = false;
@@ -322,7 +352,7 @@ function cleanArgs(args) {
     cleaned.scheduledAt = null;
   }
 
-  // 4. Align command types
+  // 5. Align command types
   if (cleaned.action) {
     cleaned.type = cleaned.action.toUpperCase();
   }

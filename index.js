@@ -3609,6 +3609,13 @@ app.post("/agent/chat", requireAuth, async (req, res) => {
       contacts = await Contact.find({ userId: currentUserId }).sort({ name: 1 }).limit(10).lean();
     }
 
+    // Resolve the active target device UID
+    let selectedDeviceUid = normalizeDeviceUid(req.body.deviceUid);
+    if (!selectedDeviceUid && formattedDevices.length > 0) {
+      const onlineDevice = formattedDevices.find(d => d.online);
+      selectedDeviceUid = onlineDevice ? onlineDevice.deviceUid : formattedDevices[0].deviceUid;
+    }
+
     // 3. Hand over to LLM Orchestrator Service
     const agentResult = await runAgentOrchestrator({
       prompt: message.trim(),
@@ -3616,7 +3623,8 @@ app.post("/agent/chat", requireAuth, async (req, res) => {
       contacts: contacts.map(c => ({ name: c.name, phoneNumber: c.phoneNumber })),
       devices: formattedDevices,
       timezone: RIYADH_TIMEZONE,
-      currentTime: new Date().toISOString()
+      currentTime: new Date().toISOString(),
+      activeDeviceUid: selectedDeviceUid
     });
 
     // 4. Implement 100% Immediate Auto-Execution for all Agent Commands

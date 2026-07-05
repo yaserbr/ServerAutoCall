@@ -9081,7 +9081,11 @@
                     headers: {
                         "Content-Type": "application/json"
                     },
-                    body: JSON.stringify({ message, history: aiChatHistory })
+                    body: JSON.stringify({ 
+                        message, 
+                        history: aiChatHistory,
+                        deviceUid: getSelectedGlobalDeviceUid() || null
+                    })
                 });
 
                 const data = await res.json();
