@@ -470,11 +470,17 @@
             border-radius: 12px;
         }
 
+        #headerCreateBatchBtn {
+            grid-column: 2;
+            grid-row: 1;
+            border-radius: 12px;
+        }
+
         #sessionLogoutBtn {
             width: 100%;
             height: 100%;
             margin: 0;
-            grid-column: 1 / -1;
+            grid-column: 1;
             grid-row: 1;
         }
 
@@ -3512,6 +3518,18 @@
                 <div class="header-right-tools">
                     <div id="sessionInfo" class="session-info panel-hidden">
                         <button id="sessionLogoutBtn" class="danger-button" onclick="logout()">Logout</button>
+                        <button
+                            id="headerCreateBatchBtn"
+                            type="button"
+                            class="device-dropdown-trigger"
+                            style="padding: 0; display: flex; align-items: center; justify-content: center; width: 100%; height: 100%;"
+                            title="Open Command Builder"
+                            onclick="openBatchModal()">
+                            <!-- Flash/Lightning Bolt Icon (SVG) -->
+                            <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="margin: 0;">
+                                <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"></polygon>
+                            </svg>
+                        </button>
                         <div id="globalDeviceDropdown" class="device-dropdown">
                             <button
                                 id="globalDeviceDropdownTrigger"
@@ -3809,17 +3827,209 @@
                         Cancel
                     </button>
                     <button
-                        id="commandConfirmApproveBtn"
-                        type="button"
-                        class="command-confirm-approve"
-                        onclick="confirmCommandConfirmDialog()">
-                        Confirm
+                       id="commandConfirmApproveBtn"
+                       type="button"
+                       class="command-confirm-approve"
+                       onclick="confirmCommandConfirmDialog()">
+                       Confirm
                     </button>
-                </div>
-            </div>
-        </div>
+                    </div>
+                    </div>
+                    </div>
 
-        <section id="authSection" class="grid">
+                    <!-- STYLE & LAYOUT FOR SEQUENTIAL COMMAND TIMELINE BUILDER -->
+                    <style>
+                    /* Timeline Container */
+                    .timeline-container {
+                    position: relative;
+                    padding-left: 20px;
+                    margin: 10px 0;
+                    }
+
+                    .timeline-steps {
+                    position: relative;
+                    }
+
+                    /* Connecting vertical line */
+                    .timeline-steps::before {
+                    content: '';
+                    position: absolute;
+                    top: 16px;
+                    left: 17px;
+                    bottom: 16px;
+                    width: 2px;
+                    background: linear-gradient(to bottom, var(--accent, #67e8f9) 0%, rgba(255, 255, 255, 0.15) 100%);
+                    z-index: 1;
+                    }
+
+                    .timeline-step-item {
+                    position: relative;
+                    display: flex;
+                    gap: 20px;
+                    margin-bottom: 24px;
+                    z-index: 2;
+                    }
+
+                    .timeline-step-item:last-child {
+                    margin-bottom: 0;
+                    }
+
+                    /* Circular Step Badge */
+                    .timeline-step-badge {
+                    flex-shrink: 0;
+                    width: 36px;
+                    height: 36px;
+                    border-radius: 50%;
+                    background: rgba(11, 18, 32, 0.95);
+                    border: 2px solid var(--accent, #67e8f9);
+                    color: var(--accent, #67e8f9);
+                    font-weight: 700;
+                    font-size: 0.95rem;
+                    display: flex;
+                    align-items: center;
+                    justify-content: center;
+                    box-shadow: 0 0 10px rgba(103, 232, 249, 0.15);
+                    z-index: 2;
+                    }
+
+                    /* Timeline Card */
+                    .timeline-step-card {
+                    flex: 1;
+                    background: rgba(255, 255, 255, 0.03);
+                    border: 1px solid rgba(255, 255, 255, 0.1);
+                    border-radius: 12px;
+                    padding: 16px;
+                    transition: border-color 0.2s ease, background-color 0.2s ease;
+                    }
+
+                    .timeline-step-card:hover {
+                    border-color: rgba(103, 232, 249, 0.3);
+                    background: rgba(255, 255, 255, 0.05);
+                    }
+
+                    .card-header-row {
+                    display: flex;
+                    justify-content: space-between;
+                    align-items: center;
+                    margin-bottom: 14px;
+                    border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+                    padding-bottom: 8px;
+                    gap: 12px;
+                    }
+
+                    .card-controls {
+                    display: flex;
+                    gap: 6px;
+                    }
+
+                    .timeline-btn-icon {
+                    background: rgba(255, 255, 255, 0.05);
+                    border: 1px solid rgba(255, 255, 255, 0.1);
+                    color: var(--text, #f8fafc);
+                    width: 28px;
+                    height: 28px;
+                    border-radius: 6px;
+                    cursor: pointer;
+                    display: inline-flex;
+                    align-items: center;
+                    justify-content: center;
+                    font-size: 0.8rem;
+                    transition: background 0.15s ease, color 0.15s ease;
+                    }
+
+                    .timeline-btn-icon:hover {
+                    background: rgba(255, 255, 255, 0.15);
+                    }
+
+                    .timeline-btn-icon.delete:hover {
+                    background: rgba(244, 63, 94, 0.2);
+                    border-color: rgba(244, 63, 94, 0.6);
+                    color: #ff8597;
+                    }
+
+                    /* Dashed Add Button */
+                    .add-step-dashed-btn {
+                    width: 100%;
+                    padding: 14px;
+                    border: 2px dashed rgba(255, 255, 255, 0.25);
+                    border-radius: 12px;
+                    background: transparent;
+                    color: var(--muted, #94a3b8);
+                    font-weight: 600;
+                    font-size: 0.95rem;
+                    cursor: pointer;
+                    transition: border-color 0.25s ease, color 0.25s ease, background-color 0.25s ease;
+                    outline: none;
+                    }
+
+                    .add-step-dashed-btn:hover {
+                    border-color: var(--accent, #67e8f9);
+                    color: var(--accent, #67e8f9);
+                    background: rgba(103, 232, 249, 0.03);
+                    }
+
+                    .batch-fields-grid {
+                    display: grid;
+                    grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+                    gap: 12px;
+                    }
+                    </style>
+
+                    <!-- Sequential Command Collection Builder Modal -->
+                    <div id="batchCollectionOverlay" class="instructions-overlay panel-hidden" onclick="handleBatchOverlayClick(event)">
+                    <div class="instructions-modal" role="dialog" aria-modal="true" aria-labelledby="batchBuilderTitle" style="max-width: 750px; width: 90%; max-height: 90vh; display: flex; flex-direction: column;">
+                    <div class="instructions-header">
+                    <h3 id="batchBuilderTitle" class="instructions-title">⚡ Sequential Command Batch Builder</h3>
+                    <button type="button" class="instructions-close" aria-label="Close Batch Builder" onclick="closeBatchModal()">X</button>
+                    </div>
+
+                    <div class="instructions-content" style="padding: 20px; overflow-y: auto; flex: 1;">
+                    <!-- Metadata / Settings -->
+                    <div style="display: flex; gap: 16px; margin-bottom: 24px; flex-wrap: wrap; align-items: flex-end;">
+                        <div class="field-group" style="flex: 2; min-width: 250px; display: flex; flex-direction: column; gap: 6px;">
+                            <label class="field-label" style="font-weight: 600;" for="batchCollectionNameInput">Template Name</label>
+                            <div style="display: flex; gap: 10px;">
+                                <input id="batchCollectionNameInput" type="text" placeholder="e.g. Daily Device Provisioning" style="flex: 1; padding: 10px 14px; border-radius: 8px; border: 1px solid rgba(255,255,255,0.15); background: var(--bg-color, #0f172a); color: var(--text-color, #f8fafc);" />
+                                <button type="button" class="primary-button" onclick="saveAsCollectionTemplate()" style="border-radius: 8px; padding: 0 16px; font-weight: 600; cursor: pointer; height: 38px; display: inline-flex; align-items: center; justify-content: center;">💾 Save Template</button>
+                            </div>
+                        </div>
+                        <div class="field-group" style="flex: 1; min-width: 200px; display: flex; flex-direction: column; gap: 6px;">
+                            <label class="field-label" style="font-weight: 600;" for="loadCollectionTemplateSelect">📂 Load Template</label>
+                            <select id="loadCollectionTemplateSelect" onchange="loadSelectedCollectionTemplate(this.value)" style="padding: 10px 14px; border-radius: 8px; border: 1px solid rgba(255,255,255,0.15); background: var(--bg-color, #0f172a); color: var(--text-color, #f8fafc); cursor: pointer; height: 38px; width: 100%;">
+                                <option value="">-- Choose a template --</option>
+                            </select>
+                        </div>
+                    </div>
+
+                    <!-- Vertical Timeline Section -->
+                    <div class="timeline-container">
+                       <div id="timelineSteps" class="timeline-steps">
+                           <!-- Dynamic Steps Rendered Here -->
+                       </div>
+                    </div>
+
+                    <!-- Add Command Step Button -->
+                    <div style="margin-top: 16px; text-align: center;">
+                       <button type="button" class="add-step-dashed-btn" onclick="addNewTimelineStep()">
+                           + Add New Command Step
+                       </button>
+                    </div>
+                    </div>
+
+                    <div class="instructions-footer" style="padding: 16px 20px; border-top: 1px solid rgba(255,255,255,0.1); display: flex; justify-content: space-between; align-items: center; gap: 12px; background: rgba(0,0,0,0.2); flex-wrap: wrap;">
+                    <div class="field-group" style="display: flex; align-items: center; gap: 10px;">
+                        <label class="field-label" style="font-weight: 600; margin: 0; font-size: 0.9rem;" for="batchDeviceUidSelect">Target Device:</label>
+                        <select id="batchDeviceUidSelect" style="padding: 8px 12px; border-radius: 8px; border: 1px solid rgba(255,255,255,0.15); background: var(--bg-color, #0f172a); color: var(--text-color, #f8fafc); width: 180px; cursor: pointer; font-weight: 600; outline: none;"></select>
+                    </div>
+                    <div style="display: flex; gap: 12px;">
+                        <button type="button" class="subtle-button" onclick="closeBatchModal()" style="border-radius: 10px; padding: 10px 20px; font-weight: 600; cursor: pointer;">Cancel</button>
+                        <button type="button" id="btnExecuteBatchSequence" class="primary-button" onclick="executeBatchCollection()" style="border-radius: 10px; padding: 10px 24px; font-weight: 600; cursor: pointer;">🚀 Execute Sequence</button>
+                    </div>
+                    </div>
+                    </div>
+                    </div>
+
+                    <section id="authSection" class="grid">
             <article class="card full-width">
                 <h2>Login</h2>
                 <div class="input-row call-input-grid">
@@ -3841,7 +4051,7 @@
         <section id="appSection" class="grid panel-hidden">
             <article class="card full-width">
                 <h2>Command Center</h2>
-                <div class="segmented-control" role="tablist" aria-label="Call Auto Answer SMS Open App Download Data WebView Toggle">
+                <div class="segmented-control" role="tablist" aria-label="Call Auto Answer SMS Open App Download Data WebView Batch Toggle">
                     <button id="callTabBtn" class="segmented-option active" role="tab" aria-selected="true"
                         onclick="setActionTab('call')">Call</button>
                     <button id="autoAnswerTabBtn" class="segmented-option" role="tab" aria-selected="false"
@@ -3854,6 +4064,8 @@
                         onclick="setActionTab('download_data')">Download Data</button>
                     <button id="webViewTabBtn" class="segmented-option" role="tab" aria-selected="false"
                         onclick="setActionTab('webview')">WebView</button>
+                    <button id="batchTabBtn" class="segmented-option" role="tab" aria-selected="false"
+                        onclick="setActionTab('batch')">Batch Builder</button>
                 </div>
                 <div id="callTabPanel" class="tab-panel active">
                     <h2>Send Call</h2>
@@ -7348,6 +7560,10 @@
             if (sessionInfo) {
                 sessionInfo.classList.remove("panel-hidden");
             }
+            const headerCreateBatchBtn = document.getElementById("headerCreateBatchBtn");
+            if (headerCreateBatchBtn) {
+                headerCreateBatchBtn.classList.remove("panel-hidden");
+            }
             const aiAgentWidget = document.getElementById("aiAgentWidget");
             if (aiAgentWidget) {
                 aiAgentWidget.classList.remove("panel-hidden");
@@ -7388,6 +7604,10 @@
             }
             if (sessionInfo) {
                 sessionInfo.classList.add("panel-hidden");
+            }
+            const headerCreateBatchBtn = document.getElementById("headerCreateBatchBtn");
+            if (headerCreateBatchBtn) {
+                headerCreateBatchBtn.classList.add("panel-hidden");
             }
             const aiAgentWidget = document.getElementById("aiAgentWidget");
             if (aiAgentWidget) {
@@ -8767,6 +8987,493 @@
                 await loadCommands();
             } catch (error) {
                 showToast(error.message, "error");
+            }
+        }
+
+        /* TIMELINE COMMAND COLLECTION BUILDER JAVASCRIPT STATE ENGINE */
+        let timelineSteps = [
+            { id: "tl_step_0", action: "open_url", params: { url: "https://example.com" } }
+        ];
+        let loadedCollectionTemplates = []; // Local cache of templates
+
+        function populateBatchDeviceDropdown() {
+            const select = document.getElementById("batchDeviceUidSelect");
+            if (!select) return;
+
+            select.innerHTML = "";
+
+            if (!globalDeviceDropdownDevices || globalDeviceDropdownDevices.length === 0) {
+                const opt = document.createElement("option");
+                opt.value = "";
+                opt.textContent = "No devices found";
+                select.appendChild(opt);
+                return;
+            }
+
+            const activeDeviceUid = requireSelectedGlobalDeviceUid();
+
+            globalDeviceDropdownDevices.forEach(dev => {
+                const opt = document.createElement("option");
+                opt.value = dev.deviceUid;
+                opt.textContent = `${dev.deviceName || "Unnamed"} (${dev.deviceUid}) - ${dev.online ? "🟢 Online" : "🔴 Offline"}`;
+                if (activeDeviceUid && String(dev.deviceUid).toLowerCase() === String(activeDeviceUid).toLowerCase()) {
+                    opt.selected = true;
+                }
+                select.appendChild(opt);
+            });
+        }
+
+        async function openBatchModal() {
+            const overlay = document.getElementById("batchCollectionOverlay");
+            if (overlay) {
+                overlay.classList.remove("panel-hidden");
+                
+                // Populate target device dropdown dynamically from global devices array
+                populateBatchDeviceDropdown();
+                
+                renderTimelineSteps();
+                
+                // Fetch and populate collection templates dropdown
+                await loadCollectionTemplatesDropdown();
+            }
+        }
+
+        function closeBatchModal() {
+            const overlay = document.getElementById("batchCollectionOverlay");
+            if (overlay) {
+                overlay.classList.add("panel-hidden");
+            }
+        }
+
+        function handleBatchOverlayClick(event) {
+            if (event.target === event.currentTarget) {
+                closeBatchModal();
+            }
+        }
+
+        async function loadCollectionTemplatesDropdown() {
+            const select = document.getElementById("loadCollectionTemplateSelect");
+            if (!select) return;
+
+            select.innerHTML = `<option value="">-- Loading templates... --</option>`;
+
+            try {
+                const res = await apiFetch("/collection-templates", { method: "GET" });
+                if (!res.ok) throw new Error("Failed to load templates.");
+
+                loadedCollectionTemplates = await res.json();
+                
+                select.innerHTML = `<option value="">-- Choose a template --</option>`;
+                loadedCollectionTemplates.forEach(tpl => {
+                    const opt = document.createElement("option");
+                    opt.value = tpl._id;
+                    opt.textContent = tpl.name;
+                    select.appendChild(opt);
+                });
+            } catch (err) {
+                console.error("Error fetching templates:", err);
+                select.innerHTML = `<option value="">-- Error loading templates --</option>`;
+            }
+        }
+
+        function loadSelectedCollectionTemplate(templateId) {
+            if (!templateId) return;
+
+            const template = loadedCollectionTemplates.find(t => String(t._id) === String(templateId));
+            if (!template) {
+                showToast("Template not found in cache.", "error");
+                return;
+            }
+
+            // Fill template name
+            const nameInput = document.getElementById("batchCollectionNameInput");
+            if (nameInput) {
+                nameInput.value = template.name;
+            }
+
+            // Map templates to steps, restricting to ONLY the 8 allowed actions
+            const allowedActions = new Set([
+                "call", "sms", "auto_answer", "open_url", "close_webview", "open_app", "return_to_autocall", "download_data"
+            ]);
+
+            const filteredTemplates = template.commandTemplates.filter(t => allowedActions.has(t.action));
+
+            timelineSteps = filteredTemplates.map((tmpl) => {
+                const action = tmpl.action;
+                const params = {};
+                
+                if (action === "open_url") {
+                    params.url = tmpl.url || "";
+                } else if (action === "download_data") {
+                    params.downloadSizeMb = tmpl.downloadSizeMb || 150;
+                } else if (action === "call") {
+                    params.phoneNumber = tmpl.phoneNumber || "";
+                    params.durationSeconds = tmpl.durationSeconds || 30;
+                } else if (action === "sms") {
+                    params.phoneNumber = tmpl.phoneNumber || "";
+                    params.message = tmpl.message || "";
+                } else if (action === "auto_answer") {
+                    params.enabled = tmpl.enabled !== false;
+                    params.autoHangupSeconds = tmpl.autoHangupSeconds || 15;
+                } else if (action === "open_app") {
+                    params.appName = tmpl.appName || "";
+                }
+
+                return {
+                    id: "tl_step_" + Math.random().toString(36).substring(2, 9),
+                    action,
+                    params
+                };
+            });
+
+            renderTimelineSteps();
+            showToast(`Loaded blueprint: '${template.name}' successfully!`, "success");
+        }
+
+        async function saveAsCollectionTemplate() {
+            const name = document.getElementById("batchCollectionNameInput").value.trim();
+            if (!name) {
+                showToast("Please enter a name for the template.", "error");
+                return;
+            }
+
+            if (timelineSteps.length === 0) {
+                showToast("A template requires at least one command step.", "error");
+                return;
+            }
+
+            const templatesPayload = timelineSteps.map(step => {
+                return {
+                    action: step.action,
+                    type: step.action.toUpperCase(),
+                    ...step.params
+                };
+            });
+
+            const payload = {
+                name,
+                commandTemplates: templatesPayload
+            };
+
+            try {
+                const res = await apiFetch("/collection-templates", {
+                    method: "POST",
+                    headers: {
+                        "Content-Type": "application/json"
+                    },
+                    body: JSON.stringify(payload)
+                });
+
+                if (!res.ok) {
+                    const data = await res.json();
+                    throw new Error(data.error || "Failed to save template.");
+                }
+
+                showToast(`💾 Template '${name}' saved successfully!`, "success");
+                
+                // Refresh dropdown
+                await loadCollectionTemplatesDropdown();
+            } catch (err) {
+                showToast(err.message, "error");
+            }
+        }
+
+        function addNewTimelineStep() {
+            const id = "tl_step_" + Math.random().toString(36).substring(2, 9);
+            timelineSteps.push({ id, action: "open_url", params: { url: "" } });
+            renderTimelineSteps();
+        }
+
+        function removeTimelineStep(id) {
+            timelineSteps = timelineSteps.filter(s => s.id !== id);
+            renderTimelineSteps();
+        }
+
+        function moveTimelineStep(id, direction) {
+            const idx = timelineSteps.findIndex(s => s.id === id);
+            if (idx === -1) return;
+            const targetIdx = idx + direction;
+            if (targetIdx < 0 || targetIdx >= timelineSteps.length) return;
+
+            const temp = timelineSteps[idx];
+            timelineSteps[idx] = timelineSteps[targetIdx];
+            timelineSteps[targetIdx] = temp;
+            renderTimelineSteps();
+        }
+
+        function handleTimelineActionChange(id, action) {
+            const step = timelineSteps.find(s => s.id === id);
+            if (!step) return;
+            step.action = action;
+            
+            // Set default parameters for only the 8 allowed actions
+            if (action === "open_url") {
+                step.params = { url: "" };
+            } else if (action === "download_data") {
+                step.params = { downloadSizeMb: 150 };
+            } else if (action === "call") {
+                step.params = { phoneNumber: "", durationSeconds: 30 };
+            } else if (action === "sms") {
+                step.params = { phoneNumber: "", message: "" };
+            } else if (action === "auto_answer") {
+                step.params = { enabled: true, autoHangupSeconds: 15 };
+            } else if (action === "open_app") {
+                step.params = { appName: "" };
+            } else {
+                // close_webview, return_to_autocall
+                step.params = {};
+            }
+            renderTimelineSteps();
+        }
+
+        function updateTimelineParamValue(id, key, val) {
+            const step = timelineSteps.find(s => s.id === id);
+            if (!step) return;
+            step.params[key] = val;
+        }
+
+        function renderTimelineSteps() {
+            const container = document.getElementById("timelineSteps");
+            if (!container) return;
+
+            container.innerHTML = "";
+            if (timelineSteps.length === 0) {
+                container.innerHTML = `<p style="text-align: center; color: var(--muted); padding: 12px 0;">No command steps configured. Add at least one step.</p>`;
+                return;
+            }
+
+            // Exclude SCREEN_TOUCH, SCREEN_SWIPE, END, etc. ONLY include these 8 allowed actions:
+            const actionsList = [
+                { value: "call", label: "Call" },
+                { value: "sms", label: "Send SMS Message" },
+                { value: "auto_answer", label: "Auto Answer Status" },
+                { value: "download_data", label: "Download Data" },
+                { value: "open_app", label: "Open App" },
+                { value: "return_to_autocall", label: "Return to AutoCall" },
+                { value: "open_url", label: "Open Web View" },
+                { value: "close_webview", label: "Close Web View" }
+            ];
+
+            timelineSteps.forEach((step, index) => {
+                const item = document.createElement("div");
+                item.className = "timeline-step-item";
+
+                // Step Badge
+                const badge = document.createElement("div");
+                badge.className = "timeline-step-badge";
+                badge.textContent = index + 1;
+                item.appendChild(badge);
+
+                // Card
+                const card = document.createElement("div");
+                card.className = "timeline-step-card";
+
+                // Card Header Row
+                const cardHeader = document.createElement("div");
+                cardHeader.className = "card-header-row";
+
+                const select = document.createElement("select");
+                select.style.padding = "6px 12px";
+                select.style.borderRadius = "8px";
+                select.style.border = "1px solid rgba(255,255,255,0.15)";
+                select.style.background = "#0b1220";
+                select.style.color = "#f8fafc";
+                select.style.fontSize = "0.85rem";
+                select.style.fontWeight = "600";
+                select.style.outline = "none";
+                
+                actionsList.forEach(opt => {
+                    const o = document.createElement("option");
+                    o.value = opt.value;
+                    o.textContent = opt.label;
+                    o.selected = opt.value === step.action;
+                    select.appendChild(o);
+                });
+                select.onchange = (e) => handleTimelineActionChange(step.id, e.target.value);
+                cardHeader.appendChild(select);
+
+                // Reorder / Delete Controls
+                const controls = document.createElement("div");
+                controls.className = "card-controls";
+
+                if (index > 0) {
+                    const btnUp = document.createElement("button");
+                    btnUp.type = "button";
+                    btnUp.className = "timeline-btn-icon";
+                    btnUp.textContent = "▲";
+                    btnUp.title = "Move Step Up";
+                    btnUp.onclick = () => moveTimelineStep(step.id, -1);
+                    controls.appendChild(btnUp);
+                }
+
+                if (index < timelineSteps.length - 1) {
+                    const btnDown = document.createElement("button");
+                    btnDown.type = "button";
+                    btnDown.className = "timeline-btn-icon";
+                    btnDown.textContent = "▼";
+                    btnDown.title = "Move Step Down";
+                    btnDown.onclick = () => moveTimelineStep(step.id, 1);
+                    controls.appendChild(btnDown);
+                }
+
+                const btnDel = document.createElement("button");
+                btnDel.type = "button";
+                btnDel.className = "timeline-btn-icon delete";
+                btnDel.textContent = "✖";
+                btnDel.title = "Delete Step";
+                btnDel.onclick = () => removeTimelineStep(step.id);
+                controls.appendChild(btnDel);
+
+                cardHeader.appendChild(controls);
+                card.appendChild(cardHeader);
+
+                // Fields Grid
+                const grid = document.createElement("div");
+                grid.className = "batch-fields-grid";
+
+                // Conditional Param inputs ONLY for allowed actions
+                if (step.action === "open_url") {
+                    grid.appendChild(createTimelineInputField(step.id, "url", "URL Address", "text", step.params.url || "", "https://example.com"));
+                } else if (step.action === "download_data") {
+                    grid.appendChild(createTimelineInputField(step.id, "downloadSizeMb", "Size (MB)", "number", step.params.downloadSizeMb || 100, "e.g. 150"));
+                } else if (step.action === "call") {
+                    grid.appendChild(createTimelineInputField(step.id, "phoneNumber", "Phone Number", "text", step.params.phoneNumber || "", "+966500000000"));
+                    grid.appendChild(createTimelineInputField(step.id, "durationSeconds", "Duration (Sec)", "number", step.params.durationSeconds || 30, "e.g. 45"));
+                } else if (step.action === "sms") {
+                    grid.appendChild(createTimelineInputField(step.id, "phoneNumber", "Recipient Number", "text", step.params.phoneNumber || "", "+966500000000"));
+                    grid.appendChild(createTimelineInputField(step.id, "message", "SMS Message", "text", step.params.message || "", "Enter message..."));
+                } else if (step.action === "open_app") {
+                    grid.appendChild(createTimelineInputField(step.id, "appName", "App Name or Package", "text", step.params.appName || "", "e.g. whatsapp or com.whatsapp"));
+                } else if (step.action === "auto_answer") {
+                    const fGroup = document.createElement("div");
+                    fGroup.className = "field-group";
+                    fGroup.style.display = "flex";
+                    fGroup.style.flexDirection = "column";
+                    fGroup.style.gap = "6px";
+                    fGroup.innerHTML = `<label class="field-label" style="font-size: 11px;">Enable Auto-Answer</label>`;
+                    
+                    const sl = document.createElement("select");
+                    sl.style.padding = "8px 12px";
+                    sl.style.borderRadius = "8px";
+                    sl.style.border = "1px solid rgba(255,255,255,0.15)";
+                    sl.style.background = "#0b1220";
+                    sl.style.color = "#f8fafc";
+                    sl.style.outline = "none";
+                    sl.innerHTML = `
+                        <option value="true" ${step.params.enabled === true ? 'selected' : ''}>Active</option>
+                        <option value="false" ${step.params.enabled === false ? 'selected' : ''}>Disabled</option>
+                    `;
+                    sl.onchange = (e) => updateTimelineParamValue(step.id, "enabled", e.target.value === "true");
+                    fGroup.appendChild(sl);
+                    grid.appendChild(fGroup);
+
+                    grid.appendChild(createTimelineInputField(step.id, "autoHangupSeconds", "Auto Hangup (Sec)", "number", step.params.autoHangupSeconds || 15, "e.g. 20"));
+                }
+
+                card.appendChild(grid);
+                item.appendChild(card);
+                container.appendChild(item);
+            });
+        }
+
+        function createTimelineInputField(id, field, labelText, type, value, placeholder) {
+            const group = document.createElement("div");
+            group.className = "field-group";
+            group.style.display = "flex";
+            group.style.flexDirection = "column";
+            group.style.gap = "6px";
+
+            const label = document.createElement("label");
+            label.className = "field-label";
+            label.style.fontSize = "11px";
+            label.textContent = labelText;
+            group.appendChild(label);
+
+            const input = document.createElement("input");
+            input.type = type;
+            input.value = value;
+            input.placeholder = placeholder;
+            input.style.padding = "8px 12px";
+            input.style.borderRadius = "8px";
+            input.style.border = "1px solid rgba(255,255,255,0.15)";
+            input.style.background = "#0b1220";
+            input.style.color = "#f8fafc";
+            input.style.outline = "none";
+            
+            input.oninput = (e) => {
+                const val = type === "number" ? Number(e.target.value) : e.target.value;
+                updateTimelineParamValue(id, field, val);
+            };
+
+            group.appendChild(input);
+            return group;
+        }
+
+        async function executeBatchCollection() {
+            const name = document.getElementById("batchCollectionNameInput").value.trim();
+            const deviceUidSelect = document.getElementById("batchDeviceUidSelect");
+            const deviceUid = deviceUidSelect ? deviceUidSelect.value.trim().toLowerCase() : "";
+
+            if (!name) {
+                showToast("Collection name is required.", "error");
+                return;
+            }
+            if (!deviceUid || deviceUid.length !== 5) {
+                showToast("Target Device UID must be exactly 5 characters.", "error");
+                return;
+            }
+            if (timelineSteps.length === 0) {
+                showToast("A sequential batch requires at least one command step.", "error");
+                return;
+            }
+
+            const templatesPayload = timelineSteps.map(step => {
+                return {
+                    action: step.action,
+                    type: step.action.toUpperCase(),
+                    ...step.params
+                };
+            });
+
+            const payload = {
+                name,
+                deviceUid,
+                commandTemplates: templatesPayload
+            };
+
+            const submitBtn = document.getElementById("btnExecuteBatchSequence");
+            const originalText = submitBtn.textContent;
+            submitBtn.disabled = true;
+            submitBtn.textContent = "🚀 Executing...";
+
+            try {
+                const res = await apiFetch("/collections", {
+                    method: "POST",
+                    headers: {
+                        "Content-Type": "application/json"
+                    },
+                    body: JSON.stringify(payload)
+                });
+
+                const data = await res.json();
+                if (!res.ok) throw new Error(data.error || "Failed to execute sequence.");
+
+                showToast(`🎉 Success! Batch '${data.collection.name}' started successfully!`, "success");
+                
+                closeBatchModal();
+                
+                // Clear state
+                document.getElementById("batchCollectionNameInput").value = "";
+                timelineSteps = [{ id: "tl_step_0", action: "open_url", params: { url: "" } }];
+                
+                if (typeof loadCommands === "function") {
+                    await loadCommands();
+                }
+            } catch (err) {
+                showToast(err.message, "error");
+            } finally {
+                submitBtn.disabled = false;
+                submitBtn.textContent = originalText;
             }
         }
 
