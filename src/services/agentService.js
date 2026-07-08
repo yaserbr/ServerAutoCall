@@ -63,6 +63,7 @@ You MUST ALWAYS invoke the 'queue_device_command' tool if the user's request mat
 - If the user says "turn off auto answer" or "disable auto-answer", you MUST call 'queue_device_command' with action 'auto_answer' and 'enabled' as false.
 - If the user says "stop sharing", "stop mirror", or "end screen sharing", you MUST call 'queue_device_command' with action 'stop_screen_mirror'.
 - If the user says "mirror", "start mirror", or "share screen", you MUST call 'queue_device_command' with action 'start_screen_mirror'.
+- If the user asks to run, trigger, or execute a saved collection or template by name (e.g., "Execute the 'Morning Routine' collection" or "Run my test collection"), you MUST call the 'execute_device_collection' tool with 'collectionName' and the target 'deviceUid'.
 
 ### RULES:
 1. DEVICE MATCHING:
@@ -238,6 +239,27 @@ You MUST ALWAYS invoke the 'queue_device_command' tool if the user's request mat
           required: ["deviceUid", "action"]
         }
       }
+    },
+    {
+      type: "function",
+      function: {
+        name: "execute_device_collection",
+        description: "Executes a saved command collection (or template) by name on a target device.",
+        parameters: {
+          type: "object",
+          properties: {
+            deviceUid: {
+              type: "string",
+              description: "The 5-character unique ID of the target device."
+            },
+            collectionName: {
+              type: "string",
+              description: "The name of the saved collection/template to execute."
+            }
+          },
+          required: ["deviceUid", "collectionName"]
+        }
+      }
     }
   ];
 
@@ -275,20 +297,34 @@ You MUST ALWAYS invoke the 'queue_device_command' tool if the user's request mat
   }
 
   const responseJson = await response.json();
-  return parseDeepSeekResponse(responseJson, prompt);
+  return parseDeepSeekResponse(responseJson, prompt, activeDeviceUid);
 }
 
 /**
  * Parses official DeepSeek response object.
  */
-function parseDeepSeekResponse(resultJson, prompt) {
+function parseDeepSeekResponse(resultJson, prompt, activeDeviceUid) {
   const choiceMessage = resultJson.choices?.[0]?.message;
   let responseText = choiceMessage?.content || "";
   let draftCommand = null;
 
   if (choiceMessage?.tool_calls?.[0]) {
     const toolCall = choiceMessage.tool_calls[0];
-    if (toolCall.function?.name === "queue_device_command") {
+    if (toolCall.function?.name === "execute_device_collection") {
+      try {
+        const args = JSON.parse(toolCall.function.arguments);
+        draftCommand = {
+          action: "execute_collection",
+          type: "EXECUTE_COLLECTION",
+          collectionName: args.collectionName,
+          deviceUid: args.deviceUid || activeDeviceUid,
+          isImmediate: true
+        };
+        responseText = responseText || `Perfect! I've triggered the collection '${args.collectionName}' for execution.`;
+      } catch (err) {
+        console.error("[DeepSeek] Tool call arguments parse error for execute_device_collection:", err);
+      }
+    } else if (toolCall.function?.name === "queue_device_command") {
       try {
         const args = JSON.parse(toolCall.function.arguments);
         draftCommand = cleanArgs(args, prompt);

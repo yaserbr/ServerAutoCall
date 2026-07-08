@@ -3835,6 +3835,42 @@ app.post("/agent/chat", requireAuth, async (req, res) => {
         });
       }
 
+      // If the command is a collection execution trigger
+      if (agentResult.draftCommand.action === "execute_collection") {
+        const template = await CollectionTemplate.findOne({
+          ownerUserId: currentUserId,
+          name: { $regex: new RegExp(`^${agentResult.draftCommand.collectionName.trim()}$`, "i") }
+        });
+
+        if (!template) {
+          return res.status(404).json({
+            error: `Template '${agentResult.draftCommand.collectionName}' not found.`,
+            response: `I couldn't find any collection template named '${agentResult.draftCommand.collectionName}'.`,
+            draftCommand: null
+          });
+        }
+
+        // Trigger execution via CommandCollectionService
+        const collection = await CommandCollectionService.createAndStartCollection(
+          template.name,
+          targetDevice.deviceUid,
+          template.commandTemplates,
+          currentUserId
+        );
+
+        return res.json({
+          response: `Successfully started the collection '${template.name}' on the current device.`,
+          status: "auto_executed",
+          collection: {
+            id: String(collection._id),
+            name: collection.name,
+            deviceUid: collection.deviceUid,
+            status: collection.status
+          },
+          draftCommand: null
+        });
+      }
+
       // Auto-Execute ALL Commands Immediately
       const finalCommandData = {
         ...agentResult.draftCommand,
