@@ -3199,6 +3199,33 @@ app.post("/collection-templates", requireAuth, async (req, res) => {
   }
 });
 
+app.delete("/collection-templates/:id", requireAuth, async (req, res) => {
+  try {
+    const currentUserId = normalizeAuthUserId(req.user?.id);
+    if (!currentUserId) {
+      return res.status(401).json({ error: "Unauthorized" });
+    }
+
+    const { id } = req.params;
+    if (!id) {
+      return res.status(400).json({ error: "Template ID is required" });
+    }
+
+    const deletedTemplate = await CollectionTemplate.findOneAndDelete({
+      _id: id,
+      ownerUserId: currentUserId
+    });
+
+    if (!deletedTemplate) {
+      return res.status(404).json({ error: "Template not found or not owned by you" });
+    }
+
+    return res.json({ success: true, message: "Template deleted successfully", deletedId: id });
+  } catch (error) {
+    return handleServerError(res, error, "DELETE /collection-templates/:id");
+  }
+});
+
 // =====================
 // Claim next command (atomic pending -> executing)
 // =====================

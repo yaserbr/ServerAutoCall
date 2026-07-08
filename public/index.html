@@ -3838,8 +3838,23 @@
                        Confirm
                     </button>
                     </div>
-                    </div>
-                    </div>
+            </div>
+        </div>
+
+        <!-- Custom Confirm Overlay Modal -->
+        <div id="customConfirmOverlay" class="instructions-overlay panel-hidden" onclick="handleCustomConfirmOverlayClick(event)">
+            <div class="custom-confirm-modal" role="dialog" aria-modal="true" aria-labelledby="customConfirmTitle">
+                <div class="custom-confirm-header">
+                    <span class="custom-confirm-warning-icon" aria-hidden="true">⚠️</span>
+                    <h3 id="customConfirmTitle" class="custom-confirm-title">Confirm Deletion</h3>
+                </div>
+                <p id="customConfirmMessage" class="custom-confirm-message"></p>
+                <div class="custom-confirm-actions">
+                    <button id="customConfirmCancelBtn" type="button" class="custom-confirm-btn-cancel" onclick="resolveCustomConfirm(false)">Cancel</button>
+                    <button id="customConfirmApproveBtn" type="button" class="custom-confirm-btn-approve" onclick="resolveCustomConfirm(true)">Delete</button>
+                </div>
+            </div>
+        </div>
 
                     <!-- STYLE & LAYOUT FOR SEQUENTIAL COMMAND TIMELINE BUILDER -->
                     <style>
@@ -3977,6 +3992,212 @@
                     grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
                     gap: 12px;
                     }
+
+                    /* Custom Dropdown Container */
+                    .custom-dropdown-container {
+                    position: relative;
+                    flex: 2;
+                    min-width: 250px;
+                    }
+
+                    /* Custom Dropdown Input */
+                    .custom-dropdown-input {
+                    width: 100% !important;
+                    height: 38px !important;
+                    padding: 10px 38px 10px 14px !important;
+                    border-radius: 8px !important;
+                    border: 1px solid rgba(46, 196, 182, 0.3) !important;
+                    background: #0f172a !important;
+                    color: #f8fafc !important;
+                    font-size: 0.9rem !important;
+                    outline: none !important;
+                    transition: border-color 0.2s ease, box-shadow 0.2s ease !important;
+                    }
+
+                    .custom-dropdown-input::placeholder {
+                    color: rgba(230, 237, 247, 0.45) !important;
+                    }
+
+                    .custom-dropdown-input:focus {
+                    border-color: rgba(46, 196, 182, 0.8) !important;
+                    box-shadow: 0 0 0 3px rgba(46, 196, 182, 0.25) !important;
+                    }
+
+                    /* Chevron Icon */
+                    .custom-dropdown-chevron {
+                    position: absolute;
+                    right: 12px;
+                    top: 50%;
+                    transform: translateY(-50%);
+                    width: 16px;
+                    height: 16px;
+                    pointer-events: none;
+                    color: var(--accent, #2ec4b6);
+                    transition: transform 0.2s ease;
+                    }
+
+                    .custom-dropdown-container.is-open .custom-dropdown-chevron {
+                    transform: translateY(-50%) rotate(180deg);
+                    }
+
+                    /* Options Panel */
+                    .custom-dropdown-panel {
+                    position: absolute;
+                    top: calc(100% + 6px);
+                    left: 0;
+                    right: 0;
+                    background: #0f172a;
+                    border: 1px solid rgba(46, 196, 182, 0.25);
+                    border-radius: 8px;
+                    box-shadow: 0 10px 25px rgba(0, 0, 0, 0.5);
+                    max-height: 200px;
+                    overflow-y: auto;
+                    z-index: 1000;
+                    opacity: 0;
+                    transform: translateY(-10px);
+                    pointer-events: none;
+                    transition: opacity 0.2s ease, transform 0.2s ease;
+                    }
+
+                    .custom-dropdown-container.is-open .custom-dropdown-panel {
+                    opacity: 1;
+                    transform: translateY(0);
+                    pointer-events: auto;
+                    }
+
+                    /* Dropdown Option */
+                    .custom-dropdown-option {
+                    padding: 10px 14px;
+                    color: #edf5ff;
+                    cursor: pointer;
+                    font-size: 0.88rem;
+                    display: flex;
+                    align-items: center;
+                    justify-content: space-between;
+                    transition: background-color 0.15s ease;
+                    }
+
+                    .custom-dropdown-option:hover {
+                    background-color: rgba(46, 196, 182, 0.15);
+                    }
+
+                    .custom-dropdown-option.selected {
+                    background-color: rgba(46, 196, 182, 0.25);
+                    font-weight: 600;
+                    }
+
+                    .custom-dropdown-option-check {
+                    width: 14px;
+                    height: 14px;
+                    color: var(--accent, #2ec4b6);
+                    }
+
+                    /* Custom Confirm Modal Styling */
+                    #customConfirmOverlay {
+                    opacity: 0;
+                    pointer-events: none;
+                    transition: opacity 0.24s ease;
+                    z-index: 1500;
+                    }
+
+                    #customConfirmOverlay.is-visible {
+                    opacity: 1;
+                    pointer-events: auto;
+                    }
+
+                    .custom-confirm-modal {
+                    position: relative;
+                    overflow: hidden;
+                    width: min(440px, 90vw);
+                    padding: 24px;
+                    border-radius: 12px;
+                    border: 1px solid rgba(219, 39, 119, 0.5);
+                    background: #1a202c;
+                    box-shadow: 
+                        0 20px 48px rgba(0, 0, 0, 0.6),
+                        inset 0 1px 0 rgba(255, 255, 255, 0.05);
+                    backdrop-filter: blur(16px);
+                    opacity: 0;
+                    transform: translateY(14px) scale(0.95);
+                    transition: opacity 0.24s ease, transform 0.24s cubic-bezier(0.22, 1, 0.36, 1);
+                    text-align: left;
+                    margin: 0 auto;
+                    }
+
+                    #customConfirmOverlay.is-visible .custom-confirm-modal {
+                    opacity: 1;
+                    transform: translateY(0) scale(1);
+                    }
+
+                    .custom-confirm-header {
+                    display: flex;
+                    align-items: center;
+                    gap: 12px;
+                    margin-bottom: 16px;
+                    }
+
+                    .custom-confirm-warning-icon {
+                    font-size: 1.5rem;
+                    }
+
+                    .custom-confirm-title {
+                    margin: 0;
+                    font-size: 1.25rem;
+                    font-weight: 700;
+                    color: #f8fafc;
+                    }
+
+                    .custom-confirm-message {
+                    margin: 0 0 24px 0;
+                    color: #cbd5e1;
+                    font-size: 0.95rem;
+                    line-height: 1.5;
+                    }
+
+                    .custom-confirm-actions {
+                    display: flex;
+                    justify-content: flex-end;
+                    gap: 12px;
+                    flex-wrap: wrap;
+                    }
+
+                    .custom-confirm-btn-approve {
+                    border: none;
+                    border-radius: 8px;
+                    padding: 10px 18px;
+                    font-weight: 600;
+                    cursor: pointer;
+                    font-size: 0.9rem;
+                    color: #ffffff;
+                    background: linear-gradient(135deg, #db2777, #9d174d);
+                    box-shadow: 0 6px 16px rgba(219, 39, 119, 0.4);
+                    transition: transform 0.15s ease, box-shadow 0.2s ease, opacity 0.2s ease;
+                    outline: none;
+                    }
+
+                    .custom-confirm-btn-approve:hover {
+                    transform: translateY(-1px);
+                    box-shadow: 0 8px 20px rgba(219, 39, 119, 0.55);
+                    }
+
+                    .custom-confirm-btn-cancel {
+                    border: 1px solid rgba(255, 255, 255, 0.2);
+                    border-radius: 8px;
+                    padding: 9px 18px;
+                    font-weight: 600;
+                    cursor: pointer;
+                    font-size: 0.9rem;
+                    color: #cbd5e1;
+                    background: transparent;
+                    transition: transform 0.15s ease, border-color 0.2s ease, color 0.2s ease;
+                    outline: none;
+                    }
+
+                    .custom-confirm-btn-cancel:hover {
+                    transform: translateY(-1px);
+                    border-color: rgba(255, 255, 255, 0.4);
+                    color: #ffffff;
+                    }
                     </style>
 
                     <!-- Sequential Command Collection Builder Modal -->
@@ -3989,19 +4210,22 @@
 
                     <div class="instructions-content" style="padding: 20px; overflow-y: auto; flex: 1;">
                     <!-- Metadata / Settings -->
-                    <div style="display: flex; gap: 16px; margin-bottom: 24px; flex-wrap: wrap; align-items: flex-end;">
-                        <div class="field-group" style="flex: 2; min-width: 250px; display: flex; flex-direction: column; gap: 6px;">
-                            <label class="field-label" style="font-weight: 600;" for="collectionNameInput">Collection Name</label>
-                            <div style="display: flex; gap: 10px;">
-                                <input id="collectionNameInput" type="text" placeholder="e.g. Daily Device Provisioning" style="flex: 1; padding: 10px 14px; border-radius: 8px; border: 1px solid rgba(255,255,255,0.15); background: var(--bg-color, #0f172a); color: var(--text-color, #f8fafc);" />
+                    <div style="display: flex; gap: 16px; margin-bottom: 24px; flex-wrap: wrap; align-items: flex-end; width: 100%;">
+                        <div class="field-group" style="flex: 1; min-width: 300px; display: flex; flex-direction: column; gap: 6px; width: 100%;">
+                            <label class="field-label" style="font-weight: 600;" for="collectionNameInput">Collection / Template Name</label>
+                            <div style="display: flex; gap: 10px; width: 100%; flex-wrap: wrap; align-items: center;">
+                                <div class="custom-dropdown-container" id="templatesDropdownContainer">
+                                    <input id="collectionNameInput" type="text" placeholder="Type name or select template..." onfocus="toggleTemplatesDropdown(true)" oninput="handleCollectionNameInputChange(this.value)" class="custom-dropdown-input" />
+                                    <svg class="custom-dropdown-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                        <polyline points="6 9 12 15 18 9"></polyline>
+                                    </svg>
+                                    <div id="customTemplatesDropdown" class="custom-dropdown-panel">
+                                        <!-- Dynamically generated options will be appended here -->
+                                    </div>
+                                </div>
                                 <button type="button" class="primary-button" onclick="saveAsCollectionTemplate()" style="border-radius: 8px; padding: 0 16px; font-weight: 600; cursor: pointer; height: 38px; display: inline-flex; align-items: center; justify-content: center;">Save Template</button>
+                                <button type="button" onclick="deleteCollectionTemplate()" style="border-radius: 8px; padding: 0 16px; font-weight: 600; cursor: pointer; height: 38px; display: inline-flex; align-items: center; justify-content: center; background-color: #ef4444; border: none; color: #ffffff;">Delete Template</button>
                             </div>
-                        </div>
-                        <div class="field-group" style="flex: 1; min-width: 200px; display: flex; flex-direction: column; gap: 6px;">
-                            <label class="field-label" style="font-weight: 600;" for="loadCollectionTemplateSelect">Load Template</label>
-                            <select id="loadCollectionTemplateSelect" onchange="loadSelectedCollectionTemplate(this.value)" style="padding: 10px 14px; border-radius: 8px; border: 1px solid rgba(255,255,255,0.15); background: var(--bg-color, #0f172a); color: var(--text-color, #f8fafc); cursor: pointer; height: 38px; width: 100%;">
-                                <option value="">-- Choose a template --</option>
-                            </select>
                         </div>
                     </div>
 
@@ -4246,6 +4470,7 @@
     </div>
     <div id="toastContainer" class="toast-container" aria-live="polite" aria-atomic="true"></div>
     <datalist id="contactsDatalist"></datalist>
+    <datalist id="templatesDatalist"></datalist>
 
     <!-- AI Agent Floating Widget -->
     <div id="aiAgentWidget" class="ai-agent-widget panel-hidden">
@@ -8699,7 +8924,11 @@
         }
 
         async function deleteContactByUI(contactId) {
-            if (!confirm("Are you sure you want to delete this contact?")) {
+            const confirmed = await showCustomConfirm(
+                "Confirm Deletion",
+                "Are you sure you want to delete this contact?"
+            );
+            if (!confirmed) {
                 return;
             }
 
@@ -9035,8 +9264,8 @@
                 
                 renderTimelineSteps();
                 
-                // Fetch and populate collection templates dropdown
-                await loadCollectionTemplatesDropdown();
+                // Fetch and populate collection templates datalist
+                await populateTemplatesDatalist();
             }
         }
 
@@ -9053,28 +9282,183 @@
             }
         }
 
-        async function loadCollectionTemplatesDropdown() {
-            const select = document.getElementById("loadCollectionTemplateSelect");
-            if (!select) return;
+        let activeSelectedTemplateId = null;
 
-            select.innerHTML = `<option value="">-- Loading templates... --</option>`;
+        async function populateTemplatesDatalist() {
+            const panel = document.getElementById("customTemplatesDropdown");
+            if (!panel) return;
+
+            panel.innerHTML = "";
 
             try {
                 const res = await apiFetch("/collection-templates", { method: "GET" });
                 if (!res.ok) throw new Error("Failed to load templates.");
 
                 loadedCollectionTemplates = await res.json();
-                
-                select.innerHTML = `<option value="">-- Choose a template --</option>`;
-                loadedCollectionTemplates.forEach(tpl => {
-                    const opt = document.createElement("option");
-                    opt.value = tpl._id;
-                    opt.textContent = tpl.name;
-                    select.appendChild(opt);
-                });
+                renderTemplatesDropdownOptions();
             } catch (err) {
                 console.error("Error fetching templates:", err);
-                select.innerHTML = `<option value="">-- Error loading templates --</option>`;
+            }
+        }
+
+        function renderTemplatesDropdownOptions(filterText = "") {
+            const panel = document.getElementById("customTemplatesDropdown");
+            if (!panel) return;
+
+            panel.innerHTML = "";
+            const search = filterText.trim().toLowerCase();
+
+            const filtered = loadedCollectionTemplates.filter(t => 
+                t.name.trim().toLowerCase().includes(search)
+            );
+
+            if (filtered.length === 0) {
+                const noResult = document.createElement("div");
+                noResult.className = "custom-dropdown-option";
+                noResult.style.color = "rgba(255,255,255,0.4)";
+                noResult.style.fontStyle = "italic";
+                noResult.style.cursor = "default";
+                noResult.textContent = "No templates found";
+                panel.appendChild(noResult);
+                return;
+            }
+
+            filtered.forEach(tpl => {
+                const opt = document.createElement("div");
+                opt.className = "custom-dropdown-option";
+                if (String(tpl._id) === String(activeSelectedTemplateId)) {
+                    opt.classList.add("selected");
+                }
+
+                const nameSpan = document.createElement("span");
+                nameSpan.textContent = tpl.name;
+                opt.appendChild(nameSpan);
+
+                if (String(tpl._id) === String(activeSelectedTemplateId)) {
+                    const checkSvg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+                    checkSvg.setAttribute("class", "custom-dropdown-option-check");
+                    checkSvg.setAttribute("viewBox", "0 0 24 24");
+                    checkSvg.setAttribute("fill", "none");
+                    checkSvg.setAttribute("stroke", "currentColor");
+                    checkSvg.setAttribute("stroke-width", "3");
+                    checkSvg.setAttribute("stroke-linecap", "round");
+                    checkSvg.setAttribute("stroke-linejoin", "round");
+                    
+                    const poly = document.createElementNS("http://www.w3.org/2000/svg", "polyline");
+                    poly.setAttribute("points", "20 6 9 17 4 12");
+                    checkSvg.appendChild(poly);
+                    opt.appendChild(checkSvg);
+                }
+
+                opt.onmousedown = (e) => {
+                    e.preventDefault(); 
+                    selectTemplateFromDropdown(tpl);
+                };
+
+                panel.appendChild(opt);
+            });
+        }
+
+        function handleCollectionNameInputChange(val) {
+            renderTemplatesDropdownOptions(val);
+            
+            // Check for exact match (case-insensitive) to load
+            const matchedTemplate = loadedCollectionTemplates.find(
+                t => t.name.trim().toLowerCase() === val.trim().toLowerCase()
+            );
+            if (matchedTemplate) {
+                activeSelectedTemplateId = matchedTemplate._id;
+                loadSelectedCollectionTemplate(matchedTemplate._id);
+            } else {
+                activeSelectedTemplateId = null;
+            }
+        }
+
+        function selectTemplateFromDropdown(tpl) {
+            const input = document.getElementById("collectionNameInput");
+            if (input) {
+                input.value = tpl.name;
+            }
+            activeSelectedTemplateId = tpl._id;
+            loadSelectedCollectionTemplate(tpl._id);
+            toggleTemplatesDropdown(false);
+        }
+
+        function toggleTemplatesDropdown(show) {
+            const container = document.getElementById("templatesDropdownContainer");
+            if (!container) return;
+
+            if (show) {
+                container.classList.add("is-open");
+                const input = document.getElementById("collectionNameInput");
+                renderTemplatesDropdownOptions(input ? input.value : "");
+            } else {
+                container.classList.remove("is-open");
+            }
+        }
+
+        // Setup close on click outside for custom dropdown
+        document.addEventListener("click", (e) => {
+            const container = document.getElementById("templatesDropdownContainer");
+            if (container && !container.contains(e.target)) {
+                toggleTemplatesDropdown(false);
+            }
+        });
+
+        // Global Resolver for Custom Confirm Modal
+        let customConfirmResolver = null;
+
+        function showCustomConfirm(title, message, confirmLabel = "Delete", cancelLabel = "Cancel") {
+            return new Promise((resolve) => {
+                const overlay = document.getElementById("customConfirmOverlay");
+                const titleEl = document.getElementById("customConfirmTitle");
+                const messageEl = document.getElementById("customConfirmMessage");
+                const approveBtn = document.getElementById("customConfirmApproveBtn");
+                const cancelBtn = document.getElementById("customConfirmCancelBtn");
+
+                if (!overlay || !titleEl || !messageEl || !approveBtn || !cancelBtn) {
+                    resolve(false);
+                    return;
+                }
+
+                titleEl.textContent = title;
+                messageEl.textContent = message;
+                approveBtn.textContent = confirmLabel;
+                cancelBtn.textContent = cancelLabel;
+
+                customConfirmResolver = resolve;
+
+                overlay.classList.remove("panel-hidden");
+                requestAnimationFrame(() => {
+                    overlay.classList.add("is-visible");
+                    approveBtn.focus();
+                });
+                
+                syncOverlayScrollLock();
+            });
+        }
+
+        function resolveCustomConfirm(value) {
+            const overlay = document.getElementById("customConfirmOverlay");
+            if (!overlay) return;
+
+            overlay.classList.remove("is-visible");
+            setTimeout(() => {
+                overlay.classList.add("panel-hidden");
+                syncOverlayScrollLock();
+            }, 240);
+
+            if (customConfirmResolver) {
+                customConfirmResolver(value);
+                customConfirmResolver = null;
+            }
+        }
+
+        function handleCustomConfirmOverlayClick(event) {
+            const overlay = document.getElementById("customConfirmOverlay");
+            if (!overlay) return;
+            if (event.target === overlay) {
+                resolveCustomConfirm(false);
             }
         }
 
@@ -9175,8 +9559,62 @@
 
                 showToast(`💾 Template '${name}' saved successfully!`, "success");
                 
-                // Refresh dropdown
-                await loadCollectionTemplatesDropdown();
+                // Refresh templates list
+                await populateTemplatesDatalist();
+            } catch (err) {
+                showToast(err.message, "error");
+            }
+        }
+
+        async function deleteCollectionTemplate() {
+            const nameInput = document.getElementById("collectionNameInput");
+            if (!nameInput) return;
+
+            const val = nameInput.value.trim();
+            if (!val) {
+                showToast("Please type or select a template name to delete.", "error");
+                return;
+            }
+
+            const template = loadedCollectionTemplates.find(
+                t => t.name.trim().toLowerCase() === val.toLowerCase()
+            );
+
+            if (!template) {
+                showToast(`No stored template named '${val}' was found.`, "error");
+                return;
+            }
+
+            const confirmed = await showCustomConfirm(
+                "Confirm Deletion",
+                `Are you sure you want to delete the template '${template.name}'?`
+            );
+            if (!confirmed) {
+                return;
+            }
+
+            try {
+                const res = await apiFetch(`/collection-templates/${template._id}`, {
+                    method: "DELETE"
+                });
+
+                if (!res.ok) {
+                    const data = await res.json();
+                    throw new Error(data.error || "Failed to delete template.");
+                }
+
+                showToast(`🗑️ Template '${template.name}' deleted successfully!`, "success");
+                
+                // Clear the input
+                nameInput.value = "";
+                activeSelectedTemplateId = null;
+
+                // Reset timeline
+                timelineSteps = [];
+                renderTimelineSteps();
+
+                // Refresh templates list
+                await populateTemplatesDatalist();
             } catch (err) {
                 showToast(err.message, "error");
             }
