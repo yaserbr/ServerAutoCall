@@ -106,6 +106,10 @@ class CommandCollectionService {
       downloadDurationSeconds: template.downloadDurationSeconds || undefined,
       enabled: template.enabled !== undefined && template.enabled !== null ? template.enabled : undefined,
       autoHangupSeconds: template.autoHangupSeconds || undefined,
+      collectionId: collection._id,
+      collectionName: collection.name,
+      collectionStepIndex: idx,
+      collectionTotalSteps: collection.commandTemplates.length,
       status: "pending",
       isImmediate: true
     });
@@ -154,7 +158,10 @@ class CommandCollectionService {
 
     const normalizedStatus = String(newStatus).trim().toLowerCase();
     if (!["executed", "failed"].includes(normalizedStatus)) {
-      console.log(`[CommandCollection Service] Status "${normalizedStatus}" is not a terminal state. Skipping progression.`);
+      console.warn(`[CommandCollection Service] Invalid/non-terminal status callback ignored for collection progression.`, {
+        commandId,
+        status: normalizedStatus
+      });
       return;
     }
 
@@ -176,7 +183,10 @@ class CommandCollectionService {
       });
 
       if (!collections || collections.length === 0) {
-        console.log(`[CommandCollection Service] Result: No executing collections found for deviceUid: ${command.deviceUid}`);
+        console.warn(`[CommandCollection Service] Potentially stuck status callback: no executing collections found for deviceUid: ${command.deviceUid}`, {
+          commandId,
+          status: normalizedStatus
+        });
         return;
       }
 
@@ -187,7 +197,11 @@ class CommandCollectionService {
       });
 
       if (!collection) {
-        console.log(`[CommandCollection Service] Result: None of the active collections contain Command ID: ${commandId}`);
+        console.warn(`[CommandCollection Service] Potentially stuck status callback: no executing collection contains Command ID.`, {
+          commandId,
+          deviceUid: command.deviceUid,
+          executingCollectionCount: collections.length
+        });
         return;
       }
 
@@ -219,7 +233,12 @@ class CommandCollectionService {
           collection.currentIndex += 1;
           await collection.save();
           
-          console.log(`[CommandCollection Service] Saved advanced index to DB. Triggering queueNextCommand...`);
+          console.log(`[CommandCollection Service] Collection advancing to next step. Triggering queueNextCommand...`, {
+            collectionId: String(collection._id),
+            collectionName: collection.name,
+            nextStepIndex: collection.currentIndex,
+            totalSteps: collection.commandTemplates.length
+          });
           await this.queueNextCommand(collection);
         }
       } else if (normalizedStatus === "failed") {

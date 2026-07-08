@@ -122,6 +122,21 @@ const commandSchema = new mongoose.Schema(
     touchTarget: {
       type: String
     },
+    collectionId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "CommandCollection",
+      default: null,
+      index: true
+    },
+    collectionName: {
+      type: String
+    },
+    collectionStepIndex: {
+      type: Number
+    },
+    collectionTotalSteps: {
+      type: Number
+    },
     status: {
       type: String,
       enum: ["pending", "executing", "executed", "failed"],

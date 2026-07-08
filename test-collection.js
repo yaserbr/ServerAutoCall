@@ -144,6 +144,10 @@ async function runTests() {
   assert.strictEqual(mockSavedCommands.length, 1);
   assert.strictEqual(mockSavedCommands[0].action, "open_url");
   assert.strictEqual(mockSavedCommands[0].status, "pending");
+  assert.strictEqual(String(mockSavedCommands[0].collectionId), String(collection._id));
+  assert.strictEqual(mockSavedCommands[0].collectionName, "Daily System Prep");
+  assert.strictEqual(mockSavedCommands[0].collectionStepIndex, 0);
+  assert.strictEqual(mockSavedCommands[0].collectionTotalSteps, 3);
   assert.strictEqual(String(collection.activeCommandIds[0]), String(mockSavedCommands[0]._id));
   console.log("✅ Passed: Collection and first command created successfully.\n");
 
@@ -157,6 +161,10 @@ async function runTests() {
   assert.strictEqual(mockSavedCommands.length, 2);
   assert.strictEqual(mockSavedCommands[1].action, "download_data");
   assert.strictEqual(mockSavedCommands[1].status, "pending");
+  assert.strictEqual(String(mockSavedCommands[1].collectionId), String(collection._id));
+  assert.strictEqual(mockSavedCommands[1].collectionName, "Daily System Prep");
+  assert.strictEqual(mockSavedCommands[1].collectionStepIndex, 1);
+  assert.strictEqual(mockSavedCommands[1].collectionTotalSteps, 3);
   assert.strictEqual(String(collection.activeCommandIds[1]), String(mockSavedCommands[1]._id));
   console.log("✅ Passed: Collection advanced to index 1 and spawned download_data.\n");
 

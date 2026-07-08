@@ -1267,6 +1267,10 @@ function mapCommandForResponse(command) {
     endY: source.endY ?? null,
     durationMs: source.durationMs ?? null,
     touchTarget: source.touchTarget ?? null,
+    collectionId: source.collectionId ? String(source.collectionId) : null,
+    collectionName: source.collectionName ?? null,
+    collectionStepIndex: source.collectionStepIndex ?? null,
+    collectionTotalSteps: source.collectionTotalSteps ?? null,
     status: source.status,
     failureReason: source.failureReason ?? null,
     scheduledAt: formatUtcForRiyadhDisplay(source.scheduledAt),
@@ -3099,16 +3103,6 @@ app.post("/collections", requireAuth, async (req, res) => {
       currentUserId
     );
 
-    // Push the very first command to socket streams (just like a normal command creation)
-    const firstCommandId = collection.activeCommandIds[0];
-    if (firstCommandId) {
-      const command = await Command.findById(firstCommandId);
-      if (command) {
-        io.to(`device:${normalizedDeviceUid}`).emit("command:new", mapCommandForResponse(command));
-        io.to(`dashboard:${normalizedDeviceUid}`).emit("command:created", mapCommandForResponse(command));
-      }
-    }
-
     return res.status(201).json({
       success: true,
       collection: {
@@ -3492,6 +3486,13 @@ app.post("/commands/:id/status", requireAuthenticatedDevice, async (req, res) =>
   try {
     const { id } = req.params;
     const { status, failureReason, downloadDurationSeconds } = req.body;
+    console.log("[CommandStatus] Callback received", {
+      commandId: id,
+      deviceUid: req.deviceUid ?? null,
+      status: typeof status === "string" ? status.trim().toLowerCase() : status ?? null,
+      hasFailureReason: typeof failureReason === "string" && failureReason.trim() !== "",
+      downloadDurationSeconds: downloadDurationSeconds ?? null
+    });
 
     const command = mongoose.isValidObjectId(id)
       ? await Command.findById(id)
@@ -3524,6 +3525,11 @@ app.post("/commands/:id/status", requireAuthenticatedDevice, async (req, res) =>
     const validStatuses = new Set(["pending", "executing", "executed", "failed"]);
 
     if (!validStatuses.has(normalizedStatus)) {
+      console.warn("[CommandStatus] Invalid status callback rejected", {
+        commandId: id,
+        deviceUid: req.deviceUid ?? null,
+        status
+      });
       return res.status(400).json({
         error: "Invalid status. Only 'pending', 'executing', 'executed', and 'failed' are supported."
       });
@@ -3588,11 +3594,11 @@ app.post("/commands/:id/status", requireAuthenticatedDevice, async (req, res) =>
 
     // Trigger sequential command collection progress
     if (normalizedStatus === "executed" || normalizedStatus === "failed") {
-      CommandCollectionService.handleCommandStatusChange(
+      await CommandCollectionService.handleCommandStatusChange(
         command._id.toString(), // Explicitly pass command ID as string for robust matching
         normalizedStatus,
         command.failureReason
-      ).catch((err) => console.error("[Collection Hook Error]", err));
+      );
     }
 
     logCommandLifecycle("status_updated", {
