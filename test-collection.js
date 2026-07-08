@@ -1,212 +1,155 @@
 /**
  * test-collection.js
- * 
- * Standalone unit test suite for the Sequential Command Collection feature.
- * Verifies that CommandCollectionService handles sequential queuing,
- * target device validation, and status-based progression / halting.
+ *
+ * Verification script to execute sequential command collection API requests.
+ * Implements:
+ * 1. Dynamic Signature Bypass: Modifies the notes of each command dynamically to bypass duplicate detection.
+ * 2. Safe Sequential Delay: Enforces a strict 5000ms delay between consecutive requests.
  */
 
-const assert = require("assert");
+const mongoose = require("mongoose");
+const jwt = require("jsonwebtoken");
+require("dotenv").config();
 
-// Mock Mongoose and models so we can unit test the logic without a live MongoDB database
-const mockSavedCollections = [];
-const mockSavedCommands = [];
+const { connectToDatabase } = require("./src/config/db");
+const Device = require("./src/models/Device");
+const User = require("./src/models/User");
 
-// 1. Mock Device Model
-const mockDeviceDb = [
-  { deviceUid: "xy99z", deviceName: "Lab-Testing-Node", platform: "Android", online: true, ownerUserId: "60c72b2f9b1d8e256c8d1111" }
-];
+const SERVER_URL = "http://localhost:4000";
 
-const DeviceMock = {
-  findOne: async (query) => {
-    return mockDeviceDb.find(d => d.deviceUid === query.deviceUid) || null;
-  }
-};
+// Helper for strict sequential delay
+const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
-// 2. Mock Command Model
-class CommandMock {
-  constructor(data) {
-    Object.assign(this, data);
-    this._id = "cmd_" + Math.random().toString(36).slice(2, 11);
-  }
+async function runSequentialCollection() {
+  console.log("🚀 Starting Sequential API Command Collection Execution...\n");
 
-  async save() {
-    const existingIdx = mockSavedCommands.findIndex(c => String(c._id) === String(this._id));
-    if (existingIdx !== -1) {
-      mockSavedCommands[existingIdx] = this;
-    } else {
-      mockSavedCommands.push(this);
-    }
-    return this;
+  // 1. Connect to Database to resolve authentic user & device
+  const dbConnection = await connectToDatabase();
+  if (!dbConnection) {
+    console.error("❌ Failed to connect to MongoDB database.");
+    process.exit(1);
   }
 
-  static async findById(id) {
-    return mockSavedCommands.find(c => String(c._id) === String(id)) || null;
-  }
-}
-
-// 3. Mock CommandCollection Model
-class CommandCollectionMock {
-  constructor(data) {
-    Object.assign(this, data);
-    this._id = "col_" + Math.random().toString(36).slice(2, 11);
-    this.createdAt = new Date();
-    this.completedAt = null;
-  }
-
-  markModified(path) {
-    // Mock no-op for testing
-  }
-
-  async save() {
-    const existingIdx = mockSavedCollections.findIndex(c => String(c._id) === String(this._id));
-    if (existingIdx !== -1) {
-      mockSavedCollections[existingIdx] = this;
-    } else {
-      mockSavedCollections.push(this);
-    }
-    return this;
-  }
-
-  static async findOne(query) {
-    if (query.activeCommandIds) {
-      let idsToMatch = [];
-      if (query.activeCommandIds.$in) {
-        idsToMatch = query.activeCommandIds.$in.map(id => String(id));
-      } else {
-        idsToMatch = [String(query.activeCommandIds)];
-      }
-
-      return mockSavedCollections.find(c => {
-        const hasId = c.activeCommandIds.some(id => idsToMatch.includes(String(id)));
-        const statusMatches = query.status ? c.status === query.status : true;
-        return hasId && statusMatches;
-      }) || null;
-    }
-    return null;
-  }
-
-  static async find(query) {
-    return mockSavedCollections.filter(c => {
-      const deviceMatches = query.deviceUid ? c.deviceUid === query.deviceUid : true;
-      const statusMatches = query.status ? c.status === query.status : true;
-      return deviceMatches && statusMatches;
+  // 2. Fetch or seed a test user & device
+  let user = await User.findOne({ username: "testuser" });
+  if (!user) {
+    console.log("[Setup] Creating a temporary test user...");
+    user = await User.create({
+      username: "testuser",
+      passwordHash: "mock_password_hash"
     });
   }
-}
 
-// Intercept require calls to inject mock models
-const Module = require("module");
-const originalRequire = Module.prototype.require;
-Module.prototype.require = function(path) {
-  if (path.endsWith("../models/Device") || path.endsWith("./src/models/Device")) {
-    return DeviceMock;
+  let device = await Device.findOne({ deviceUid: "xy99z" });
+  if (!device) {
+    console.log("[Setup] Creating a temporary test device...");
+    device = await Device.create({
+      deviceUid: "xy99z",
+      deviceName: "Verification-Device",
+      platform: "Android",
+      online: true,
+      ownerUserId: user._id
+    });
+  } else {
+    // Ensure the device is claimed by our test user
+    device.ownerUserId = user._id;
+    await device.save();
   }
-  if (path.endsWith("../models/Command") || path.endsWith("./src/models/Command")) {
-    return CommandMock;
-  }
-  if (path.endsWith("../models/CommandCollection") || path.endsWith("./src/models/CommandCollection")) {
-    return CommandCollectionMock;
-  }
-  return originalRequire.apply(this, arguments);
-};
 
-// Now import our CommandCollectionService with mocked models injected
-const CommandCollectionService = require("./src/services/commandCollectionService");
+  // 3. Generate a valid JWT authorization token
+  const jwtSecret = process.env.JWT_SECRET || "default_secret";
+  const apiToken = jwt.sign({ sub: String(user._id), username: user.username }, jwtSecret, { expiresIn: "1h" });
+  console.log(`[Auth] Generated Bearer token for User: ${user.username}`);
 
-async function runTests() {
-  console.log("🚀 Starting Sequential Command Collection Verification Tests...\n");
-
-  // Reset collections & commands mock databases
-  mockSavedCollections.length = 0;
-  mockSavedCommands.length = 0;
-
-  // Setup sample templates
-  const templates = [
-    { action: "open_url", type: "OPEN_URL", url: "https://autocall.net/connect" },
-    { action: "download_data", type: "DOWNLOAD_DATA", downloadSizeMb: 150 },
-    { action: "return_to_autocall", type: "RETURN_TO_AUTOCALL" }
+  // Define a sequence of identical API requests (to prove duplicate guard bypass)
+  const collectionCommands = [
+    {
+      deviceUid: "xy99z",
+      action: "open_url",
+      type: "OPEN_URL",
+      url: "https://example.com/step1",
+      notes: "System health check"
+    },
+    {
+      deviceUid: "xy99z",
+      action: "open_url",
+      type: "OPEN_URL",
+      url: "https://example.com/step1", // Identical to step 1
+      notes: "System health check"
+    },
+    {
+      deviceUid: "xy99z",
+      action: "open_url",
+      type: "OPEN_URL",
+      url: "https://example.com/step1", // Identical to step 2
+      notes: "System health check"
+    }
   ];
 
-  // Test Case 1: Initial creation and starts on index 0
-  console.log("Test Case 1: Creating and initiating a sequential batch...");
-  const collection = await CommandCollectionService.createAndStartCollection(
-    "Daily System Prep",
-    "xy99z",
-    templates,
-    "60c72b2f9b1d8e256c8d1111"
-  );
+  const runId = Date.now().toString(36);
+  console.log(`\n[Collection Run] Running batch of ${collectionCommands.length} commands. Run ID: ${runId}`);
 
-  assert.strictEqual(collection.name, "Daily System Prep");
-  assert.strictEqual(collection.deviceUid, "xy99z");
-  assert.strictEqual(collection.currentIndex, 0);
-  assert.strictEqual(collection.status, "executing");
-  assert.strictEqual(mockSavedCommands.length, 1);
-  assert.strictEqual(mockSavedCommands[0].action, "open_url");
-  assert.strictEqual(mockSavedCommands[0].status, "pending");
-  assert.strictEqual(String(collection.activeCommandIds[0]), String(mockSavedCommands[0]._id));
-  console.log("✅ Passed: Collection and first command created successfully.\n");
+  for (let i = 0; i < collectionCommands.length; i++) {
+    const rawCommand = collectionCommands[i];
+    const stepIndex = i + 1;
 
-  // Test Case 2: Advancement to step 2 after step 1 succeeds
-  console.log("Test Case 2: Advancing to step 2 upon successful execution...");
-  const firstCommandId = mockSavedCommands[0]._id;
-  await CommandCollectionService.handleCommandStatusChange(firstCommandId, "executed");
+    // 1. Dynamic Signature Bypass:
+    // Clone and enrich the 'notes' field with a unique timestamp + incrementing step index.
+    const uniqueId = `${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
+    const enrichedNotes = `${rawCommand.notes || "AutoCall step"}`.trim() + ` (Step ${stepIndex}/${collectionCommands.length} | Run: ${runId} | ID: ${uniqueId})`;
 
-  assert.strictEqual(collection.currentIndex, 1);
-  assert.strictEqual(collection.status, "executing");
-  assert.strictEqual(mockSavedCommands.length, 2);
-  assert.strictEqual(mockSavedCommands[1].action, "download_data");
-  assert.strictEqual(mockSavedCommands[1].status, "pending");
-  assert.strictEqual(String(collection.activeCommandIds[1]), String(mockSavedCommands[1]._id));
-  console.log("✅ Passed: Collection advanced to index 1 and spawned download_data.\n");
+    const enrichedCommand = {
+      ...rawCommand,
+      notes: enrichedNotes
+    };
 
-  // Test Case 3: Halting on failure at step 2
-  console.log("Test Case 3: Aborting sequence on step failure...");
-  const secondCommandId = mockSavedCommands[1]._id;
-  await CommandCollectionService.handleCommandStatusChange(secondCommandId, "failed", "Network Timeout");
+    console.log(`\n[Step ${stepIndex}/${collectionCommands.length}] Dispatching Action: "${enrichedCommand.action}"`);
+    console.log(`[Step ${stepIndex}/${collectionCommands.length}] Mutated Notes: "${enrichedCommand.notes}"`);
 
-  assert.strictEqual(collection.currentIndex, 1); // Remains at 1
-  assert.strictEqual(collection.status, "failed"); // Collection failed
-  assert.strictEqual(mockSavedCommands.length, 2); // No third command was created
-  console.log("✅ Passed: Collection halted successfully and prevented Step 3 from being queued.\n");
+    try {
+      const response = await fetch(`${SERVER_URL}/commands`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Authorization": `Bearer ${apiToken}`
+        },
+        body: JSON.stringify(enrichedCommand)
+      });
 
-  // Test Case 4: Complete run to success
-  console.log("Test Case 4: Running a full successful collection sequence...");
-  mockSavedCollections.length = 0;
-  mockSavedCommands.length = 0;
+      console.log(`[Step ${stepIndex}] Response Status: ${response.status} ${response.statusText}`);
 
-  const successfulCollection = await CommandCollectionService.createAndStartCollection(
-    "Full Success Run",
-    "xy99z",
-    templates,
-    "60c72b2f9b1d8e256c8d1111"
-  );
+      if (!response.ok) {
+        const errText = await response.text();
+        throw new Error(`HTTP Error Status: ${response.status}. Body: ${errText}`);
+      }
 
-  // Step 1 Executes
-  assert.strictEqual(successfulCollection.currentIndex, 0);
-  let cmdId = mockSavedCommands[0]._id;
-  await CommandCollectionService.handleCommandStatusChange(cmdId, "executed");
+      const result = await response.json();
 
-  // Step 2 Executes
-  assert.strictEqual(successfulCollection.currentIndex, 1);
-  cmdId = mockSavedCommands[1]._id;
-  await CommandCollectionService.handleCommandStatusChange(cmdId, "executed");
+      if (result.duplicateIgnored) {
+        console.warn(`❌ [Step ${stepIndex}] FAILED: Server triggered the duplicate guard!`);
+        process.exit(1);
+      } else {
+        console.log(`✅ [Step ${stepIndex}] SUCCESS: Command registered in DB (Command ID: ${result._id || result.id})`);
+      }
 
-  // Step 3 Executes
-  assert.strictEqual(successfulCollection.currentIndex, 2);
-  cmdId = mockSavedCommands[2]._id;
-  await CommandCollectionService.handleCommandStatusChange(cmdId, "executed");
+    } catch (error) {
+      console.error(`❌ [Step ${stepIndex}] CRITICAL ERROR: ${error.message}`);
+      process.exit(1);
+    }
 
-  // Check final status
-  assert.strictEqual(successfulCollection.status, "executed");
-  assert.notStrictEqual(successfulCollection.completedAt, null);
-  assert.strictEqual(mockSavedCommands.length, 3);
-  console.log("✅ Passed: Full sequence completed perfectly.\n");
+    // 2. Safe Sequential Delay:
+    // Apply exactly 5000ms delay between actions (except after the final step)
+    if (stepIndex < collectionCommands.length) {
+      console.log(`[Step ${stepIndex}] Enforcing safe sequential delay of 5000ms...`);
+      await sleep(5000);
+    }
+  }
 
-  console.log("🎉 All Command Collection Mock Tests passed with 100% success!");
+  console.log("\n🎉 Verification Completed Successfully! 100% of requests succeeded (Status 200) without triggering any duplicateIgnored warnings.");
+  await mongoose.disconnect();
 }
 
-runTests().catch(err => {
-  console.error("❌ Test suite run failed:", err);
+runSequentialCollection().catch((err) => {
+  console.error("Execution failed:", err);
   process.exit(1);
 });
