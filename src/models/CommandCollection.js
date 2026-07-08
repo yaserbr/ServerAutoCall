@@ -132,6 +132,16 @@ const commandTemplateSchema = new mongoose.Schema(
     touchTarget: {
       type: String,
       default: null
+    },
+    delayAfterSeconds: {
+      type: Number,
+      default: 0,
+      min: 0,
+      max: 3600,
+      validate: {
+        validator: Number.isFinite,
+        message: "delayAfterSeconds must be a number between 0 and 3600."
+      }
     }
   },
   { _id: false }

@@ -3,9 +3,19 @@ const Command = require("../models/Command");
 const Device = require("../models/Device");
 const CommandCollection = require("../models/CommandCollection");
 
+const sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms));
+const MAX_DELAY_AFTER_SECONDS = 3600;
+
+function createValidationError(message) {
+  const error = new Error(message);
+  error.statusCode = 400;
+  return error;
+}
+
 class CommandCollectionService {
   static io = null;
   static mapCommandForResponse = null;
+  static sleep = sleep;
 
   /**
    * Initializes the service with Socket.io and response mapper callback.
@@ -15,6 +25,22 @@ class CommandCollectionService {
     this.io = io;
     this.mapCommandForResponse = mapCommandForResponse;
     console.log("[CommandCollection Service] Successfully initialized with WebSockets and Command Mapper.");
+  }
+
+  static normalizeDelayAfterSeconds(value, templateIndex) {
+    if (value === undefined || value === null || value === "") {
+      return 0;
+    }
+
+    if (typeof value !== "number" || !Number.isFinite(value)) {
+      throw createValidationError(`delayAfterSeconds for command template at index ${templateIndex} must be a number.`);
+    }
+
+    if (value < 0 || value > MAX_DELAY_AFTER_SECONDS) {
+      throw createValidationError(`delayAfterSeconds for command template at index ${templateIndex} must be between 0 and ${MAX_DELAY_AFTER_SECONDS}.`);
+    }
+
+    return value;
   }
 
   /**
@@ -49,11 +75,13 @@ class CommandCollectionService {
       }
       const action = String(tmpl.action).trim().toLowerCase();
       const type = tmpl.type ? String(tmpl.type).trim().toUpperCase() : action.toUpperCase();
+      const delayAfterSeconds = this.normalizeDelayAfterSeconds(tmpl.delayAfterSeconds, idx);
 
       return {
         ...tmpl,
         action,
-        type
+        type,
+        delayAfterSeconds
       };
     });
 
@@ -229,6 +257,9 @@ class CommandCollectionService {
           await collection.save();
           console.log(`[CommandCollection Service] Collection '${collection.name}' executed all steps successfully!`);
         } else {
+          const completedTemplate = collection.commandTemplates[idx] || {};
+          const delayAfterSeconds = this.normalizeDelayAfterSeconds(completedTemplate.delayAfterSeconds, idx);
+          console.log(`[CommandCollection Service] Delay configured after step ${idx + 1}/${collection.commandTemplates.length}: ${delayAfterSeconds}s`);
           console.log(`[CommandCollection Service] Progressing sequence. Incrementing currentIndex from ${idx} to ${idx + 1}`);
           collection.currentIndex += 1;
           await collection.save();
@@ -237,9 +268,22 @@ class CommandCollectionService {
             collectionId: String(collection._id),
             collectionName: collection.name,
             nextStepIndex: collection.currentIndex,
-            totalSteps: collection.commandTemplates.length
+            totalSteps: collection.commandTemplates.length,
+            delayAfterSeconds
           });
+          if (delayAfterSeconds > 0) {
+            console.log(`[CommandCollection Service] Waiting ${delayAfterSeconds}s before dispatching next collection command.`);
+            await this.sleep(delayAfterSeconds * 1000);
+          } else {
+            console.log(`[CommandCollection Service] No delay configured; dispatching next collection command immediately.`);
+          }
           await this.queueNextCommand(collection);
+          console.log(`[CommandCollection Service] Next command dispatched after delay.`, {
+            collectionId: String(collection._id),
+            collectionName: collection.name,
+            dispatchedStepIndex: collection.currentIndex,
+            delayAfterSeconds
+          });
         }
       } else if (normalizedStatus === "failed") {
         console.error(`[CommandCollection Service] HALTING SEQUENCE: Step ${idx + 1} reported failure. Reason: ${failureReason || "N/A"}`);

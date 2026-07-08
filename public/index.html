@@ -470,7 +470,7 @@
             border-radius: 12px;
         }
 
-        #headerCreateBatchBtn {
+        #headerCollectionsBtn {
             grid-column: 2;
             grid-row: 1;
             border-radius: 12px;
@@ -3519,15 +3519,19 @@
                     <div id="sessionInfo" class="session-info panel-hidden">
                         <button id="sessionLogoutBtn" class="danger-button" onclick="logout()">Logout</button>
                         <button
-                            id="headerCreateBatchBtn"
+                            id="headerCollectionsBtn"
                             type="button"
                             class="device-dropdown-trigger"
                             style="padding: 0; display: flex; align-items: center; justify-content: center; width: 100%; height: 100%;"
-                            title="Open Command Builder"
-                            onclick="openBatchModal()">
-                            <!-- Flash/Lightning Bolt Icon (SVG) -->
-                            <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="margin: 0;">
-                                <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"></polygon>
+                            title="Open Collections"
+                            aria-label="Open Collections"
+                            onclick="openCollectionModal()">
+                            <!-- Collection case icon -->
+                            <svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="margin: 0;">
+                                <path d="M8 7V5.6C8 4.2 9.2 3 10.6 3h2.8C14.8 3 16 4.2 16 5.6V7"></path>
+                                <path d="M5.5 11V9.5C5.5 8.1 6.6 7 8 7h8c1.4 0 2.5 1.1 2.5 2.5V11"></path>
+                                <rect x="3" y="10.5" width="18" height="10.5" rx="3"></rect>
+                                <path d="M5 11h14"></path>
                             </svg>
                         </button>
                         <div id="globalDeviceDropdown" class="device-dropdown">
@@ -3968,7 +3972,7 @@
                     background: rgba(103, 232, 249, 0.03);
                     }
 
-                    .batch-fields-grid {
+                    .collection-fields-grid {
                     display: grid;
                     grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
                     gap: 12px;
@@ -3976,25 +3980,25 @@
                     </style>
 
                     <!-- Sequential Command Collection Builder Modal -->
-                    <div id="batchCollectionOverlay" class="instructions-overlay panel-hidden" onclick="handleBatchOverlayClick(event)">
-                    <div class="instructions-modal" role="dialog" aria-modal="true" aria-labelledby="batchBuilderTitle" style="max-width: 750px; width: 90%; max-height: 90vh; display: flex; flex-direction: column;">
+                    <div id="collectionBuilderOverlay" class="instructions-overlay panel-hidden" onclick="handleCollectionOverlayClick(event)">
+                    <div class="instructions-modal" role="dialog" aria-modal="true" aria-labelledby="collectionBuilderTitle" style="max-width: 750px; width: 90%; max-height: 90vh; display: flex; flex-direction: column;">
                     <div class="instructions-header">
-                    <h3 id="batchBuilderTitle" class="instructions-title">⚡ Sequential Command Batch Builder</h3>
-                    <button type="button" class="instructions-close" aria-label="Close Batch Builder" onclick="closeBatchModal()">X</button>
+                    <h3 id="collectionBuilderTitle" class="instructions-title">Collections</h3>
+                    <button type="button" class="instructions-close" aria-label="Close Collections" onclick="closeCollectionModal()">X</button>
                     </div>
 
                     <div class="instructions-content" style="padding: 20px; overflow-y: auto; flex: 1;">
                     <!-- Metadata / Settings -->
                     <div style="display: flex; gap: 16px; margin-bottom: 24px; flex-wrap: wrap; align-items: flex-end;">
                         <div class="field-group" style="flex: 2; min-width: 250px; display: flex; flex-direction: column; gap: 6px;">
-                            <label class="field-label" style="font-weight: 600;" for="batchCollectionNameInput">Template Name</label>
+                            <label class="field-label" style="font-weight: 600;" for="collectionNameInput">Collection Name</label>
                             <div style="display: flex; gap: 10px;">
-                                <input id="batchCollectionNameInput" type="text" placeholder="e.g. Daily Device Provisioning" style="flex: 1; padding: 10px 14px; border-radius: 8px; border: 1px solid rgba(255,255,255,0.15); background: var(--bg-color, #0f172a); color: var(--text-color, #f8fafc);" />
-                                <button type="button" class="primary-button" onclick="saveAsCollectionTemplate()" style="border-radius: 8px; padding: 0 16px; font-weight: 600; cursor: pointer; height: 38px; display: inline-flex; align-items: center; justify-content: center;">💾 Save Template</button>
+                                <input id="collectionNameInput" type="text" placeholder="e.g. Daily Device Provisioning" style="flex: 1; padding: 10px 14px; border-radius: 8px; border: 1px solid rgba(255,255,255,0.15); background: var(--bg-color, #0f172a); color: var(--text-color, #f8fafc);" />
+                                <button type="button" class="primary-button" onclick="saveAsCollectionTemplate()" style="border-radius: 8px; padding: 0 16px; font-weight: 600; cursor: pointer; height: 38px; display: inline-flex; align-items: center; justify-content: center;">Save Template</button>
                             </div>
                         </div>
                         <div class="field-group" style="flex: 1; min-width: 200px; display: flex; flex-direction: column; gap: 6px;">
-                            <label class="field-label" style="font-weight: 600;" for="loadCollectionTemplateSelect">📂 Load Template</label>
+                            <label class="field-label" style="font-weight: 600;" for="loadCollectionTemplateSelect">Load Template</label>
                             <select id="loadCollectionTemplateSelect" onchange="loadSelectedCollectionTemplate(this.value)" style="padding: 10px 14px; border-radius: 8px; border: 1px solid rgba(255,255,255,0.15); background: var(--bg-color, #0f172a); color: var(--text-color, #f8fafc); cursor: pointer; height: 38px; width: 100%;">
                                 <option value="">-- Choose a template --</option>
                             </select>
@@ -4018,12 +4022,12 @@
 
                     <div class="instructions-footer" style="padding: 16px 20px; border-top: 1px solid rgba(255,255,255,0.1); display: flex; justify-content: space-between; align-items: center; gap: 12px; background: rgba(0,0,0,0.2); flex-wrap: wrap;">
                     <div class="field-group" style="display: flex; align-items: center; gap: 10px;">
-                        <label class="field-label" style="font-weight: 600; margin: 0; font-size: 0.9rem;" for="batchDeviceUidSelect">Target Device:</label>
-                        <select id="batchDeviceUidSelect" style="padding: 8px 12px; border-radius: 8px; border: 1px solid rgba(255,255,255,0.15); background: var(--bg-color, #0f172a); color: var(--text-color, #f8fafc); width: 180px; cursor: pointer; font-weight: 600; outline: none;"></select>
+                        <label class="field-label" style="font-weight: 600; margin: 0; font-size: 0.9rem;" for="collectionDeviceUidSelect">Target Device:</label>
+                        <select id="collectionDeviceUidSelect" style="padding: 8px 12px; border-radius: 8px; border: 1px solid rgba(255,255,255,0.15); background: var(--bg-color, #0f172a); color: var(--text-color, #f8fafc); width: 180px; cursor: pointer; font-weight: 600; outline: none;"></select>
                     </div>
                     <div style="display: flex; gap: 12px;">
-                        <button type="button" class="subtle-button" onclick="closeBatchModal()" style="border-radius: 10px; padding: 10px 20px; font-weight: 600; cursor: pointer;">Cancel</button>
-                        <button type="button" id="btnExecuteBatchSequence" class="primary-button" onclick="executeBatchCollection()" style="border-radius: 10px; padding: 10px 24px; font-weight: 600; cursor: pointer;">🚀 Execute Sequence</button>
+                        <button type="button" class="subtle-button" onclick="closeCollectionModal()" style="border-radius: 10px; padding: 10px 20px; font-weight: 600; cursor: pointer;">Cancel</button>
+                        <button type="button" id="btnExecuteCollectionSequence" class="primary-button" onclick="executeCollection()" style="border-radius: 10px; padding: 10px 24px; font-weight: 600; cursor: pointer;">Execute Collection</button>
                     </div>
                     </div>
                     </div>
@@ -4051,7 +4055,7 @@
         <section id="appSection" class="grid panel-hidden">
             <article class="card full-width">
                 <h2>Command Center</h2>
-                <div class="segmented-control" role="tablist" aria-label="Call Auto Answer SMS Open App Download Data WebView Batch Toggle">
+                <div class="segmented-control" role="tablist" aria-label="Call Auto Answer SMS Open App Download Data WebView Toggle">
                     <button id="callTabBtn" class="segmented-option active" role="tab" aria-selected="true"
                         onclick="setActionTab('call')">Call</button>
                     <button id="autoAnswerTabBtn" class="segmented-option" role="tab" aria-selected="false"
@@ -4064,8 +4068,6 @@
                         onclick="setActionTab('download_data')">Download Data</button>
                     <button id="webViewTabBtn" class="segmented-option" role="tab" aria-selected="false"
                         onclick="setActionTab('webview')">WebView</button>
-                    <button id="batchTabBtn" class="segmented-option" role="tab" aria-selected="false"
-                        onclick="setActionTab('batch')">Batch Builder</button>
                 </div>
                 <div id="callTabPanel" class="tab-panel active">
                     <h2>Send Call</h2>
@@ -7560,9 +7562,9 @@
             if (sessionInfo) {
                 sessionInfo.classList.remove("panel-hidden");
             }
-            const headerCreateBatchBtn = document.getElementById("headerCreateBatchBtn");
-            if (headerCreateBatchBtn) {
-                headerCreateBatchBtn.classList.remove("panel-hidden");
+            const headerCollectionsBtn = document.getElementById("headerCollectionsBtn");
+            if (headerCollectionsBtn) {
+                headerCollectionsBtn.classList.remove("panel-hidden");
             }
             const aiAgentWidget = document.getElementById("aiAgentWidget");
             if (aiAgentWidget) {
@@ -7605,9 +7607,9 @@
             if (sessionInfo) {
                 sessionInfo.classList.add("panel-hidden");
             }
-            const headerCreateBatchBtn = document.getElementById("headerCreateBatchBtn");
-            if (headerCreateBatchBtn) {
-                headerCreateBatchBtn.classList.add("panel-hidden");
+            const headerCollectionsBtn = document.getElementById("headerCollectionsBtn");
+            if (headerCollectionsBtn) {
+                headerCollectionsBtn.classList.add("panel-hidden");
             }
             const aiAgentWidget = document.getElementById("aiAgentWidget");
             if (aiAgentWidget) {
@@ -8992,12 +8994,12 @@
 
         /* TIMELINE COMMAND COLLECTION BUILDER JAVASCRIPT STATE ENGINE */
         let timelineSteps = [
-            { id: "tl_step_0", action: "open_url", params: { url: "https://example.com" } }
+            { id: "tl_step_0", action: "open_url", params: { url: "https://example.com" }, delayAfterSeconds: 0 }
         ];
         let loadedCollectionTemplates = []; // Local cache of templates
 
-        function populateBatchDeviceDropdown() {
-            const select = document.getElementById("batchDeviceUidSelect");
+        function populateCollectionDeviceDropdown() {
+            const select = document.getElementById("collectionDeviceUidSelect");
             if (!select) return;
 
             select.innerHTML = "";
@@ -9023,13 +9025,13 @@
             });
         }
 
-        async function openBatchModal() {
-            const overlay = document.getElementById("batchCollectionOverlay");
+        async function openCollectionModal() {
+            const overlay = document.getElementById("collectionBuilderOverlay");
             if (overlay) {
                 overlay.classList.remove("panel-hidden");
                 
                 // Populate target device dropdown dynamically from global devices array
-                populateBatchDeviceDropdown();
+                populateCollectionDeviceDropdown();
                 
                 renderTimelineSteps();
                 
@@ -9038,16 +9040,16 @@
             }
         }
 
-        function closeBatchModal() {
-            const overlay = document.getElementById("batchCollectionOverlay");
+        function closeCollectionModal() {
+            const overlay = document.getElementById("collectionBuilderOverlay");
             if (overlay) {
                 overlay.classList.add("panel-hidden");
             }
         }
 
-        function handleBatchOverlayClick(event) {
+        function handleCollectionOverlayClick(event) {
             if (event.target === event.currentTarget) {
-                closeBatchModal();
+                closeCollectionModal();
             }
         }
 
@@ -9086,7 +9088,7 @@
             }
 
             // Fill template name
-            const nameInput = document.getElementById("batchCollectionNameInput");
+            const nameInput = document.getElementById("collectionNameInput");
             if (nameInput) {
                 nameInput.value = template.name;
             }
@@ -9122,7 +9124,8 @@
                 return {
                     id: "tl_step_" + Math.random().toString(36).substring(2, 9),
                     action,
-                    params
+                    params,
+                    delayAfterSeconds: getTimelineDelayForPayload(tmpl)
                 };
             });
 
@@ -9131,7 +9134,7 @@
         }
 
         async function saveAsCollectionTemplate() {
-            const name = document.getElementById("batchCollectionNameInput").value.trim();
+            const name = document.getElementById("collectionNameInput").value.trim();
             if (!name) {
                 showToast("Please enter a name for the template.", "error");
                 return;
@@ -9146,6 +9149,7 @@
                 return {
                     action: step.action,
                     type: step.action.toUpperCase(),
+                    delayAfterSeconds: getTimelineDelayForPayload(step),
                     ...step.params
                 };
             });
@@ -9180,7 +9184,7 @@
 
         function addNewTimelineStep() {
             const id = "tl_step_" + Math.random().toString(36).substring(2, 9);
-            timelineSteps.push({ id, action: "open_url", params: { url: "" } });
+            timelineSteps.push({ id, action: "open_url", params: { url: "" }, delayAfterSeconds: 0 });
             renderTimelineSteps();
         }
 
@@ -9230,6 +9234,21 @@
             const step = timelineSteps.find(s => s.id === id);
             if (!step) return;
             step.params[key] = val;
+        }
+
+        function updateTimelineDelayAfterSeconds(id, value) {
+            const step = timelineSteps.find(s => s.id === id);
+            if (!step) return;
+            step.delayAfterSeconds = value === "" ? 0 : Number(value);
+        }
+
+        function getTimelineDelayForPayload(step) {
+            const rawValue = step?.delayAfterSeconds;
+            if (rawValue === undefined || rawValue === null || rawValue === "") {
+                return 0;
+            }
+            const value = Number(rawValue);
+            return Number.isFinite(value) ? value : 0;
         }
 
         function renderTimelineSteps() {
@@ -9329,7 +9348,7 @@
 
                 // Fields Grid
                 const grid = document.createElement("div");
-                grid.className = "batch-fields-grid";
+                grid.className = "collection-fields-grid";
 
                 // Conditional Param inputs ONLY for allowed actions
                 if (step.action === "open_url") {
@@ -9370,10 +9389,46 @@
                     grid.appendChild(createTimelineInputField(step.id, "autoHangupSeconds", "Auto Hangup (Sec)", "number", step.params.autoHangupSeconds || 15, "e.g. 20"));
                 }
 
+                grid.appendChild(createTimelineDelayField(step));
                 card.appendChild(grid);
                 item.appendChild(card);
                 container.appendChild(item);
             });
+        }
+
+        function createTimelineDelayField(step) {
+            const group = document.createElement("div");
+            group.className = "field-group";
+            group.style.display = "flex";
+            group.style.flexDirection = "column";
+            group.style.gap = "6px";
+
+            const label = document.createElement("label");
+            label.className = "field-label";
+            label.style.fontSize = "11px";
+            label.textContent = "Delay after this command (seconds)";
+            group.appendChild(label);
+
+            const input = document.createElement("input");
+            input.type = "number";
+            input.min = "0";
+            input.max = "3600";
+            input.step = "1";
+            input.value = String(getTimelineDelayForPayload(step));
+            input.placeholder = "0";
+            input.style.padding = "8px 12px";
+            input.style.borderRadius = "8px";
+            input.style.border = "1px solid rgba(255,255,255,0.15)";
+            input.style.background = "#0b1220";
+            input.style.color = "#f8fafc";
+            input.style.outline = "none";
+
+            input.oninput = (event) => {
+                updateTimelineDelayAfterSeconds(step.id, event.target.value);
+            };
+
+            group.appendChild(input);
+            return group;
         }
 
         function createTimelineInputField(id, field, labelText, type, value, placeholder) {
@@ -9409,9 +9464,9 @@
             return group;
         }
 
-        async function executeBatchCollection() {
-            const name = document.getElementById("batchCollectionNameInput").value.trim();
-            const deviceUidSelect = document.getElementById("batchDeviceUidSelect");
+        async function executeCollection() {
+            const name = document.getElementById("collectionNameInput").value.trim();
+            const deviceUidSelect = document.getElementById("collectionDeviceUidSelect");
             const deviceUid = deviceUidSelect ? deviceUidSelect.value.trim().toLowerCase() : "";
 
             if (!name) {
@@ -9423,7 +9478,7 @@
                 return;
             }
             if (timelineSteps.length === 0) {
-                showToast("A sequential batch requires at least one command step.", "error");
+                showToast("A collection requires at least one command step.", "error");
                 return;
             }
 
@@ -9431,6 +9486,7 @@
                 return {
                     action: step.action,
                     type: step.action.toUpperCase(),
+                    delayAfterSeconds: getTimelineDelayForPayload(step),
                     ...step.params
                 };
             });
@@ -9441,7 +9497,7 @@
                 commandTemplates: templatesPayload
             };
 
-            const submitBtn = document.getElementById("btnExecuteBatchSequence");
+            const submitBtn = document.getElementById("btnExecuteCollectionSequence");
             const originalText = submitBtn.textContent;
             submitBtn.disabled = true;
             submitBtn.textContent = "🚀 Executing...";
@@ -9458,13 +9514,13 @@
                 const data = await res.json();
                 if (!res.ok) throw new Error(data.error || "Failed to execute sequence.");
 
-                showToast(`🎉 Success! Batch '${data.collection.name}' started successfully!`, "success");
+                showToast(`Collection '${data.collection.name}' started successfully!`, "success");
                 
-                closeBatchModal();
+                closeCollectionModal();
                 
                 // Clear state
-                document.getElementById("batchCollectionNameInput").value = "";
-                timelineSteps = [{ id: "tl_step_0", action: "open_url", params: { url: "" } }];
+                document.getElementById("collectionNameInput").value = "";
+                timelineSteps = [{ id: "tl_step_0", action: "open_url", params: { url: "" }, delayAfterSeconds: 0 }];
                 
                 if (typeof loadCommands === "function") {
                     await loadCommands();

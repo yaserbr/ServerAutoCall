@@ -3059,7 +3059,7 @@ app.post("/commands", requireAuth, async (req, res) => {
 });
 
 // =====================
-// Create command collection (batch)
+// Create command collection
 // =====================
 app.post("/collections", requireAuth, async (req, res) => {
   try {
@@ -3118,6 +3118,9 @@ app.post("/collections", requireAuth, async (req, res) => {
       }
     });
   } catch (error) {
+    if (error?.statusCode === 400) {
+      return res.status(400).json({ error: error.message });
+    }
     return handleServerError(res, error, "POST /collections");
   }
 });
@@ -3164,11 +3167,13 @@ app.post("/collection-templates", requireAuth, async (req, res) => {
 
       const action = String(tmpl.action).trim().toLowerCase();
       const type = tmpl.type ? String(tmpl.type).trim().toUpperCase() : action.toUpperCase();
+      const delayAfterSeconds = CommandCollectionService.normalizeDelayAfterSeconds(tmpl.delayAfterSeconds, idx);
 
       return {
         ...tmpl,
         action,
-        type
+        type,
+        delayAfterSeconds
       };
     });
 
@@ -3187,7 +3192,7 @@ app.post("/collection-templates", requireAuth, async (req, res) => {
 
     return res.status(201).json(template);
   } catch (error) {
-    if (error.message?.includes("missing 'action' field")) {
+    if (error.statusCode === 400 || error.message?.includes("missing 'action' field")) {
       return res.status(400).json({ error: error.message });
     }
     return handleServerError(res, error, "POST /collection-templates");

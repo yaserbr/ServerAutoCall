@@ -129,7 +129,7 @@ async function runTests() {
   ];
 
   // Test Case 1: Initial creation and starts on index 0
-  console.log("Test Case 1: Creating and initiating a sequential batch...");
+  console.log("Test Case 1: Creating and initiating a sequential collection...");
   const collection = await CommandCollectionService.createAndStartCollection(
     "Daily System Prep",
     "xy99z",
@@ -209,6 +209,65 @@ async function runTests() {
   assert.strictEqual(successfulCollection.status, "executed");
   assert.notStrictEqual(successfulCollection.completedAt, null);
   assert.strictEqual(mockSavedCommands.length, 3);
+
+  // Test Case 5: Delay metadata waits before the next command is queued
+  console.log("Test Case 5: Applying delayAfterSeconds before dispatching the next command...");
+  mockSavedCollections.length = 0;
+  mockSavedCommands.length = 0;
+
+  const delayedTemplates = [
+    { action: "call", type: "CALL", phoneNumber: "+966500000000", delayAfterSeconds: 5 },
+    { action: "sms", type: "SMS", phoneNumber: "+966500000000", message: "Done", delayAfterSeconds: 0 }
+  ];
+
+  let observedDelayMs = null;
+  const originalSleep = CommandCollectionService.sleep;
+  CommandCollectionService.sleep = async (ms) => {
+    observedDelayMs = ms;
+  };
+
+  try {
+    const delayedCollection = await CommandCollectionService.createAndStartCollection(
+      "Delayed Follow Up",
+      "xy99z",
+      delayedTemplates,
+      "60c72b2f9b1d8e256c8d1111"
+    );
+
+    assert.strictEqual(delayedCollection.commandTemplates[0].delayAfterSeconds, 5);
+    assert.strictEqual(mockSavedCommands.length, 1);
+    await CommandCollectionService.handleCommandStatusChange(mockSavedCommands[0]._id, "executed");
+
+    assert.strictEqual(observedDelayMs, 5000);
+    assert.strictEqual(delayedCollection.currentIndex, 1);
+    assert.strictEqual(mockSavedCommands.length, 2);
+    assert.strictEqual(mockSavedCommands[1].action, "sms");
+  } finally {
+    CommandCollectionService.sleep = originalSleep;
+  }
+  console.log("Passed: Delay was enforced before the next command was dispatched.\n");
+
+  // Test Case 6: Invalid delay values are rejected
+  console.log("Test Case 6: Rejecting invalid delayAfterSeconds values...");
+  await assert.rejects(
+    () => CommandCollectionService.createAndStartCollection(
+      "Invalid Negative Delay",
+      "xy99z",
+      [{ action: "call", type: "CALL", phoneNumber: "+966500000000", delayAfterSeconds: -1 }],
+      "60c72b2f9b1d8e256c8d1111"
+    ),
+    /delayAfterSeconds.*between 0 and 3600/
+  );
+  await assert.rejects(
+    () => CommandCollectionService.createAndStartCollection(
+      "Invalid Huge Delay",
+      "xy99z",
+      [{ action: "call", type: "CALL", phoneNumber: "+966500000000", delayAfterSeconds: 999999 }],
+      "60c72b2f9b1d8e256c8d1111"
+    ),
+    /delayAfterSeconds.*between 0 and 3600/
+  );
+  console.log("Passed: Out-of-range delays were rejected.\n");
   console.log("✅ Passed: Full sequence completed perfectly.\n");
 
   console.log("🎉 All Command Collection Mock Tests passed with 100% success!");
