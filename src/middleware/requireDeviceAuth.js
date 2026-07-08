@@ -81,6 +81,12 @@ function extractDeviceTokenFromRequest(req) {
 }
 
 function rejectUnauthorized(req, res, reason, extra = {}) {
+  console.warn("[DeviceAuth] Device request rejected", {
+    reason,
+    path: req.originalUrl,
+    method: req.method,
+    deviceUid: extra.deviceUid ?? null
+  });
   logSecurityEvent("device_auth_failed", {
     reason,
     ip: req.ip,

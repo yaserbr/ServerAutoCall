@@ -9,18 +9,8 @@ function normalizeDeviceUid(value) {
   return DEVICE_UID_REGEX.test(normalized) ? normalized : "";
 }
 
-const commandSchema = new mongoose.Schema(
+const commandTemplateSchema = new mongoose.Schema(
   {
-    deviceUid: {
-      type: String,
-      required: true,
-      trim: true,
-      lowercase: true,
-      minlength: DEVICE_UID_LENGTH,
-      maxlength: DEVICE_UID_LENGTH,
-      match: DEVICE_UID_REGEX,
-      index: true
-    },
     action: {
       type: String,
       required: true,
@@ -60,82 +50,129 @@ const commandSchema = new mongoose.Schema(
       ]
     },
     phoneNumber: {
-      type: String
+      type: String,
+      default: null
     },
     message: {
-      type: String
+      type: String,
+      default: null
     },
     url: {
-      type: String
+      type: String,
+      default: null
     },
     appName: {
-      type: String
+      type: String,
+      default: null
     },
     resolvedPackageName: {
-      type: String
+      type: String,
+      default: null
     },
     notes: {
-      type: String
+      type: String,
+      default: null
     },
     durationSeconds: {
-      type: Number
+      type: Number,
+      default: null
     },
     downloadSizeMb: {
-      type: Number
+      type: Number,
+      default: null
     },
     downloadDurationSeconds: {
-      type: Number
+      type: Number,
+      default: null
     },
     enabled: {
-      type: Boolean
+      type: Boolean,
+      default: null
     },
     autoHangupSeconds: {
-      type: Number
+      type: Number,
+      default: null
     },
     x: {
-      type: Number
+      type: Number,
+      default: null
     },
     y: {
-      type: Number
+      type: Number,
+      default: null
     },
     screenWidth: {
-      type: Number
+      type: Number,
+      default: null
     },
     screenHeight: {
-      type: Number
+      type: Number,
+      default: null
     },
     startX: {
-      type: Number
+      type: Number,
+      default: null
     },
     startY: {
-      type: Number
+      type: Number,
+      default: null
     },
     endX: {
-      type: Number
+      type: Number,
+      default: null
     },
     endY: {
-      type: Number
+      type: Number,
+      default: null
     },
     durationMs: {
-      type: Number
+      type: Number,
+      default: null
     },
     touchTarget: {
-      type: String
+      type: String,
+      default: null
+    }
+  },
+  { _id: false }
+);
+
+const commandCollectionSchema = new mongoose.Schema(
+  {
+    name: {
+      type: String,
+      required: true,
+      trim: true
     },
-    collectionId: {
+    deviceUid: {
+      type: String,
+      required: true,
+      trim: true,
+      lowercase: true,
+      minlength: DEVICE_UID_LENGTH,
+      maxlength: DEVICE_UID_LENGTH,
+      match: DEVICE_UID_REGEX,
+      index: true
+    },
+    ownerUserId: {
       type: mongoose.Schema.Types.ObjectId,
-      ref: "CommandCollection",
+      ref: "User",
       default: null,
       index: true
     },
-    collectionName: {
-      type: String
+    commandTemplates: {
+      type: [commandTemplateSchema],
+      required: true,
+      validate: {
+        validator: function(v) {
+          return Array.isArray(v) && v.length > 0;
+        },
+        message: "A command collection must contain at least one command template."
+      }
     },
-    collectionStepIndex: {
-      type: Number
-    },
-    collectionTotalSteps: {
-      type: Number
+    activeCommandIds: {
+      type: [mongoose.Schema.Types.Mixed],
+      default: []
     },
     status: {
       type: String,
@@ -143,22 +180,17 @@ const commandSchema = new mongoose.Schema(
       default: "pending",
       index: true
     },
-    failureReason: {
-      type: String
-    },
-    scheduledAt: {
-      type: Date
-    },
-    isImmediate: {
-      type: Boolean,
-      default: true
+    currentIndex: {
+      type: Number,
+      default: 0
     },
     createdAt: {
       type: Date,
       default: Date.now
     },
-    executedAt: {
-      type: Date
+    completedAt: {
+      type: Date,
+      default: null
     }
   },
   {
@@ -166,11 +198,8 @@ const commandSchema = new mongoose.Schema(
   }
 );
 
-commandSchema.pre("validate", function normalizeUidBeforeValidation() {
+commandCollectionSchema.pre("validate", function normalizeUidBeforeValidation() {
   this.deviceUid = normalizeDeviceUid(this.deviceUid);
 });
 
-commandSchema.index({ deviceUid: 1, status: 1 });
-commandSchema.index({ isImmediate: -1, scheduledAt: 1, createdAt: -1 });
-
-module.exports = mongoose.model("Command", commandSchema);
+module.exports = mongoose.model("CommandCollection", commandCollectionSchema);

@@ -42,6 +42,9 @@ const {
   canDashboardJoinDevice
 } = require("./src/socket/auth");
 const { runAgentOrchestrator } = require("./src/services/agentService");
+const CommandCollection = require("./src/models/CommandCollection");
+const CommandCollectionService = require("./src/services/commandCollectionService");
+const CollectionTemplate = require("./src/models/CollectionTemplate");
 
 const app = express();
 const httpServer = http.createServer(app);
@@ -1264,6 +1267,10 @@ function mapCommandForResponse(command) {
     endY: source.endY ?? null,
     durationMs: source.durationMs ?? null,
     touchTarget: source.touchTarget ?? null,
+    collectionId: source.collectionId ? String(source.collectionId) : null,
+    collectionName: source.collectionName ?? null,
+    collectionStepIndex: source.collectionStepIndex ?? null,
+    collectionTotalSteps: source.collectionTotalSteps ?? null,
     status: source.status,
     failureReason: source.failureReason ?? null,
     scheduledAt: formatUtcForRiyadhDisplay(source.scheduledAt),
@@ -3052,6 +3059,142 @@ app.post("/commands", requireAuth, async (req, res) => {
 });
 
 // =====================
+// Create command collection (batch)
+// =====================
+app.post("/collections", requireAuth, async (req, res) => {
+  try {
+    const { name, deviceUid, commandTemplates } = req.body;
+
+    const normalizedDeviceUid = normalizeDeviceUid(deviceUid);
+    if (!normalizedDeviceUid) {
+      return res.status(400).json({ error: DEVICE_UID_FORMAT_ERROR });
+    }
+
+    const currentUserId = normalizeAuthUserId(req.user?.id);
+    if (!currentUserId) {
+      return res.status(401).json({ error: "Unauthorized" });
+    }
+
+    const targetDevice = await Device.findOne({ deviceUid: normalizedDeviceUid });
+    if (!targetDevice) {
+      return res.status(404).json({ error: "Device not found" });
+    }
+
+    if (!targetDevice.ownerUserId) {
+      return res.status(403).json({ error: "Device is not claimed" });
+    }
+
+    if (!isDeviceOwnedByUser(targetDevice, currentUserId)) {
+      return res.status(403).json({ error: "Forbidden" });
+    }
+
+    if (!name || typeof name !== "string" || !name.trim()) {
+      return res.status(400).json({ error: "Collection name is required and must be a non-empty string" });
+    }
+
+    if (!Array.isArray(commandTemplates) || commandTemplates.length === 0) {
+      return res.status(400).json({ error: "commandTemplates is required and must be a non-empty array" });
+    }
+
+    const collection = await CommandCollectionService.createAndStartCollection(
+      name,
+      normalizedDeviceUid,
+      commandTemplates,
+      currentUserId
+    );
+
+    return res.status(201).json({
+      success: true,
+      collection: {
+        id: String(collection._id),
+        name: collection.name,
+        deviceUid: collection.deviceUid,
+        status: collection.status,
+        currentIndex: collection.currentIndex,
+        createdAt: formatUtcForRiyadhDisplay(collection.createdAt),
+        completedAt: formatUtcForRiyadhDisplay(collection.completedAt),
+        commandTemplates: collection.commandTemplates,
+        activeCommandIds: collection.activeCommandIds
+      }
+    });
+  } catch (error) {
+    return handleServerError(res, error, "POST /collections");
+  }
+});
+
+// ==========================================
+// Collection Templates Routes
+// ==========================================
+app.get("/collection-templates", requireAuth, async (req, res) => {
+  try {
+    const currentUserId = normalizeAuthUserId(req.user?.id);
+    if (!currentUserId) {
+      return res.status(401).json({ error: "Unauthorized" });
+    }
+
+    const templates = await CollectionTemplate.find({ ownerUserId: currentUserId }).sort({ name: 1 });
+    return res.json(templates);
+  } catch (error) {
+    return handleServerError(res, error, "GET /collection-templates");
+  }
+});
+
+app.post("/collection-templates", requireAuth, async (req, res) => {
+  try {
+    const currentUserId = normalizeAuthUserId(req.user?.id);
+    if (!currentUserId) {
+      return res.status(401).json({ error: "Unauthorized" });
+    }
+
+    const { name, commandTemplates } = req.body;
+
+    if (!name || typeof name !== "string" || !name.trim()) {
+      return res.status(400).json({ error: "Template name is required and must be a non-empty string" });
+    }
+
+    if (!Array.isArray(commandTemplates) || commandTemplates.length === 0) {
+      return res.status(400).json({ error: "commandTemplates is required and must be a non-empty array" });
+    }
+
+    // Map and sanitize commandTemplates fields
+    const processedTemplates = commandTemplates.map((tmpl, idx) => {
+      if (!tmpl.action) {
+        throw new Error(`Command template at index ${idx} is missing 'action' field.`);
+      }
+
+      const action = String(tmpl.action).trim().toLowerCase();
+      const type = tmpl.type ? String(tmpl.type).trim().toUpperCase() : action.toUpperCase();
+
+      return {
+        ...tmpl,
+        action,
+        type
+      };
+    });
+
+    // Save or update template
+    let template = await CollectionTemplate.findOne({ ownerUserId: currentUserId, name: name.trim() });
+    if (template) {
+      template.commandTemplates = processedTemplates;
+      await template.save();
+    } else {
+      template = await CollectionTemplate.create({
+        ownerUserId: currentUserId,
+        name: name.trim(),
+        commandTemplates: processedTemplates
+      });
+    }
+
+    return res.status(201).json(template);
+  } catch (error) {
+    if (error.message?.includes("missing 'action' field")) {
+      return res.status(400).json({ error: error.message });
+    }
+    return handleServerError(res, error, "POST /collection-templates");
+  }
+});
+
+// =====================
 // Claim next command (atomic pending -> executing)
 // =====================
 app.post("/commands/claim", requireAuthenticatedDevice, async (req, res) => {
@@ -3343,6 +3486,13 @@ app.post("/commands/:id/status", requireAuthenticatedDevice, async (req, res) =>
   try {
     const { id } = req.params;
     const { status, failureReason, downloadDurationSeconds } = req.body;
+    console.log("[CommandStatus] Callback received", {
+      commandId: id,
+      deviceUid: req.deviceUid ?? null,
+      status: typeof status === "string" ? status.trim().toLowerCase() : status ?? null,
+      hasFailureReason: typeof failureReason === "string" && failureReason.trim() !== "",
+      downloadDurationSeconds: downloadDurationSeconds ?? null
+    });
 
     const command = mongoose.isValidObjectId(id)
       ? await Command.findById(id)
@@ -3375,6 +3525,11 @@ app.post("/commands/:id/status", requireAuthenticatedDevice, async (req, res) =>
     const validStatuses = new Set(["pending", "executing", "executed", "failed"]);
 
     if (!validStatuses.has(normalizedStatus)) {
+      console.warn("[CommandStatus] Invalid status callback rejected", {
+        commandId: id,
+        deviceUid: req.deviceUid ?? null,
+        status
+      });
       return res.status(400).json({
         error: "Invalid status. Only 'pending', 'executing', 'executed', and 'failed' are supported."
       });
@@ -3436,6 +3591,15 @@ app.post("/commands/:id/status", requireAuthenticatedDevice, async (req, res) =>
     }
 
     await command.save();
+
+    // Trigger sequential command collection progress
+    if (normalizedStatus === "executed" || normalizedStatus === "failed") {
+      await CommandCollectionService.handleCommandStatusChange(
+        command._id.toString(), // Explicitly pass command ID as string for robust matching
+        normalizedStatus,
+        command.failureReason
+      );
+    }
 
     logCommandLifecycle("status_updated", {
       commandId: commandIdFrom(command),
@@ -3894,6 +4058,9 @@ async function startServer() {
   warnIfJwtSecretMissing();
   warnIfLegacyDeviceAuthFallbackEnabled();
   startPairingTokenMemoryCleanupLoop();
+
+  // Initialize Sequential Command Collection Service with Socket.io and Mapper
+  CommandCollectionService.initialize(io, mapCommandForResponse);
 
   httpServer.listen(PORT, "0.0.0.0", () => {
     console.log(`Server running on port ${PORT}`);
