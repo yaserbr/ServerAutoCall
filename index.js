@@ -42,7 +42,6 @@ const {
   canDashboardJoinDevice
 } = require("./src/socket/auth");
 const { runAgentOrchestrator } = require("./src/services/agentService");
-const CommandCollection = require("./src/models/CommandCollection");
 const CommandCollectionService = require("./src/services/commandCollectionService");
 const CollectionTemplate = require("./src/models/CollectionTemplate");
 
@@ -2155,22 +2154,12 @@ app.get("/devices", requireAuth, async (req, res) => {
       ...(includeUnclaimed
         ? { $or: [{ ownerUserId: currentUserId }, { ownerUserId: null }] }
         : { ownerUserId: currentUserId })
-    });
+    }).lean();
     const mappedDevices = await mapDeviceListForResponseWithLinkedAccount(devices);
 
     return res.json(mappedDevices);
   } catch (error) {
     return handleServerError(res, error, "GET /devices");
-  }
-});
-
-app.post("/devices/claim", requireAuth, async (req, res) => {
-  try {
-    return res.status(410).json({
-      error: "Legacy device claim is disabled. Use secure pairing."
-    });
-  } catch (error) {
-    return handleServerError(res, error, "POST /devices/claim");
   }
 });
 
@@ -3135,7 +3124,7 @@ app.get("/collection-templates", requireAuth, async (req, res) => {
       return res.status(401).json({ error: "Unauthorized" });
     }
 
-    const templates = await CollectionTemplate.find({ ownerUserId: currentUserId }).sort({ name: 1 });
+    const templates = await CollectionTemplate.find({ ownerUserId: currentUserId }).sort({ name: 1 }).lean();
     return res.json(templates);
   } catch (error) {
     return handleServerError(res, error, "GET /collection-templates");
@@ -3344,7 +3333,7 @@ app.get("/commands", requireAuth, async (req, res) => {
 
     filter.createdAt = { $gte: last24HoursCutoff };
 
-    const result = await Command.find(filter);
+    const result = await Command.find(filter).lean();
 
     const sortedResult = [...result].sort((a, b) => {
       const aImmediate = !a.scheduledAt;
@@ -3675,7 +3664,7 @@ app.get(["/contacts", "/api/contacts"], requireAuth, async (req, res) => {
       return res.status(401).json({ error: "Unauthorized" });
     }
 
-    const contacts = await Contact.find({ userId: currentUserId }).sort({ name: 1 });
+    const contacts = await Contact.find({ userId: currentUserId }).sort({ name: 1 }).lean();
     return res.json(contacts);
   } catch (error) {
     return handleServerError(res, error, "GET /contacts");

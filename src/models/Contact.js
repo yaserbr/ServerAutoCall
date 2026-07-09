@@ -27,5 +27,6 @@ const contactSchema = new mongoose.Schema(
 
 // Compound unique index per user to prevent duplicate contact names
 contactSchema.index({ userId: 1, name: 1 }, { unique: true });
+contactSchema.index({ userId: 1, phoneNumber: 1 });
 
 module.exports = mongoose.model("Contact", contactSchema);

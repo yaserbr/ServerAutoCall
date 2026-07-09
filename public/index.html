@@ -4212,7 +4212,7 @@
                     <!-- Metadata / Settings -->
                     <div style="display: flex; gap: 16px; margin-bottom: 24px; flex-wrap: wrap; align-items: flex-end; width: 100%;">
                         <div class="field-group" style="flex: 1; min-width: 300px; display: flex; flex-direction: column; gap: 6px; width: 100%;">
-                            <label class="field-label" style="font-weight: 600;" for="collectionNameInput">Collection / Template Name</label>
+                            <label class="field-label" style="font-weight: 600;" for="collectionNameInput">Collection Name</label>
                             <div style="display: flex; gap: 10px; width: 100%; flex-wrap: wrap; align-items: center;">
                                 <div class="custom-dropdown-container" id="templatesDropdownContainer">
                                     <input id="collectionNameInput" type="text" placeholder="Type name or select template..." onfocus="toggleTemplatesDropdown(true)" oninput="handleCollectionNameInputChange(this.value)" class="custom-dropdown-input" />
@@ -9467,7 +9467,7 @@
 
             const template = loadedCollectionTemplates.find(t => String(t._id) === String(templateId));
             if (!template) {
-                showToast("Template not found in cache.", "error");
+                showToast("Collection not found in cache.", "error");
                 return;
             }
 
@@ -9525,7 +9525,7 @@
             }
 
             if (timelineSteps.length === 0) {
-                showToast("A template requires at least one command step.", "error");
+                showToast("A Collection requires at least one command step.", "error");
                 return;
             }
 
@@ -9557,7 +9557,7 @@
                     throw new Error(data.error || "Failed to save template.");
                 }
 
-                showToast(`💾 Template '${name}' saved successfully!`, "success");
+                showToast(`💾 Collection  '${name}' saved successfully!`, "success");
                 
                 // Refresh templates list
                 await populateTemplatesDatalist();
@@ -9572,7 +9572,7 @@
 
             const val = nameInput.value.trim();
             if (!val) {
-                showToast("Please type or select a template name to delete.", "error");
+                showToast("Please type or select a Collection name to delete.", "error");
                 return;
             }
 
@@ -9581,13 +9581,13 @@
             );
 
             if (!template) {
-                showToast(`No stored template named '${val}' was found.`, "error");
+                showToast(`No stored Collection named '${val}' was found.`, "error");
                 return;
             }
 
             const confirmed = await showCustomConfirm(
                 "Confirm Deletion",
-                `Are you sure you want to delete the template '${template.name}'?`
+                `Are you sure you want to delete the Collection '${template.name}'?`
             );
             if (!confirmed) {
                 return;
@@ -9603,7 +9603,7 @@
                     throw new Error(data.error || "Failed to delete template.");
                 }
 
-                showToast(`🗑️ Template '${template.name}' deleted successfully!`, "success");
+                showToast(`🗑️ Collection '${template.name}' deleted successfully!`, "success");
                 
                 // Clear the input
                 nameInput.value = "";

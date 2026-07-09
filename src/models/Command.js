@@ -172,5 +172,6 @@ commandSchema.pre("validate", function normalizeUidBeforeValidation() {
 
 commandSchema.index({ deviceUid: 1, status: 1 });
 commandSchema.index({ isImmediate: -1, scheduledAt: 1, createdAt: -1 });
+commandSchema.index({ deviceUid: 1, createdAt: -1 });
 
 module.exports = mongoose.model("Command", commandSchema);

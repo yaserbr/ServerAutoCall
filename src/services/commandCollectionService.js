@@ -1,4 +1,3 @@
-const mongoose = require("mongoose");
 const Command = require("../models/Command");
 const Device = require("../models/Device");
 const CommandCollection = require("../models/CommandCollection");

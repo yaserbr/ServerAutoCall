@@ -7,7 +7,6 @@
  * supporting ALL 13 system capabilities of the automation platform.
  */
 
-const { logSecurityEvent } = require("../security/auditLogger");
 
 // DeepSeek Global Configuration
 const DEEPSEEK_ENDPOINT = "https://api.deepseek.com/chat/completions";
