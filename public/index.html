@@ -3512,7 +3512,7 @@
                     <img class="header-logo" src="/images/icon.png" alt="AutoCall logo" />
                     <div>
                         <h1>IT Quality Assurance</h1>
-                        <p id="8v6t4j">Made by Yaser Badr Al-Rashid</p>
+                        <p id="8v6t4j">Made by Yaser Badr Alrashid</p>
                     </div>
                 </div>
                 <div class="header-right-tools">
@@ -4215,7 +4215,7 @@
                             <label class="field-label" style="font-weight: 600;" for="collectionNameInput">Collection Name</label>
                             <div style="display: flex; gap: 10px; width: 100%; flex-wrap: wrap; align-items: center;">
                                 <div class="custom-dropdown-container" id="templatesDropdownContainer">
-                                    <input id="collectionNameInput" type="text" placeholder="Type name or select template..." onfocus="toggleTemplatesDropdown(true)" oninput="handleCollectionNameInputChange(this.value)" class="custom-dropdown-input" />
+                                    <input id="collectionNameInput" type="text" placeholder="Type name or select collection..." onfocus="toggleTemplatesDropdown(true)" oninput="handleCollectionNameInputChange(this.value)" class="custom-dropdown-input" />
                                     <svg class="custom-dropdown-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                                         <polyline points="6 9 12 15 18 9"></polyline>
                                     </svg>
@@ -4223,8 +4223,21 @@
                                         <!-- Dynamically generated options will be appended here -->
                                     </div>
                                 </div>
-                                <button type="button" class="primary-button" onclick="saveAsCollectionTemplate()" style="border-radius: 8px; padding: 0 16px; font-weight: 600; cursor: pointer; height: 38px; display: inline-flex; align-items: center; justify-content: center;">Save Template</button>
-                                <button type="button" onclick="deleteCollectionTemplate()" style="border-radius: 8px; padding: 0 16px; font-weight: 600; cursor: pointer; height: 38px; display: inline-flex; align-items: center; justify-content: center; background-color: #ef4444; border: none; color: #ffffff;">Delete Template</button>
+                                <button type="button" class="primary-button" onclick="saveAsCollectionTemplate()" title="Save Collection" style="border-radius: 8px; width: 38px; height: 38px; padding: 0; cursor: pointer; display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0;" aria-label="Save Collection">
+                                    <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="margin: 0;">
+                                        <path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"></path>
+                                        <polyline points="17 21 17 13 7 13 7 21"></polyline>
+                                        <polyline points="7 3 7 8 15 8"></polyline>      
+                                    </svg>
+                                </button>
+                                <button type="button" onclick="deleteCollectionTemplate()" title="Delete Collection" style="border-radius: 8px; width: 38px; height: 38px; padding: 0; cursor: pointer; display: inline-flex; align-items: center; justify-content: center; background: linear-gradient(135deg, #ef4444, #dc2626); border: none; color: #ffffff; flex-shrink: 0;" aria-label="Delete Collection">
+                                    <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="margin: 0;">
+                                        <polyline points="3 6 5 6 21 6"></polyline>      
+                                        <path d="M19 6v14a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
+                                        <line x1="10" y1="11" x2="10" y2="17"></line>    
+                                        <line x1="14" y1="11" x2="14" y2="17"></line>    
+                                    </svg>
+                                </button>
                             </div>
                         </div>
                     </div>
@@ -4245,13 +4258,12 @@
                     </div>
 
                     <div class="instructions-footer" style="padding: 16px 20px; border-top: 1px solid rgba(255,255,255,0.1); display: flex; justify-content: space-between; align-items: center; gap: 12px; background: rgba(0,0,0,0.2); flex-wrap: wrap;">
-                    <div class="field-group" style="display: flex; align-items: center; gap: 10px;">
+                    <div class="field-group" style="display: none !important;">
                         <label class="field-label" style="font-weight: 600; margin: 0; font-size: 0.9rem;" for="collectionDeviceUidSelect">Target Device:</label>
                         <select id="collectionDeviceUidSelect" style="padding: 8px 12px; border-radius: 8px; border: 1px solid rgba(255,255,255,0.15); background: var(--bg-color, #0f172a); color: var(--text-color, #f8fafc); width: 180px; cursor: pointer; font-weight: 600; outline: none;"></select>
                     </div>
                     <div style="display: flex; gap: 12px;">
-                        <button type="button" class="subtle-button" onclick="closeCollectionModal()" style="border-radius: 10px; padding: 10px 20px; font-weight: 600; cursor: pointer;">Cancel</button>
-                        <button type="button" id="btnExecuteCollectionSequence" class="primary-button" onclick="executeCollection()" style="border-radius: 10px; padding: 10px 24px; font-weight: 600; cursor: pointer;">Execute Collection</button>
+                        <button type="button" id="btnExecuteCollectionSequence" class="primary-button" onclick="executeCollection()" style="border-radius: 10px; padding: 10px 24px; font-weight: 600; cursor: pointer;">Execute</button>
                     </div>
                     </div>
                     </div>
@@ -4302,9 +4314,27 @@
                         <input id="callNotes" placeholder="optional notes" />
                     </div>
                     <div class="actions">
-                        <button onclick="sendCall()">Call</button>
-                        <button class="danger-button" onclick="sendEndCall()">End Call</button>
-                        <button class="subtle-button" onclick="promptSaveContact('phone')">Save Contact</button>
+                        <button onclick="sendCall()" style="display: inline-flex; align-items: center; gap: 6px;">
+                            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                                <path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.79 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 22 16.92z"></path>
+                            </svg>
+                            Call
+                        </button>
+                        <button class="danger-button" onclick="sendEndCall()" style="display: inline-flex; align-items: center; gap: 6px;">
+                            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="transform: rotate(135deg);">
+                                <path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.79 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 22 16.92z"></path>
+                            </svg>
+                            End Call
+                        </button>
+                        <button class="subtle-button" onclick="promptSaveContact('phone')" style="display: inline-flex; align-items: center; gap: 6px;">
+                            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                                <path d="M16 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path>
+                                <circle cx="8.5" cy="7" r="4"></circle>
+                                <line x1="20" y1="8" x2="20" y2="14"></line>
+                                <line x1="23" y1="11" x2="17" y2="11"></line>
+                            </svg>
+                            Save Contact
+                        </button>
                     </div>
                 </div>
                 <div id="autoAnswerTabPanel" class="tab-panel">
@@ -9860,6 +9890,7 @@
             input.style.background = "#0b1220";
             input.style.color = "#f8fafc";
             input.style.outline = "none";
+            input.style.width = "60px";
 
             input.oninput = (event) => {
                 updateTimelineDelayAfterSeconds(step.id, event.target.value);
