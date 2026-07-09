@@ -4352,7 +4352,12 @@
                         <input id="autoAnswerNotes" placeholder="optional notes" />
                     </div>
                     <div class="actions">
-                        <button onclick="sendAutoAnswer()">Apply</button>
+                        <button onclick="sendAutoAnswer()" style="display: inline-flex; align-items: center; gap: 6px;">
+                            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                                <polyline points="20 6 9 17 4 12"></polyline>
+                            </svg>
+                            Apply
+                        </button>
                     </div>
                 </div>
                 <div id="smsTabPanel" class="tab-panel">
@@ -4372,8 +4377,22 @@
                         </div>
                     </div>
                     <div class="actions">
-                        <button onclick="sendSms()">Send SMS</button>
-                        <button class="subtle-button" onclick="promptSaveContact('smsPhone')">Save Contact</button>
+                        <button onclick="sendSms()" style="display: inline-flex; align-items: center; gap: 6px;">
+                            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                                <path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"></path>
+                                <polyline points="22,6 12,13 2,6"></polyline>
+                            </svg>
+                            Send SMS
+                        </button>
+                        <button class="subtle-button" onclick="promptSaveContact('smsPhone')" style="display: inline-flex; align-items: center; gap: 6px;">
+                            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                                <path d="M16 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path>
+                                <circle cx="8.5" cy="7" r="4"></circle>
+                                <line x1="20" y1="8" x2="20" y2="14"></line>
+                                <line x1="23" y1="11" x2="17" y2="11"></line>
+                            </svg>
+                            Save Contact
+                        </button>
                     </div>
                 </div>
                 <div id="webViewTabPanel" class="tab-panel">
@@ -4387,8 +4406,22 @@
                         </div>
                     </div>
                     <div class="actions">
-                        <button id="sendWebViewCommandBtn" onclick="sendWebViewCommand()">OPEN URL</button>
-                        <button class="danger-button" onclick="sendCloseWebViewCommand()">CLOSE WEBVIEW</button>
+                        <button id="sendWebViewCommandBtn" onclick="sendWebViewCommand()" style="display: inline-flex; align-items: center; gap: 6px;">
+                            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                                <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"></path>
+                                <polyline points="15 3 21 3 21 9"></polyline>
+                                <line x1="10" y1="14" x2="21" y2="3"></line>
+                            </svg>
+                            OPEN URL
+                        </button>
+                        <button class="danger-button" onclick="sendCloseWebViewCommand()" style="display: inline-flex; align-items: center; gap: 6px;">
+                            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                                <rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect>
+                                <line x1="9" y1="9" x2="15" y2="15"></line>
+                                <line x1="15" y1="9" x2="9" y2="15"></line>
+                            </svg>
+                            CLOSE WEBVIEW
+                        </button>
                     </div>
                 </div>
                 <div id="openAppTabPanel" class="tab-panel">
@@ -4398,8 +4431,19 @@
                         <input id="openAppNotes" placeholder="optional notes" />
                     </div>
                     <div class="actions">
-                        <button onclick="sendOpenApp()">Open APP</button>
-                        <button onclick="sendReturnToAutoCall()">Return to AutoCall</button>
+                        <button onclick="sendOpenApp()" style="display: inline-flex; align-items: center; gap: 6px;">
+                            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                                <polygon points="5 3 19 12 5 21 5 3"></polygon>
+                            </svg>
+                            Open APP
+                        </button>
+                        <button onclick="sendReturnToAutoCall()" style="display: inline-flex; align-items: center; gap: 6px;">
+                            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                                <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"></path>
+                                <polyline points="9 22 9 12 15 12 15 22"></polyline>
+                            </svg>
+                            Return to AutoCall
+                        </button>
                     </div>
                 </div>
                 <div id="downloadDataTabPanel" class="tab-panel">
@@ -4421,7 +4465,14 @@
                         </div>
                     </div>
                     <div class="actions">
-                        <button onclick="sendDownloadDataCommand()">DOWNLOA DATA</button>
+                        <button onclick="sendDownloadDataCommand()" style="display: inline-flex; align-items: center; gap: 6px;">
+                            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                                <path d="M21.2 15c.9-1.2 1.3-2.6.8-4.1-.6-1.8-2.4-3-4.4-3h-1.2C15.8 4.4 12.8 2 9.5 2 5.4 2 2 5.1 2 9.2c0 .9.3 1.8.8 2.6"></path>
+                                <polyline points="8 17 12 21 16 17"></polyline>
+                                <line x1="12" y1="12" x2="12" y2="21"></line>
+                            </svg>
+                            DOWNLOA DATA
+                        </button>
                     </div>
                 </div>
             </article>
@@ -4446,8 +4497,21 @@
                     </div>
                     <div id="commandsPanelContent" class="panel-collapsible">
                         <div class="actions">
-                            <button onclick="loadCommands()">Refresh</button>
-                            <button onclick="clearCommands()">Clear Commands</button>
+                            <button onclick="loadCommands()" style="display: inline-flex; align-items: center; gap: 6px;">
+                                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                                    <polyline points="23 4 23 10 17 10"></polyline>
+                                    <polyline points="1 20 1 14 7 14"></polyline>
+                                    <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"></path>
+                                </svg>
+                                Refresh
+                            </button>
+                            <button onclick="clearCommands()" style="display: inline-flex; align-items: center; gap: 6px;">
+                                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                                    <polyline points="3 6 5 6 21 6"></polyline>
+                                    <path d="M19 6v14a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
+                                </svg>
+                                Clear Commands
+                            </button>
                         </div>
                         <div id="commandsTable" class="table-wrapper"></div>
                         <pre id="commands" class="json-fallback"></pre>
@@ -9934,14 +9998,10 @@
         }
 
         async function executeCollection() {
-            const name = document.getElementById("collectionNameInput").value.trim();
+            const nameInput = document.getElementById("collectionNameInput").value.trim();
+            const name = nameInput || "Instant Run";
             const deviceUidSelect = document.getElementById("collectionDeviceUidSelect");
             const deviceUid = deviceUidSelect ? deviceUidSelect.value.trim().toLowerCase() : "";
-
-            if (!name) {
-                showToast("Collection name is required.", "error");
-                return;
-            }
             if (!deviceUid || deviceUid.length !== 5) {
                 showToast("Target Device UID must be exactly 5 characters.", "error");
                 return;
