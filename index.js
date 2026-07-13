@@ -1282,6 +1282,56 @@ function mapCommandForResponse(command) {
   };
 }
 
+function emitCommandCreated(command, options = {}) {
+  const commandResponse = mapCommandForResponse(command);
+  const deviceUid = normalizeDeviceUid(commandResponse.deviceUid);
+  if (!deviceUid) {
+    return commandResponse;
+  }
+
+  if (options.notifyDevice !== false) {
+    io.to(`device:${deviceUid}`).emit("command:new", commandResponse);
+  }
+  io.to(`dashboard:${deviceUid}`).emit("command:created", commandResponse);
+
+  return commandResponse;
+}
+
+function emitCommandUpdated(command) {
+  const commandResponse = mapCommandForResponse(command);
+  const deviceUid = normalizeDeviceUid(commandResponse.deviceUid);
+  if (!deviceUid) {
+    return commandResponse;
+  }
+
+  io.to(`dashboard:${deviceUid}`).emit("command:updated", commandResponse);
+
+  return commandResponse;
+}
+
+function emitCommandsCleared(deviceUids, deletedCount = 0) {
+  const normalizedDeviceUids = [
+    ...new Set(
+      (Array.isArray(deviceUids) ? deviceUids : [])
+        .map((deviceUid) => normalizeDeviceUid(deviceUid))
+        .filter(Boolean)
+    )
+  ];
+
+  if (!normalizedDeviceUids.length) {
+    return;
+  }
+
+  const payload = {
+    deviceUids: normalizedDeviceUids,
+    deletedCount: Number(deletedCount || 0)
+  };
+
+  normalizedDeviceUids.forEach((deviceUid) => {
+    io.to(`dashboard:${deviceUid}`).emit("commands:cleared", payload);
+  });
+}
+
 function normalizeCommandComparableString(value, options = {}) {
   if (typeof value !== "string") return null;
   const normalized = value.trim();
@@ -3041,7 +3091,8 @@ app.post("/commands", requireAuth, async (req, res) => {
       });
     }
 
-    return res.json(mapCommandForResponse(command));
+    const commandResponse = emitCommandCreated(command);
+    return res.json(commandResponse);
   } catch (error) {
     return handleServerError(res, error, "POST /commands");
   }
@@ -3272,9 +3323,11 @@ app.post("/commands/claim", requireAuthenticatedDevice, async (req, res) => {
       });
     }
 
+    const claimedCommandResponse = emitCommandUpdated(claimedCommand);
+
     return res.json({
       success: true,
-      command: mapCommandForResponse(claimedCommand)
+      command: claimedCommandResponse
     });
   } catch (error) {
     return handleServerError(res, error, "POST /commands/claim");
@@ -3286,6 +3339,8 @@ app.post("/commands/claim", requireAuthenticatedDevice, async (req, res) => {
 // =====================
 app.get("/commands", requireAuth, async (req, res) => {
   try {
+    res.set("Cache-Control", "no-store");
+
     const { deviceUid, status } = req.query;
     const currentUserId = normalizeAuthUserId(req.user?.id);
     if (!currentUserId) {
@@ -3429,9 +3484,11 @@ app.post("/commands/:id/cancel-and-end", requireAuth, async (req, res) => {
       }
     });
 
+    const cancelledCommandResponse = emitCommandUpdated(cancelledCommand);
     const cancelledIsEndCommand =
       cancelledCommand.action === "end" || cancelledCommand.type === "END";
     let endCommand = null;
+    let endCommandResponse = null;
     if (!cancelledIsEndCommand) {
       const cancelledCommandId = commandIdFrom(cancelledCommand) || id;
       endCommand = await Command.create({
@@ -3456,12 +3513,14 @@ app.post("/commands/:id/cancel-and-end", requireAuth, async (req, res) => {
           canceledCommandId: cancelledCommandId
         }
       });
+
+      endCommandResponse = emitCommandCreated(endCommand);
     }
 
     return res.json({
       success: true,
-      cancelledCommand: mapCommandForResponse(cancelledCommand),
-      endCommand: endCommand ? mapCommandForResponse(endCommand) : null
+      cancelledCommand: cancelledCommandResponse,
+      endCommand: endCommandResponse
     });
   } catch (error) {
     return handleServerError(res, error, "POST /commands/:id/cancel-and-end");
@@ -3489,11 +3548,13 @@ app.delete("/commands", requireAuth, async (req, res) => {
     }
 
     const deletionResult = await Command.deleteMany({ deviceUid: { $in: ownedDeviceUids } });
+    const deletedCount = Number(deletionResult?.deletedCount || 0);
+    emitCommandsCleared(ownedDeviceUids, deletedCount);
 
     return res.json({
       success: true,
       message: "All your commands cleared",
-      deletedCount: Number(deletionResult?.deletedCount || 0)
+      deletedCount
     });
   } catch (error) {
     return handleServerError(res, error, "DELETE /commands");
@@ -3571,7 +3632,7 @@ app.post("/commands/:id/status", requireAuthenticatedDevice, async (req, res) =>
         oldStatus: command.status,
         newStatus: normalizedStatus
       });
-      return res.json(mapCommandForResponse(command));
+      return res.json(emitCommandUpdated(command));
     }
 
     const previousStatus = command.status;
@@ -3612,6 +3673,7 @@ app.post("/commands/:id/status", requireAuthenticatedDevice, async (req, res) =>
     }
 
     await command.save();
+    const commandResponse = emitCommandUpdated(command);
 
     // Trigger sequential command collection progress
     if (normalizedStatus === "executed" || normalizedStatus === "failed") {
@@ -3648,7 +3710,7 @@ app.post("/commands/:id/status", requireAuthenticatedDevice, async (req, res) =>
       });
     }
 
-    return res.json(mapCommandForResponse(command));
+    return res.json(commandResponse);
   } catch (error) {
     return handleServerError(res, error, "POST /commands/:id/status");
   }
@@ -3883,14 +3945,12 @@ app.post("/agent/chat", requireAuth, async (req, res) => {
         }
       });
 
-      // Real-time Push to physical device room & dashboard room if connected
-      io.to(`device:${targetDevice.deviceUid}`).emit("command:new", mapCommandForResponse(command));
-      io.to(`dashboard:${targetDevice.deviceUid}`).emit("command:created", mapCommandForResponse(command));
+      const commandResponse = emitCommandCreated(command);
 
       return res.json({
         response: agentResult.response,
         status: "auto_executed",
-        command: mapCommandForResponse(command),
+        command: commandResponse,
         draftCommand: null
       });
     }
@@ -3963,13 +4023,11 @@ app.post("/agent/chat/confirm", requireAuth, async (req, res) => {
       }
     });
 
-    // Real-time Push to physical device room & dashboard room if connected
-    io.to(`device:${targetDevice.deviceUid}`).emit("command:new", mapCommandForResponse(command));
-    io.to(`dashboard:${targetDevice.deviceUid}`).emit("command:created", mapCommandForResponse(command));
+    const commandResponse = emitCommandCreated(command);
 
     return res.json({
       success: true,
-      command: mapCommandForResponse(command)
+      command: commandResponse
     });
 
   } catch (error) {

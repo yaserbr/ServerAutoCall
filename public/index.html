@@ -2193,6 +2193,62 @@
             padding: 10px;
         }
 
+        .screen-mirror-system-nav {
+            display: grid;
+            grid-template-columns: repeat(3, minmax(0, 1fr));
+            gap: 6px;
+            padding: 6px;
+            border-radius: 11px;
+            border: 1px solid rgba(189, 223, 255, 0.22);
+            background: rgba(3, 10, 24, 0.54);
+        }
+
+        .screen-mirror-system-nav-btn {
+            width: 100%;
+            min-width: 0;
+            height: 34px;
+            min-height: 34px;
+            padding: 0;
+            border-radius: 8px;
+            border: 1px solid rgba(103, 232, 249, 0.34);
+            background: rgba(8, 27, 45, 0.72);
+            color: #e2f8ff;
+            box-shadow: none;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            transition: transform 0.15s ease, border-color 0.18s ease, background-color 0.18s ease, opacity 0.18s ease;
+        }
+
+        .screen-mirror-system-nav-btn:hover {
+            transform: translateY(-1px);
+            border-color: rgba(103, 232, 249, 0.68);
+            background: rgba(12, 39, 61, 0.86);
+            box-shadow: none;
+        }
+
+        .screen-mirror-system-nav-btn:disabled {
+            cursor: wait;
+            opacity: 0.62;
+            transform: none;
+        }
+
+        .screen-mirror-system-nav-btn svg {
+            width: 18px;
+            height: 18px;
+            display: block;
+            fill: none;
+            stroke: currentColor;
+            stroke-width: 2.2;
+            stroke-linecap: round;
+            stroke-linejoin: round;
+        }
+
+        .screen-mirror-system-nav-btn .android-nav-back {
+            fill: currentColor;
+            stroke: none;
+        }
+
         .screen-mirror-device-meta {
             display: flex;
             justify-content: space-between;
@@ -2844,6 +2900,40 @@
 
         body.light-mode .data-table tbody tr:hover td {
             background: rgba(46, 196, 182, 0.08);
+        }
+
+        body.light-mode .status-pill {
+            box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.7);
+        }
+
+        body.light-mode .status-executed {
+            color: #166534;
+            border-color: rgba(22, 101, 52, 0.28);
+            background: #dcfce7;
+        }
+
+        body.light-mode .status-failed {
+            color: #991b1b;
+            border-color: rgba(153, 27, 27, 0.28);
+            background: #fee2e2;
+        }
+
+        body.light-mode .status-pending {
+            color: #92400e;
+            border-color: rgba(146, 64, 14, 0.3);
+            background: #fef3c7;
+        }
+
+        body.light-mode .status-executing {
+            color: #1d4ed8;
+            border-color: rgba(29, 78, 216, 0.28);
+            background: #dbeafe;
+        }
+
+        body.light-mode .status-unknown {
+            color: #334155;
+            border-color: rgba(51, 65, 85, 0.24);
+            background: #e2e8f0;
         }
 
         /* Device Dropdown Scoping */
@@ -4657,7 +4747,12 @@
         const MANUAL_PAIRING_CODE_REGEX = /^\d{6}$/;
         const MANUAL_PAIRING_CODE_PLACEHOLDER = "------";
         const PAIRING_QR_LIBRARY_CDN_URL = "https://cdn.jsdelivr.net/npm/qrcode/build/qrcode.min.js";
+        const COMMANDS_AUTO_REFRESH_INTERVAL_MS = 2000;
         let screenMirrorSocket = null;
+        let commandDashboardJoinedDeviceUids = new Set();
+        let commandsCache = [];
+        let commandsAutoRefreshIntervalId = null;
+        let commandsAutoRefreshInFlight = false;
         let screenMirrorJoinedDeviceUid = "";
         const activeScreenMirrorDeviceUids = new Set();
         const screenMirrorDeviceStateByUid = new Map();
@@ -4822,6 +4917,151 @@
                 showToast("Please select a device first", "error");
             }
             return deviceUid;
+        }
+
+        function getCommandDashboardDeviceUids(devices) {
+            if (!Array.isArray(devices)) return new Set();
+            return new Set(
+                devices
+                    .map((device) => normalizeDeviceUidInput(device?.deviceUid || ""))
+                    .filter(Boolean)
+            );
+        }
+
+        function joinCommandDashboardRooms() {
+            if (!authToken || commandDashboardJoinedDeviceUids.size === 0) {
+                return;
+            }
+
+            const socket = ensureScreenMirrorSocket();
+            if (!socket) return;
+
+            socket.auth = {
+                accessToken: authToken
+            };
+
+            if (!socket.connected) {
+                socket.connect();
+                return;
+            }
+
+            commandDashboardJoinedDeviceUids.forEach((deviceUid) => {
+                socket.emit("dashboard:join", { deviceUid });
+            });
+        }
+
+        function syncCommandDashboardSubscriptions(devices) {
+            const nextDeviceUids = getCommandDashboardDeviceUids(devices);
+            const changed =
+                nextDeviceUids.size !== commandDashboardJoinedDeviceUids.size ||
+                [...nextDeviceUids].some((deviceUid) => !commandDashboardJoinedDeviceUids.has(deviceUid));
+
+            commandDashboardJoinedDeviceUids = nextDeviceUids;
+
+            if (changed || !screenMirrorSocket || !screenMirrorSocket.connected) {
+                joinCommandDashboardRooms();
+            }
+        }
+
+        function renderCommandsFromCache() {
+            renderCommandsTable(commandsCache);
+            setRawFallback("commands", commandsCache, false);
+        }
+
+        function replaceCommandsCache(commands) {
+            commandsCache = Array.isArray(commands) ? commands.filter(Boolean) : [];
+            renderCommandsFromCache();
+        }
+
+        function extractRealtimeCommand(payload) {
+            if (payload && typeof payload.command === "object") {
+                return payload.command;
+            }
+            return payload && typeof payload === "object" ? payload : null;
+        }
+
+        function upsertCommandInCache(command) {
+            const commandRecord = extractRealtimeCommand(command);
+            const commandId = toNonEmptyString(commandRecord?.id);
+            if (!commandRecord || !commandId) {
+                void loadCommands();
+                return;
+            }
+
+            const existingIndex = commandsCache.findIndex(
+                (cachedCommand) => toNonEmptyString(cachedCommand?.id) === commandId
+            );
+            if (existingIndex >= 0) {
+                commandsCache = commandsCache.map((cachedCommand, index) =>
+                    index === existingIndex
+                        ? { ...cachedCommand, ...commandRecord }
+                        : cachedCommand
+                );
+            } else {
+                commandsCache = [commandRecord, ...commandsCache];
+            }
+
+            renderCommandsFromCache();
+        }
+
+        function handleCommandsClearedRealtimeEvent(payload = {}) {
+            const clearedDeviceUids = new Set(
+                (Array.isArray(payload?.deviceUids) ? payload.deviceUids : [])
+                    .map((deviceUid) => normalizeDeviceUidInput(deviceUid || ""))
+                    .filter(Boolean)
+            );
+
+            if (clearedDeviceUids.size === 0) {
+                void loadCommands();
+                return;
+            }
+
+            commandsCache = commandsCache.filter((command) => {
+                const commandDeviceUid = normalizeDeviceUidInput(command?.deviceUid || "");
+                return !clearedDeviceUids.has(commandDeviceUid);
+            });
+            renderCommandsFromCache();
+        }
+
+        async function refreshCommandsSilently() {
+            if (!authToken || commandsAutoRefreshInFlight) {
+                return;
+            }
+
+            commandsAutoRefreshInFlight = true;
+            try {
+                const res = await apiFetch("/commands", {
+                    cache: "no-store"
+                });
+                if (!res.ok) {
+                    throw new Error("Failed to refresh commands");
+                }
+                const data = await res.json();
+                replaceCommandsCache(data);
+            } catch (error) {
+                console.warn("[Commands] Auto refresh skipped:", error?.message || error);
+            } finally {
+                commandsAutoRefreshInFlight = false;
+            }
+        }
+
+        function stopCommandsAutoRefresh() {
+            if (commandsAutoRefreshIntervalId) {
+                clearInterval(commandsAutoRefreshIntervalId);
+                commandsAutoRefreshIntervalId = null;
+            }
+            commandsAutoRefreshInFlight = false;
+        }
+
+        function startCommandsAutoRefresh() {
+            stopCommandsAutoRefresh();
+            if (!authToken) {
+                return;
+            }
+            commandsAutoRefreshIntervalId = setInterval(() => {
+                void refreshCommandsSilently();
+            }, COMMANDS_AUTO_REFRESH_INTERVAL_MS);
+            void refreshCommandsSilently();
         }
 
         function getDeviceDropdownRecordByUid(devices, uid) {
@@ -5726,6 +5966,44 @@
                             title="Tap or swipe to control this device">
                             ${previewContent}
                         </div>
+                        <div class="screen-mirror-system-nav" aria-label="Android navigation controls for ${escapeHtml(deviceName)}">
+                            <button
+                                type="button"
+                                class="screen-mirror-system-nav-btn"
+                                data-mirror-action="global-action"
+                                data-device-uid="${escapeHtml(deviceUid)}"
+                                data-touch-target="back"
+                                title="Back"
+                                aria-label="Back">
+                                <svg viewBox="0 0 24 24" aria-hidden="true">
+                                    <path class="android-nav-back" d="M7 12 17 5v14z"></path>
+                                </svg>
+                            </button>
+                            <button
+                                type="button"
+                                class="screen-mirror-system-nav-btn"
+                                data-mirror-action="global-action"
+                                data-device-uid="${escapeHtml(deviceUid)}"
+                                data-touch-target="home"
+                                title="Home"
+                                aria-label="Home">
+                                <svg viewBox="0 0 24 24" aria-hidden="true">
+                                    <circle cx="12" cy="12" r="5.2"></circle>
+                                </svg>
+                            </button>
+                            <button
+                                type="button"
+                                class="screen-mirror-system-nav-btn"
+                                data-mirror-action="global-action"
+                                data-device-uid="${escapeHtml(deviceUid)}"
+                                data-touch-target="recents"
+                                title="Recents"
+                                aria-label="Recents">
+                                <svg viewBox="0 0 24 24" aria-hidden="true">
+                                    <rect x="7" y="7" width="10" height="10" rx="1.5"></rect>
+                                </svg>
+                            </button>
+                        </div>
                         <div class="screen-mirror-device-meta">
                             <span class="screen-mirror-device-status ${statusClass}" data-mirror-field="status">${escapeHtml(statusText)}</span>
                         </div>
@@ -5751,6 +6029,36 @@
                     button.disabled = true;
                     try {
                         await stopActiveScreenMirror(targetUid, { removeAfterStop: true });
+                    } finally {
+                        button.disabled = false;
+                    }
+                });
+            });
+
+            grid.querySelectorAll("[data-mirror-action='global-action']").forEach((button) => {
+                button.addEventListener("click", async () => {
+                    const targetUid = normalizeDeviceUidInput(button.getAttribute("data-device-uid") || "");
+                    const touchTarget = String(button.getAttribute("data-touch-target") || "").trim().toLowerCase();
+                    if (!targetUid || !["back", "home", "recents"].includes(touchTarget)) return;
+
+                    button.disabled = true;
+                    try {
+                        const sent = await sendScreenRemoteCommandForDevice(
+                            targetUid,
+                            {
+                                action: "screen_touch",
+                                type: "SCREEN_TOUCH",
+                                touchTarget
+                            },
+                            {
+                                defaultErrorMessage: `Failed to send ${touchTarget.toUpperCase()} command`,
+                                showErrorToast: true
+                            }
+                        );
+                        if (sent) {
+                            showToast(`${touchTarget.toUpperCase()} command sent`, "success");
+                            await loadCommands();
+                        }
                     } finally {
                         button.disabled = false;
                     }
@@ -6605,6 +6913,9 @@
                         deviceUid: screenMirrorJoinedDeviceUid
                     });
                 }
+                commandDashboardJoinedDeviceUids.forEach((deviceUid) => {
+                    screenMirrorSocket.emit("dashboard:join", { deviceUid });
+                });
                 activeScreenMirrorDeviceUids.forEach((deviceUid) => {
                     screenMirrorSocket.emit("dashboard:join", { deviceUid });
                 });
@@ -6627,6 +6938,18 @@
                     return;
                 }
                 applyScreenMirrorStatus(payload);
+            });
+
+            screenMirrorSocket.on("command:created", (payload = {}) => {
+                upsertCommandInCache(payload);
+            });
+
+            screenMirrorSocket.on("command:updated", (payload = {}) => {
+                upsertCommandInCache(payload);
+            });
+
+            screenMirrorSocket.on("commands:cleared", (payload = {}) => {
+                handleCommandsClearedRealtimeEvent(payload);
             });
 
             screenMirrorSocket.on("screen:frame", (payload = {}) => {
@@ -7894,6 +8217,7 @@
             if (socket && !socket.connected) {
                 socket.connect();
             }
+            startCommandsAutoRefresh();
 
             // Load saved contacts for address book autocomplete
             void loadContacts();
@@ -7903,6 +8227,7 @@
             authToken = "";
             authenticatedUser = null;
             deviceNameByUid.clear();
+            stopCommandsAutoRefresh();
             stopDevicesSelectRefresh();
             disconnectScreenMirrorSocket();
             clearAllScreenMirrorMultiPointerGestures();
@@ -7940,10 +8265,11 @@
             }
             hideScreenMirrorCard(true);
 
+            commandDashboardJoinedDeviceUids.clear();
+            commandsCache = [];
             renderDevicesTable([]);
-            renderCommandsTable([]);
+            renderCommandsFromCache();
             setRawFallback("devices", [], false);
-            setRawFallback("commands", [], false);
 
             panelVisibility.commands = false;
             panelVisibility.contacts = false;
@@ -8802,6 +9128,7 @@
                 if (!res.ok) throw new Error("Failed to load devices");
                 const data = await res.json();
                 rememberDevices(data);
+                syncCommandDashboardSubscriptions(data);
                 renderDevicesTable(data);
                 setRawFallback("devices", data, false);
             } catch (error) {
@@ -8885,6 +9212,7 @@
                 const previousGlobalValue = globalSelect?.value || "";
 
                 rememberDevices(data);
+                syncCommandDashboardSubscriptions(data);
                 populateDeviceSelect(globalSelect, data, previousGlobalValue);
                 renderScreenMirrorMultiGrid();
             } catch (error) {
@@ -8934,13 +9262,15 @@
 
         async function loadCommands() {
             try {
-                const res = await apiFetch("/commands");
+                const res = await apiFetch("/commands", {
+                    cache: "no-store"
+                });
                 if (!res.ok) throw new Error("Failed to load commands");
                 const data = await res.json();
-                renderCommandsTable(data);
-                setRawFallback("commands", data, false);
+                replaceCommandsCache(data);
             } catch (error) {
-                renderCommandsTable([]);
+                commandsCache = [];
+                renderCommandsFromCache();
                 setRawFallback("commands", {
                     error: error.message
                 }, true);
@@ -10338,10 +10668,22 @@
             }
         }
 
-        function clearCommands() {
-            renderCommandsTable([]);
-            setRawFallback("commands", [], false);
-            showToast("Commands cleared", "success");
+        async function clearCommands() {
+            try {
+                const res = await apiFetch("/commands", {
+                    method: "DELETE"
+                });
+                const data = await res.json();
+                if (!res.ok) {
+                    throw new Error(parseApiErrorMessage(data, "Failed to clear commands"));
+                }
+
+                commandsCache = [];
+                renderCommandsFromCache();
+                showToast("Commands cleared", "success");
+            } catch (error) {
+                showToast(error.message || "Failed to clear commands", "error");
+            }
         }
 
         // ==========================================
