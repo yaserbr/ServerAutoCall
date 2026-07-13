@@ -2135,6 +2135,18 @@
             color: #ffe6e6;
         }
 
+        .screen-mirror-tile-btn.pin {
+            border-color: rgba(103, 232, 249, 0.48);
+            background: rgba(7, 42, 62, 0.62);
+            color: #dff7ff;
+        }
+
+        .screen-mirror-tile-btn.pin.active {
+            border-color: rgba(34, 197, 94, 0.72);
+            background: rgba(12, 84, 45, 0.74);
+            color: #e8ffef;
+        }
+
         .screen-mirror-tile-resize-handle {
             position: absolute;
             right: 6px;
@@ -2535,6 +2547,131 @@
             pointer-events: none;
         }
 
+        .screen-mirror-pinned-panel {
+            --screen-mirror-pinned-width: 210px;
+            position: fixed;
+            left: 18px;
+            bottom: 18px;
+            z-index: 1260;
+            width: min(calc(var(--screen-mirror-pinned-width) + 12px), calc(100vw - 24px));
+            max-height: calc(100vh - 24px);
+            border-radius: 12px;
+            border: 1px solid rgba(185, 218, 255, 0.24);
+            background: linear-gradient(150deg, rgba(8, 22, 44, 0.88), rgba(6, 17, 36, 0.92));
+            box-shadow: 0 18px 42px rgba(3, 8, 23, 0.52);
+            backdrop-filter: blur(14px) saturate(125%);
+            -webkit-backdrop-filter: blur(14px) saturate(125%);
+            padding: 6px;
+            display: grid;
+            gap: 6px;
+            opacity: 0;
+            transform: translateY(14px) scale(0.98);
+            visibility: hidden;
+            pointer-events: none;
+            transition:
+                opacity 0.22s ease,
+                transform 0.22s ease,
+                visibility 0s linear 0.22s;
+        }
+
+        .screen-mirror-pinned-panel.panel-hidden {
+            display: none !important;
+        }
+
+        .screen-mirror-pinned-panel.is-visible {
+            opacity: 1;
+            transform: translateY(0) scale(1);
+            visibility: visible;
+            pointer-events: auto;
+            transition:
+                opacity 0.22s ease,
+                transform 0.22s ease,
+                visibility 0s linear 0s;
+        }
+
+        .screen-mirror-pinned-panel.is-resizing {
+            box-shadow: 0 22px 48px rgba(3, 8, 23, 0.62);
+        }
+
+        .screen-mirror-pinned-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 12px;
+            min-width: 0;
+            padding-right: 2px;
+        }
+
+        .screen-mirror-pinned-labels {
+            min-width: 0;
+        }
+
+        .screen-mirror-pinned-title {
+            margin: 0;
+            color: #f2f8ff;
+            font-size: 0.72rem;
+            font-weight: 800;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+
+        .screen-mirror-pinned-actions {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            flex-shrink: 0;
+        }
+
+        .screen-mirror-pinned-preview-wrap {
+            aspect-ratio: var(--screen-mirror-preview-ratio, 9 / 16.8);
+            border-radius: 9px;
+            border-color: rgba(189, 223, 255, 0.2);
+        }
+
+        .screen-mirror-pinned-panel .screen-mirror-system-nav {
+            gap: 4px;
+            padding: 4px;
+            border-radius: 9px;
+        }
+
+        .screen-mirror-pinned-panel .screen-mirror-system-nav-btn {
+            height: 28px;
+            min-height: 28px;
+            border-radius: 7px;
+        }
+
+        .screen-mirror-pinned-panel .screen-mirror-system-nav-btn svg {
+            width: 16px;
+            height: 16px;
+        }
+
+        .screen-mirror-pinned-resize-handle {
+            position: absolute;
+            top: 38px;
+            right: 8px;
+            width: 18px;
+            height: 18px;
+            border: 1px solid rgba(143, 206, 255, 0.55);
+            border-radius: 6px;
+            background: rgba(5, 21, 39, 0.78);
+            cursor: nesw-resize;
+            touch-action: none;
+            padding: 0;
+            color: rgba(196, 236, 255, 0.95);
+            z-index: 2;
+            box-shadow: 0 6px 16px rgba(0, 0, 0, 0.35);
+        }
+
+        .screen-mirror-pinned-resize-handle::before {
+            content: "";
+            position: absolute;
+            inset: 4px;
+            background:
+                linear-gradient(45deg, transparent 42%, currentColor 42% 56%, transparent 56%) 0 0 / 100% 100% no-repeat,
+                linear-gradient(45deg, transparent 58%, currentColor 58% 70%, transparent 70%) 0 0 / 100% 100% no-repeat;
+        }
+
         .screen-mirror-floating-launcher {
             position: fixed;
             right: 18px;
@@ -2594,6 +2731,13 @@
                 bottom: 12px;
                 width: min(360px, calc(100vw - 20px));
                 --floating-panel-height: min(560px, calc(100vh - 20px));
+            }
+
+            .screen-mirror-pinned-panel {
+                left: 12px;
+                bottom: 12px;
+                width: min(calc(var(--screen-mirror-pinned-width) + 12px), calc(100vw - 20px));
+                max-height: calc(100vh - 20px);
             }
 
             .screen-mirror-floating-launcher {
@@ -2934,6 +3078,35 @@
             color: #334155;
             border-color: rgba(51, 65, 85, 0.24);
             background: #e2e8f0;
+        }
+
+        body.light-mode .screen-mirror-pinned-panel {
+            background: rgba(255, 255, 255, 0.94);
+            border-color: rgba(15, 23, 42, 0.14);
+            box-shadow: 0 18px 42px rgba(15, 23, 42, 0.16);
+        }
+
+        body.light-mode .screen-mirror-pinned-title {
+            color: #0f172a;
+        }
+
+        body.light-mode .screen-mirror-tile-btn.pin {
+            border-color: rgba(8, 145, 178, 0.28);
+            background: rgba(236, 254, 255, 0.92);
+            color: #0e7490;
+        }
+
+        body.light-mode .screen-mirror-tile-btn.pin.active {
+            border-color: rgba(22, 101, 52, 0.34);
+            background: #dcfce7;
+            color: #166534;
+        }
+
+        body.light-mode .screen-mirror-pinned-resize-handle {
+            border-color: rgba(15, 23, 42, 0.22);
+            background: rgba(255, 255, 255, 0.9);
+            color: #334155;
+            box-shadow: 0 8px 18px rgba(15, 23, 42, 0.12);
         }
 
         /* Device Dropdown Scoping */
@@ -4652,6 +4825,69 @@
         <div id="screenMirrorFloatingBody" class="screen-mirror-floating-body screen-mirror-viewer-slot"></div>
         <div id="screenMirrorFloatingResizeHandle" class="screen-mirror-floating-resize-handle" aria-hidden="true"></div>
     </div>
+    <div id="screenMirrorPinnedPanel" class="screen-mirror-pinned-panel panel-hidden" role="dialog" aria-label="Pinned screen mirror">
+        <div class="screen-mirror-pinned-header">
+            <div class="screen-mirror-pinned-labels">
+                <p id="screenMirrorPinnedTitle" class="screen-mirror-pinned-title">Screen Mirror</p>
+            </div>
+            <div class="screen-mirror-pinned-actions">
+                <button
+                    id="screenMirrorPinnedUnpinBtn"
+                    type="button"
+                    class="screen-mirror-tile-btn danger"
+                    title="Unpin"
+                    aria-label="Unpin screen mirror">
+                    <svg viewBox="0 0 24 24" aria-hidden="true">
+                        <path d="M18 6 6 18"></path>
+                        <path d="M6 6 18 18"></path>
+                    </svg>
+                </button>
+            </div>
+        </div>
+        <div
+            id="screenMirrorPinnedPreviewWrap"
+            class="screen-mirror-tile-preview-wrap screen-mirror-pinned-preview-wrap"
+            data-mirror-field="previewWrap"
+            title="Tap or swipe to control this pinned device"></div>
+        <div class="screen-mirror-system-nav" aria-label="Android navigation controls for pinned device">
+            <button
+                type="button"
+                class="screen-mirror-system-nav-btn"
+                data-pinned-touch-target="back"
+                title="Back"
+                aria-label="Back">
+                <svg viewBox="0 0 24 24" aria-hidden="true">
+                    <path class="android-nav-back" d="M7 12 17 5v14z"></path>
+                </svg>
+            </button>
+            <button
+                type="button"
+                class="screen-mirror-system-nav-btn"
+                data-pinned-touch-target="home"
+                title="Home"
+                aria-label="Home">
+                <svg viewBox="0 0 24 24" aria-hidden="true">
+                    <circle cx="12" cy="12" r="5.2"></circle>
+                </svg>
+            </button>
+            <button
+                type="button"
+                class="screen-mirror-system-nav-btn"
+                data-pinned-touch-target="recents"
+                title="Recents"
+                aria-label="Recents">
+                <svg viewBox="0 0 24 24" aria-hidden="true">
+                    <rect x="7" y="7" width="10" height="10" rx="1.5"></rect>
+                </svg>
+            </button>
+        </div>
+        <button
+            id="screenMirrorPinnedResizeHandle"
+            type="button"
+            class="screen-mirror-pinned-resize-handle"
+            title="Drag to resize pinned screen"
+            aria-label="Resize pinned screen"></button>
+    </div>
     <div id="toastContainer" class="toast-container" aria-live="polite" aria-atomic="true"></div>
     <datalist id="contactsDatalist"></datalist>
     <datalist id="templatesDatalist"></datalist>
@@ -4790,9 +5026,15 @@
         const SCREEN_MIRROR_TILE_WIDTH_MAX = 760;
         const SCREEN_MIRROR_TILE_WIDTH_DEFAULT = 210;
         const SCREEN_MIRROR_TILE_DEFAULT_ASPECT_RATIO = "9 / 16.8";
+        const SCREEN_MIRROR_PINNED_ANIMATION_MS = 220;
         const SCREEN_TOUCH_TAP_DISTANCE_THRESHOLD_PX = 12;
         const SCREEN_TOUCH_MIN_SWIPE_DURATION_MS = 80;
         const SCREEN_TOUCH_MAX_SWIPE_DURATION_MS = 5000;
+        let pinnedScreenMirrorDeviceUid = "";
+        let screenMirrorPinnedCloseTimerId = null;
+        let pinnedScreenMirrorPopupWindow = null;
+        let pinnedScreenMirrorPopupMonitorId = null;
+        let isClosingPinnedScreenMirrorPopup = false;
         const screenMirrorFloatingDragState = {
             active: false,
             pointerId: null,
@@ -4825,6 +5067,24 @@
             startWidth: SCREEN_MIRROR_TILE_WIDTH_DEFAULT,
             handle: null,
             tile: null
+        };
+        const screenMirrorPinnedResizeState = {
+            active: false,
+            pointerId: null,
+            deviceUid: "",
+            startClientX: 0,
+            startClientY: 0,
+            startWidth: SCREEN_MIRROR_TILE_WIDTH_DEFAULT,
+            handle: null
+        };
+        const screenMirrorPinnedPopupGestureState = {
+            active: false,
+            pointerId: null,
+            previewWrap: null,
+            startClientX: 0,
+            startClientY: 0,
+            startedAtMs: 0,
+            startMappedPoint: null
         };
         const panelVisibility = {
             commands: false,
@@ -5420,6 +5680,18 @@
             return document.getElementById("screenMirrorMultiGrid");
         }
 
+        function getScreenMirrorPinnedPanel() {
+            return document.getElementById("screenMirrorPinnedPanel");
+        }
+
+        function getScreenMirrorPinnedPreviewWrap() {
+            return document.getElementById("screenMirrorPinnedPreviewWrap");
+        }
+
+        function getScreenMirrorPinnedResizeHandle() {
+            return document.getElementById("screenMirrorPinnedResizeHandle");
+        }
+
         function getScreenMirrorDeviceState(deviceUid) {
             const normalizedDeviceUid = normalizeDeviceUidInput(deviceUid);
             if (!normalizedDeviceUid) return null;
@@ -5498,6 +5770,9 @@
             state.tileWidth = normalizedWidth;
             state.updatedAt = Date.now();
             applyScreenMirrorTileSizing(normalizedDeviceUid);
+            if (pinnedScreenMirrorDeviceUid === normalizedDeviceUid) {
+                applyPinnedScreenMirrorSizing();
+            }
         }
 
         function isScreenMirrorRunningStatus(status) {
@@ -5516,6 +5791,692 @@
             return normalizedDeviceUid;
         }
 
+        function getPinnedScreenMirrorPopup() {
+            if (pinnedScreenMirrorPopupWindow && !pinnedScreenMirrorPopupWindow.closed) {
+                return pinnedScreenMirrorPopupWindow;
+            }
+            pinnedScreenMirrorPopupWindow = null;
+            return null;
+        }
+
+        function buildPinnedScreenMirrorPopupHtml(deviceName) {
+            const isLightMode = document.body.classList.contains("light-mode");
+            return `<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>${escapeHtml(deviceName)} • AutoCall Mirror</title>
+    <style>
+        * { box-sizing: border-box; }
+        html, body {
+            margin: 0;
+            width: 100%;
+            height: 100%;
+            overflow: hidden;
+            color: #f2f8ff;
+            font-family: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(150deg, #08162c, #061124);
+        }
+        body.light {
+            color: #0f172a;
+            background: linear-gradient(150deg, #f8fafc, #e2e8f0);
+        }
+        .popup-shell {
+            width: 100vw;
+            height: 100vh;
+            padding: 6px;
+            display: grid;
+            grid-template-rows: auto minmax(0, 1fr) auto;
+            gap: 6px;
+        }
+        .popup-header {
+            min-height: 28px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 12px;
+        }
+        .popup-title {
+            min-width: 0;
+            margin: 0;
+            font-size: 0.74rem;
+            font-weight: 800;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+        .popup-actions {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            flex-shrink: 0;
+        }
+        .popup-icon-btn,
+        .popup-nav-btn {
+            padding: 0;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            border-radius: 7px;
+            border: 1px solid rgba(103, 232, 249, 0.34);
+            background: rgba(8, 27, 45, 0.72);
+            color: #e2f8ff;
+            box-shadow: none;
+            cursor: pointer;
+        }
+        body.light .popup-icon-btn,
+        body.light .popup-nav-btn {
+            border-color: rgba(15, 23, 42, 0.14);
+            background: rgba(255, 255, 255, 0.9);
+            color: #0f172a;
+        }
+        .popup-icon-btn {
+            width: 26px;
+            height: 26px;
+        }
+        .popup-icon-btn.danger {
+            border-color: rgba(248, 113, 113, 0.55);
+            background: rgba(104, 24, 24, 0.56);
+            color: #ffe6e6;
+        }
+        body.light .popup-icon-btn.danger {
+            border-color: rgba(153, 27, 27, 0.28);
+            background: #fee2e2;
+            color: #991b1b;
+        }
+        .popup-icon-btn svg,
+        .popup-nav-btn svg {
+            width: 16px;
+            height: 16px;
+            fill: none;
+            stroke: currentColor;
+            stroke-width: 2.2;
+            stroke-linecap: round;
+            stroke-linejoin: round;
+        }
+        .popup-preview-wrap {
+            min-height: 0;
+            border-radius: 10px;
+            border: 1px solid rgba(189, 223, 255, 0.24);
+            background: rgba(3, 8, 22, 0.86);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            overflow: hidden;
+            touch-action: none;
+            user-select: none;
+            cursor: crosshair;
+        }
+        body.light .popup-preview-wrap {
+            border-color: rgba(15, 23, 42, 0.12);
+            background: rgba(255, 255, 255, 0.86);
+        }
+        .popup-preview-wrap img {
+            width: 100%;
+            height: 100%;
+            object-fit: contain;
+            display: block;
+        }
+        .popup-nav {
+            display: grid;
+            grid-template-columns: repeat(3, minmax(0, 1fr));
+            gap: 4px;
+            padding: 4px;
+            border-radius: 9px;
+            border: 1px solid rgba(189, 223, 255, 0.22);
+            background: rgba(3, 10, 24, 0.54);
+        }
+        body.light .popup-nav {
+            border-color: rgba(15, 23, 42, 0.12);
+            background: rgba(15, 23, 42, 0.04);
+        }
+        .popup-nav-btn {
+            width: 100%;
+            height: 28px;
+        }
+        .android-nav-back {
+            fill: currentColor;
+            stroke: none;
+        }
+    </style>
+</head>
+<body class="${isLightMode ? "light" : ""}">
+    <main class="popup-shell">
+        <header class="popup-header">
+            <p id="screenMirrorPopupTitle" class="popup-title">${escapeHtml(deviceName)}</p>
+            <div class="popup-actions">
+                <button id="screenMirrorPopupUnpinBtn" type="button" class="popup-icon-btn danger" title="Unpin" aria-label="Unpin">
+                    <svg viewBox="0 0 24 24" aria-hidden="true">
+                        <path d="M18 6 6 18"></path>
+                        <path d="M6 6 18 18"></path>
+                    </svg>
+                </button>
+            </div>
+        </header>
+        <div id="screenMirrorPopupPreviewWrap" class="popup-preview-wrap" title="Tap or swipe to control this device"></div>
+        <nav class="popup-nav" aria-label="Android navigation controls">
+            <button type="button" class="popup-nav-btn" data-popup-touch-target="back" title="Back" aria-label="Back">
+                <svg viewBox="0 0 24 24" aria-hidden="true">
+                    <path class="android-nav-back" d="M7 12 17 5v14z"></path>
+                </svg>
+            </button>
+            <button type="button" class="popup-nav-btn" data-popup-touch-target="home" title="Home" aria-label="Home">
+                <svg viewBox="0 0 24 24" aria-hidden="true">
+                    <circle cx="12" cy="12" r="5.2"></circle>
+                </svg>
+            </button>
+            <button type="button" class="popup-nav-btn" data-popup-touch-target="recents" title="Recents" aria-label="Recents">
+                <svg viewBox="0 0 24 24" aria-hidden="true">
+                    <rect x="7" y="7" width="10" height="10" rx="1.5"></rect>
+                </svg>
+            </button>
+        </nav>
+    </main>
+</body>
+</html>`;
+        }
+
+        function startPinnedScreenMirrorPopupMonitor() {
+            if (pinnedScreenMirrorPopupMonitorId) {
+                clearInterval(pinnedScreenMirrorPopupMonitorId);
+            }
+            pinnedScreenMirrorPopupMonitorId = setInterval(() => {
+                if (pinnedScreenMirrorPopupWindow && pinnedScreenMirrorPopupWindow.closed) {
+                    pinnedScreenMirrorPopupWindow = null;
+                    if (pinnedScreenMirrorDeviceUid && !isClosingPinnedScreenMirrorPopup) {
+                        unpinScreenMirrorDevice({ skipPopupClose: true });
+                    }
+                    clearInterval(pinnedScreenMirrorPopupMonitorId);
+                    pinnedScreenMirrorPopupMonitorId = null;
+                }
+            }, 700);
+        }
+
+        function stopPinnedScreenMirrorPopupMonitor() {
+            if (pinnedScreenMirrorPopupMonitorId) {
+                clearInterval(pinnedScreenMirrorPopupMonitorId);
+                pinnedScreenMirrorPopupMonitorId = null;
+            }
+        }
+
+        function clearPinnedScreenMirrorPopupGestureState() {
+            const previewWrap = screenMirrorPinnedPopupGestureState.previewWrap;
+            const pointerId = screenMirrorPinnedPopupGestureState.pointerId;
+            if (previewWrap && typeof previewWrap.releasePointerCapture === "function" && Number.isFinite(Number(pointerId))) {
+                try {
+                    previewWrap.releasePointerCapture(pointerId);
+                } catch (_error) {
+                    // ignore pointer release errors
+                }
+            }
+
+            screenMirrorPinnedPopupGestureState.active = false;
+            screenMirrorPinnedPopupGestureState.pointerId = null;
+            screenMirrorPinnedPopupGestureState.previewWrap = null;
+            screenMirrorPinnedPopupGestureState.startClientX = 0;
+            screenMirrorPinnedPopupGestureState.startClientY = 0;
+            screenMirrorPinnedPopupGestureState.startedAtMs = 0;
+            screenMirrorPinnedPopupGestureState.startMappedPoint = null;
+        }
+
+        function getPinnedScreenMirrorPopupSourceSize(previewWrap) {
+            if (!pinnedScreenMirrorDeviceUid) return null;
+            const state = getScreenMirrorDeviceState(pinnedScreenMirrorDeviceUid);
+            if (!state) return null;
+
+            const explicitWidth = toValidPositiveInteger(state.frameWidth);
+            const explicitHeight = toValidPositiveInteger(state.frameHeight);
+            if (explicitWidth && explicitHeight) {
+                return { width: explicitWidth, height: explicitHeight };
+            }
+
+            const previewImage = previewWrap?.querySelector?.("img");
+            const naturalWidth = toValidPositiveInteger(previewImage?.naturalWidth);
+            const naturalHeight = toValidPositiveInteger(previewImage?.naturalHeight);
+            if (naturalWidth && naturalHeight) {
+                return { width: naturalWidth, height: naturalHeight };
+            }
+
+            return null;
+        }
+
+        function mapPinnedScreenMirrorPopupPoint(previewWrap, clientX, clientY) {
+            if (!previewWrap || typeof previewWrap.getBoundingClientRect !== "function") return null;
+
+            const sourceSize = getPinnedScreenMirrorPopupSourceSize(previewWrap);
+            if (!sourceSize) return null;
+
+            const previewRect = previewWrap.getBoundingClientRect();
+            if (previewRect.width <= 0 || previewRect.height <= 0) {
+                return null;
+            }
+
+            const drawScale = Math.min(
+                previewRect.width / sourceSize.width,
+                previewRect.height / sourceSize.height
+            );
+            if (!Number.isFinite(drawScale) || drawScale <= 0) {
+                return null;
+            }
+
+            const drawnWidth = sourceSize.width * drawScale;
+            const drawnHeight = sourceSize.height * drawScale;
+            const offsetX = (previewRect.width - drawnWidth) / 2;
+            const offsetY = (previewRect.height - drawnHeight) / 2;
+            const localX = clientX - previewRect.left;
+            const localY = clientY - previewRect.top;
+
+            const insideDrawnImage =
+                localX >= offsetX &&
+                localX <= offsetX + drawnWidth &&
+                localY >= offsetY &&
+                localY <= offsetY + drawnHeight;
+            if (!insideDrawnImage) {
+                return null;
+            }
+
+            const normalizedX = (localX - offsetX) / drawnWidth;
+            const normalizedY = (localY - offsetY) / drawnHeight;
+            const mappedX = Math.min(
+                sourceSize.width - 1,
+                Math.max(0, Math.round(normalizedX * sourceSize.width))
+            );
+            const mappedY = Math.min(
+                sourceSize.height - 1,
+                Math.max(0, Math.round(normalizedY * sourceSize.height))
+            );
+
+            return {
+                x: mappedX,
+                y: mappedY,
+                screenWidth: sourceSize.width,
+                screenHeight: sourceSize.height
+            };
+        }
+
+        function handlePinnedScreenMirrorPopupPointerDown(event) {
+            if (event.pointerType === "mouse" && event.button !== 0) return;
+            if (!pinnedScreenMirrorDeviceUid || !activeScreenMirrorDeviceUids.has(pinnedScreenMirrorDeviceUid)) {
+                return;
+            }
+
+            const previewWrap = event.currentTarget;
+            const mappedStart = mapPinnedScreenMirrorPopupPoint(previewWrap, event.clientX, event.clientY);
+            if (!mappedStart) return;
+
+            clearPinnedScreenMirrorPopupGestureState();
+            screenMirrorPinnedPopupGestureState.active = true;
+            screenMirrorPinnedPopupGestureState.pointerId = event.pointerId;
+            screenMirrorPinnedPopupGestureState.previewWrap = previewWrap;
+            screenMirrorPinnedPopupGestureState.startClientX = event.clientX;
+            screenMirrorPinnedPopupGestureState.startClientY = event.clientY;
+            screenMirrorPinnedPopupGestureState.startedAtMs = Date.now();
+            screenMirrorPinnedPopupGestureState.startMappedPoint = mappedStart;
+
+            if (typeof previewWrap.setPointerCapture === "function") {
+                try {
+                    previewWrap.setPointerCapture(event.pointerId);
+                } catch (_error) {
+                    // ignore pointer capture errors
+                }
+            }
+
+            event.preventDefault();
+        }
+
+        async function handlePinnedScreenMirrorPopupPointerUp(event) {
+            if (!screenMirrorPinnedPopupGestureState.active) return;
+            if (screenMirrorPinnedPopupGestureState.pointerId !== event.pointerId) return;
+
+            const gestureStateSnapshot = {
+                previewWrap: screenMirrorPinnedPopupGestureState.previewWrap,
+                startClientX: screenMirrorPinnedPopupGestureState.startClientX,
+                startClientY: screenMirrorPinnedPopupGestureState.startClientY,
+                startedAtMs: screenMirrorPinnedPopupGestureState.startedAtMs,
+                startMappedPoint: screenMirrorPinnedPopupGestureState.startMappedPoint
+            };
+
+            clearPinnedScreenMirrorPopupGestureState();
+            if (!pinnedScreenMirrorDeviceUid || !activeScreenMirrorDeviceUids.has(pinnedScreenMirrorDeviceUid)) {
+                return;
+            }
+
+            const mappedEnd = mapPinnedScreenMirrorPopupPoint(
+                gestureStateSnapshot.previewWrap,
+                event.clientX,
+                event.clientY
+            );
+            const pointerDistance = Math.hypot(
+                event.clientX - gestureStateSnapshot.startClientX,
+                event.clientY - gestureStateSnapshot.startClientY
+            );
+            const endPointForTap = mappedEnd || gestureStateSnapshot.startMappedPoint;
+
+            if (
+                pointerDistance <= SCREEN_TOUCH_TAP_DISTANCE_THRESHOLD_PX &&
+                endPointForTap
+            ) {
+                await sendScreenRemoteCommandForDevice(
+                    pinnedScreenMirrorDeviceUid,
+                    {
+                        action: "screen_touch",
+                        type: "SCREEN_TOUCH",
+                        x: endPointForTap.x,
+                        y: endPointForTap.y,
+                        screenWidth: endPointForTap.screenWidth,
+                        screenHeight: endPointForTap.screenHeight
+                    },
+                    {
+                        defaultErrorMessage: "Failed to send screen tap command",
+                        showErrorToast: true
+                    }
+                );
+                event.preventDefault();
+                return;
+            }
+
+            if (!gestureStateSnapshot.startMappedPoint || !mappedEnd) {
+                return;
+            }
+
+            const elapsedMs = Math.round(Date.now() - gestureStateSnapshot.startedAtMs);
+            const durationMs = Math.max(
+                SCREEN_TOUCH_MIN_SWIPE_DURATION_MS,
+                Math.min(SCREEN_TOUCH_MAX_SWIPE_DURATION_MS, elapsedMs)
+            );
+
+            await sendScreenRemoteCommandForDevice(
+                pinnedScreenMirrorDeviceUid,
+                {
+                    action: "screen_swipe",
+                    type: "SCREEN_SWIPE",
+                    startX: gestureStateSnapshot.startMappedPoint.x,
+                    startY: gestureStateSnapshot.startMappedPoint.y,
+                    endX: mappedEnd.x,
+                    endY: mappedEnd.y,
+                    durationMs,
+                    screenWidth: mappedEnd.screenWidth,
+                    screenHeight: mappedEnd.screenHeight
+                },
+                {
+                    defaultErrorMessage: "Failed to send screen swipe command",
+                    showErrorToast: true
+                }
+            );
+            event.preventDefault();
+        }
+
+        function handlePinnedScreenMirrorPopupPointerCancel(event) {
+            if (!screenMirrorPinnedPopupGestureState.active) return;
+            if (screenMirrorPinnedPopupGestureState.pointerId !== event.pointerId) return;
+            clearPinnedScreenMirrorPopupGestureState();
+        }
+
+        function bindPinnedScreenMirrorPopupEvents(popupWindow) {
+            const popupDocument = popupWindow?.document;
+            if (!popupDocument) return;
+
+            const previewWrap = popupDocument.getElementById("screenMirrorPopupPreviewWrap");
+            if (previewWrap) {
+                previewWrap.addEventListener("pointerdown", handlePinnedScreenMirrorPopupPointerDown, { passive: false });
+                previewWrap.addEventListener("pointerup", handlePinnedScreenMirrorPopupPointerUp, { passive: false });
+                previewWrap.addEventListener("pointercancel", handlePinnedScreenMirrorPopupPointerCancel);
+                previewWrap.addEventListener("dragstart", (event) => event.preventDefault());
+            }
+
+            const unpinButton = popupDocument.getElementById("screenMirrorPopupUnpinBtn");
+            if (unpinButton) {
+                unpinButton.addEventListener("click", () => {
+                    unpinScreenMirrorDevice();
+                });
+            }
+
+            popupDocument.querySelectorAll("[data-popup-touch-target]").forEach((button) => {
+                button.addEventListener("click", async () => {
+                    const touchTarget = String(button.getAttribute("data-popup-touch-target") || "").trim().toLowerCase();
+                    const targetUid = normalizeDeviceUidInput(pinnedScreenMirrorDeviceUid);
+                    if (!targetUid || !["back", "home", "recents"].includes(touchTarget)) return;
+
+                    button.disabled = true;
+                    try {
+                        const sent = await sendScreenRemoteCommandForDevice(
+                            targetUid,
+                            {
+                                action: "screen_touch",
+                                type: "SCREEN_TOUCH",
+                                touchTarget
+                            },
+                            {
+                                defaultErrorMessage: `Failed to send ${touchTarget.toUpperCase()} command`,
+                                showErrorToast: true
+                            }
+                        );
+                        if (sent) {
+                            showToast(`${touchTarget.toUpperCase()} command sent`, "success");
+                            await loadCommands();
+                        }
+                    } finally {
+                        button.disabled = false;
+                    }
+                });
+            });
+        }
+
+        function openPinnedScreenMirrorPopup(deviceUid) {
+            const normalizedDeviceUid = normalizeDeviceUidInput(deviceUid);
+            if (!normalizedDeviceUid) return false;
+
+            const deviceName = getScreenMirrorDeviceDisplayName(normalizedDeviceUid);
+            const popupName = `autocall_mirror_${normalizedDeviceUid}`;
+            const popupFeatures = [
+                "popup=yes",
+                "width=320",
+                "height=620",
+                "left=80",
+                "top=80",
+                "resizable=yes",
+                "scrollbars=no"
+            ].join(",");
+            const popupWindow = window.open("", popupName, popupFeatures);
+            if (!popupWindow) {
+                showToast("Allow pop-ups for this site to pin the mirror in a new window", "error");
+                return false;
+            }
+
+            pinnedScreenMirrorPopupWindow = popupWindow;
+            isClosingPinnedScreenMirrorPopup = false;
+            popupWindow.document.open();
+            popupWindow.document.write(buildPinnedScreenMirrorPopupHtml(deviceName));
+            popupWindow.document.close();
+            bindPinnedScreenMirrorPopupEvents(popupWindow);
+            startPinnedScreenMirrorPopupMonitor();
+
+            try {
+                popupWindow.focus();
+            } catch (_error) {
+                // ignore focus errors
+            }
+            return true;
+        }
+
+        function closePinnedScreenMirrorPopup() {
+            clearPinnedScreenMirrorPopupGestureState();
+            const popupWindow = getPinnedScreenMirrorPopup();
+            stopPinnedScreenMirrorPopupMonitor();
+            if (!popupWindow) return;
+
+            isClosingPinnedScreenMirrorPopup = true;
+            try {
+                popupWindow.close();
+            } catch (_error) {
+                // ignore popup close errors
+            }
+            pinnedScreenMirrorPopupWindow = null;
+            setTimeout(() => {
+                isClosingPinnedScreenMirrorPopup = false;
+            }, 0);
+        }
+
+        function applyPinnedScreenMirrorSizing() {
+            const panel = getScreenMirrorPinnedPanel();
+            const popupWindow = getPinnedScreenMirrorPopup();
+            if (!pinnedScreenMirrorDeviceUid) return;
+
+            const state = getScreenMirrorDeviceState(pinnedScreenMirrorDeviceUid);
+            if (!state) return;
+
+            const aspectRatio = getScreenMirrorTileAspectRatioValue(state);
+            if (panel) {
+                const normalizedWidth = getScreenMirrorTileWidth(pinnedScreenMirrorDeviceUid);
+                panel.style.setProperty("--screen-mirror-pinned-width", `${normalizedWidth}px`);
+                panel.style.setProperty("--screen-mirror-preview-ratio", aspectRatio);
+            }
+            if (popupWindow?.document?.documentElement) {
+                popupWindow.document.documentElement.style.setProperty("--screen-mirror-preview-ratio", aspectRatio);
+            }
+        }
+
+        function showPinnedScreenMirrorPanel() {
+            const panel = getScreenMirrorPinnedPanel();
+            if (!panel) return;
+
+            if (screenMirrorPinnedCloseTimerId) {
+                clearTimeout(screenMirrorPinnedCloseTimerId);
+                screenMirrorPinnedCloseTimerId = null;
+            }
+
+            panel.classList.remove("panel-hidden");
+            requestAnimationFrame(() => {
+                panel.classList.add("is-visible");
+            });
+        }
+
+        function hidePinnedScreenMirrorPanel(immediate = false) {
+            const panel = getScreenMirrorPinnedPanel();
+            if (!panel) return;
+
+            if (screenMirrorPinnedCloseTimerId) {
+                clearTimeout(screenMirrorPinnedCloseTimerId);
+                screenMirrorPinnedCloseTimerId = null;
+            }
+
+            panel.classList.remove("is-visible");
+
+            if (immediate) {
+                panel.classList.add("panel-hidden");
+                return;
+            }
+
+            screenMirrorPinnedCloseTimerId = setTimeout(() => {
+                panel.classList.add("panel-hidden");
+                screenMirrorPinnedCloseTimerId = null;
+            }, SCREEN_MIRROR_PINNED_ANIMATION_MS);
+        }
+
+        function updateScreenMirrorPinButtons() {
+            document.querySelectorAll("[data-mirror-action='pin']").forEach((button) => {
+                if (!(button instanceof HTMLElement)) return;
+                const deviceUid = normalizeDeviceUidInput(button.getAttribute("data-device-uid") || "");
+                const isPinned = Boolean(deviceUid && deviceUid === pinnedScreenMirrorDeviceUid);
+                button.classList.toggle("active", isPinned);
+                button.setAttribute("aria-pressed", String(isPinned));
+                button.setAttribute("title", isPinned ? "Pinned" : "Pin to corner");
+                button.setAttribute("aria-label", isPinned ? "Pinned screen mirror" : "Pin screen mirror");
+            });
+        }
+
+        function renderPinnedScreenMirror() {
+            const popupWindow = getPinnedScreenMirrorPopup();
+            const popupDocument = popupWindow?.document;
+            const previewWrap = popupDocument?.getElementById("screenMirrorPopupPreviewWrap") ||
+                getScreenMirrorPinnedPreviewWrap();
+            if (!previewWrap || !pinnedScreenMirrorDeviceUid) return;
+
+            const state = getScreenMirrorDeviceState(pinnedScreenMirrorDeviceUid);
+            if (!state) return;
+
+            const deviceName = getScreenMirrorDeviceDisplayName(pinnedScreenMirrorDeviceUid);
+            const titleElement = popupDocument?.getElementById("screenMirrorPopupTitle") ||
+                document.getElementById("screenMirrorPinnedTitle");
+
+            if (popupDocument) {
+                popupDocument.title = `${deviceName} • AutoCall Mirror`;
+            }
+            previewWrap.dataset.deviceUid = pinnedScreenMirrorDeviceUid;
+
+            if (titleElement) {
+                titleElement.textContent = deviceName;
+                titleElement.setAttribute("title", deviceName);
+            }
+
+            if (toNonEmptyString(state.frameSrc)) {
+                let previewImage = previewWrap.querySelector("img");
+                if (!previewImage) {
+                    previewWrap.innerHTML = `<img src="${escapeHtml(state.frameSrc)}" alt="Pinned live mirrored screen for ${escapeHtml(deviceName)}" />`;
+                    previewImage = previewWrap.querySelector("img");
+                } else {
+                    if (previewImage.getAttribute("src") !== state.frameSrc) {
+                        previewImage.setAttribute("src", state.frameSrc);
+                    }
+                    previewImage.setAttribute("alt", `Pinned live mirrored screen for ${deviceName}`);
+                }
+                if (previewImage) {
+                    const syncFrameSize = () => {
+                        updateScreenMirrorTileFrameSizeFromImage(pinnedScreenMirrorDeviceUid, previewImage);
+                        applyPinnedScreenMirrorSizing();
+                    };
+                    previewImage.addEventListener("load", syncFrameSize, { once: true });
+                    if (previewImage.complete) {
+                        syncFrameSize();
+                    }
+                }
+            } else {
+                previewWrap.innerHTML = "";
+            }
+
+            applyPinnedScreenMirrorSizing();
+            updateScreenMirrorPinButtons();
+        }
+
+        function pinScreenMirrorDevice(deviceUid) {
+            const normalizedDeviceUid = normalizeDeviceUidInput(deviceUid);
+            if (!normalizedDeviceUid || !activeScreenMirrorDeviceUids.has(normalizedDeviceUid)) {
+                showToast("Start Screen Mirror first", "error");
+                return;
+            }
+
+            pinnedScreenMirrorDeviceUid = normalizedDeviceUid;
+            joinScreenMirrorDashboardRoom(normalizedDeviceUid);
+            const popupOpened = openPinnedScreenMirrorPopup(normalizedDeviceUid);
+            if (!popupOpened) {
+                pinnedScreenMirrorDeviceUid = "";
+                updateScreenMirrorPinButtons();
+                renderScreenMirrorMultiGrid();
+                return;
+            }
+            renderPinnedScreenMirror();
+            hidePinnedScreenMirrorPanel(true);
+            updateScreenMirrorPinButtons();
+            renderScreenMirrorMultiGrid();
+        }
+
+        function unpinScreenMirrorDevice(options = {}) {
+            const previousPinnedUid = pinnedScreenMirrorDeviceUid;
+            pinnedScreenMirrorDeviceUid = "";
+            clearAllScreenMirrorMultiPointerGestures();
+            clearPinnedScreenMirrorPopupGestureState();
+            endScreenMirrorPinnedResize();
+            hidePinnedScreenMirrorPanel(options.immediate === true);
+            if (options.skipPopupClose !== true) {
+                closePinnedScreenMirrorPopup();
+            }
+            updateScreenMirrorPinButtons();
+            if (previousPinnedUid && options.renderGrid !== false) {
+                renderScreenMirrorMultiGrid();
+            }
+        }
+
         function getScreenMirrorTilePreviewElement(previewWrap) {
             if (!(previewWrap instanceof Element)) return null;
             return previewWrap.querySelector(".screen-mirror-tile-preview");
@@ -5523,7 +6484,7 @@
 
         function updateScreenMirrorTileFrameSizeFromImage(deviceUid, imageElement) {
             const normalizedDeviceUid = normalizeDeviceUidInput(deviceUid);
-            if (!normalizedDeviceUid || !(imageElement instanceof HTMLImageElement)) return;
+            if (!normalizedDeviceUid || !imageElement) return;
             const naturalWidth = toValidPositiveInteger(imageElement.naturalWidth);
             const naturalHeight = toValidPositiveInteger(imageElement.naturalHeight);
             if (!naturalWidth || !naturalHeight) return;
@@ -5884,28 +6845,131 @@
             event.stopPropagation();
         }
 
+        function endScreenMirrorPinnedResize(event) {
+            if (!screenMirrorPinnedResizeState.active) return;
+            if (event && Number.isFinite(Number(event.pointerId))) {
+                if (screenMirrorPinnedResizeState.pointerId !== event.pointerId) {
+                    return;
+                }
+            }
+
+            const handle = screenMirrorPinnedResizeState.handle;
+            const pointerId = screenMirrorPinnedResizeState.pointerId;
+            if (handle && typeof handle.releasePointerCapture === "function" && Number.isFinite(Number(pointerId))) {
+                try {
+                    handle.releasePointerCapture(pointerId);
+                } catch (_error) {
+                    // ignore pointer release errors
+                }
+            }
+
+            const panel = getScreenMirrorPinnedPanel();
+            if (panel) {
+                panel.classList.remove("is-resizing");
+            }
+
+            screenMirrorPinnedResizeState.active = false;
+            screenMirrorPinnedResizeState.pointerId = null;
+            screenMirrorPinnedResizeState.deviceUid = "";
+            screenMirrorPinnedResizeState.startClientX = 0;
+            screenMirrorPinnedResizeState.startClientY = 0;
+            screenMirrorPinnedResizeState.startWidth = SCREEN_MIRROR_TILE_WIDTH_DEFAULT;
+            screenMirrorPinnedResizeState.handle = null;
+
+            window.removeEventListener("pointermove", handleScreenMirrorPinnedResizeMove);
+            window.removeEventListener("pointerup", endScreenMirrorPinnedResize);
+            window.removeEventListener("pointercancel", endScreenMirrorPinnedResize);
+        }
+
+        function handleScreenMirrorPinnedResizeMove(event) {
+            if (!screenMirrorPinnedResizeState.active) return;
+            if (screenMirrorPinnedResizeState.pointerId !== event.pointerId) return;
+
+            const deltaX = event.clientX - screenMirrorPinnedResizeState.startClientX;
+            const deltaY = screenMirrorPinnedResizeState.startClientY - event.clientY;
+            const dominantDelta =
+                Math.abs(deltaX) >= Math.abs(deltaY)
+                    ? deltaX
+                    : deltaY;
+            const nextWidth = screenMirrorPinnedResizeState.startWidth + dominantDelta;
+            applyScreenMirrorTileWidth(screenMirrorPinnedResizeState.deviceUid, nextWidth);
+            event.preventDefault();
+        }
+
+        function startScreenMirrorPinnedResize(event) {
+            const handle = event.currentTarget;
+            if (!(handle instanceof HTMLElement)) return;
+            if (event.pointerType === "mouse" && event.button !== 0) return;
+
+            const targetUid = normalizeDeviceUidInput(pinnedScreenMirrorDeviceUid);
+            if (!targetUid) return;
+
+            endScreenMirrorPinnedResize();
+
+            screenMirrorPinnedResizeState.active = true;
+            screenMirrorPinnedResizeState.pointerId = event.pointerId;
+            screenMirrorPinnedResizeState.deviceUid = targetUid;
+            screenMirrorPinnedResizeState.startClientX = event.clientX;
+            screenMirrorPinnedResizeState.startClientY = event.clientY;
+            screenMirrorPinnedResizeState.startWidth = getScreenMirrorTileWidth(targetUid);
+            screenMirrorPinnedResizeState.handle = handle;
+
+            const panel = getScreenMirrorPinnedPanel();
+            if (panel) {
+                panel.classList.add("is-resizing");
+            }
+
+            if (typeof handle.setPointerCapture === "function") {
+                try {
+                    handle.setPointerCapture(event.pointerId);
+                } catch (_error) {
+                    // ignore pointer capture errors
+                }
+            }
+
+            window.addEventListener("pointermove", handleScreenMirrorPinnedResizeMove, { passive: false });
+            window.addEventListener("pointerup", endScreenMirrorPinnedResize);
+            window.addEventListener("pointercancel", endScreenMirrorPinnedResize);
+            event.preventDefault();
+            event.stopPropagation();
+        }
+
         function renderScreenMirrorMultiGrid() {
             const grid = getScreenMirrorMultiGridElement();
             const hint = document.getElementById("screenMirrorMultiHint");
             const screenMirrorCard = document.getElementById("screenMirrorCard");
             if (!grid || !screenMirrorCard) return;
 
-            const sortedUids = [...activeScreenMirrorDeviceUids].sort((leftUid, rightUid) =>
+            const activeSortedUids = [...activeScreenMirrorDeviceUids].sort((leftUid, rightUid) =>
                 getScreenMirrorDeviceDisplayName(leftUid).localeCompare(
                     getScreenMirrorDeviceDisplayName(rightUid),
                     undefined,
                     { sensitivity: "base" }
                 )
             );
+            const sortedUids = activeSortedUids.filter((deviceUid) => deviceUid !== pinnedScreenMirrorDeviceUid);
+
+            if (activeSortedUids.length === 0) {
+                clearAllScreenMirrorMultiPointerGestures();
+                endScreenMirrorTileResize();
+                unpinScreenMirrorDevice({ immediate: true, renderGrid: false });
+                grid.innerHTML = "";
+                if (hint) {
+                    hint.textContent = "Use the mirror icon from the device list to start live view.";
+                }
+                hideScreenMirrorCard(false);
+                return;
+            }
 
             if (sortedUids.length === 0) {
                 clearAllScreenMirrorMultiPointerGestures();
                 endScreenMirrorTileResize();
                 grid.innerHTML = "";
                 if (hint) {
-                    hint.textContent = "Use the mirror icon from the device list to start live view.";
+                    hint.textContent = "Pinned mirror is open in the corner.";
                 }
                 hideScreenMirrorCard(false);
+                updateScreenMirrorPinButtons();
                 return;
             }
 
@@ -5927,6 +6991,7 @@
                 const statusClass = escapeHtml(statusText.replace(/[^a-z0-9_-]/g, ""));
                 const tileWidth = getScreenMirrorTileWidth(deviceUid);
                 const tileAspectRatio = getScreenMirrorTileAspectRatioValue(state);
+                const isPinned = pinnedScreenMirrorDeviceUid === deviceUid;
                 const previewContent = toNonEmptyString(state.frameSrc)
                     ? `<img class="screen-mirror-tile-preview" src="${escapeHtml(state.frameSrc)}" alt="Live mirrored screen for ${escapeHtml(deviceName)}" />`
                     : `<span class="screen-mirror-tile-placeholder">Waiting for frames...</span>`;
@@ -5942,6 +7007,21 @@
                                 <p class="screen-mirror-device-uid">${escapeHtml(deviceUid)}</p>
                             </div>
                             <div class="screen-mirror-device-actions">
+                                <button
+                                    type="button"
+                                    class="screen-mirror-tile-btn pin ${isPinned ? "active" : ""}"
+                                    data-mirror-action="pin"
+                                    data-device-uid="${escapeHtml(deviceUid)}"
+                                    title="${isPinned ? "Pinned" : "Pin to corner"}"
+                                    aria-label="${isPinned ? "Pinned screen mirror" : "Pin screen mirror"}"
+                                    aria-pressed="${isPinned ? "true" : "false"}">
+                                    <svg viewBox="0 0 24 24" aria-hidden="true">
+                                        <path d="M14 4 20 10"></path>
+                                        <path d="M7 11 13 5"></path>
+                                        <path d="M5 19 11 13"></path>
+                                        <path d="M9 9 15 15"></path>
+                                    </svg>
+                                </button>
                                 <button
                                     type="button"
                                     class="screen-mirror-tile-btn danger"
@@ -6035,6 +7115,14 @@
                 });
             });
 
+            grid.querySelectorAll("[data-mirror-action='pin']").forEach((button) => {
+                button.addEventListener("click", () => {
+                    const targetUid = normalizeDeviceUidInput(button.getAttribute("data-device-uid") || "");
+                    if (!targetUid) return;
+                    pinScreenMirrorDevice(targetUid);
+                });
+            });
+
             grid.querySelectorAll("[data-mirror-action='global-action']").forEach((button) => {
                 button.addEventListener("click", async () => {
                     const targetUid = normalizeDeviceUidInput(button.getAttribute("data-device-uid") || "");
@@ -6077,13 +7165,21 @@
                 previewWrap.addEventListener("pointercancel", handleMultiScreenMirrorPreviewPointerCancel);
                 previewWrap.addEventListener("dragstart", (event) => event.preventDefault());
             });
+            updateScreenMirrorPinButtons();
         }
 
         function updateScreenMirrorMultiTile(deviceUid) {
             const normalizedDeviceUid = normalizeDeviceUidInput(deviceUid);
             if (!normalizedDeviceUid) return;
+            const isPinnedDevice = pinnedScreenMirrorDeviceUid === normalizedDeviceUid;
+            if (isPinnedDevice) {
+                renderPinnedScreenMirror();
+                return;
+            }
             const grid = getScreenMirrorMultiGridElement();
-            if (!grid) return;
+            if (!grid) {
+                return;
+            }
 
             const tile = grid.querySelector(`.screen-mirror-device-tile[data-device-uid="${normalizedDeviceUid}"]`);
             if (!tile) {
@@ -6265,6 +7361,9 @@
                 state.updatedAt = Date.now();
             }
             renderScreenMirrorMultiGrid();
+            if (pinnedScreenMirrorDeviceUid === normalizedDeviceUid) {
+                renderPinnedScreenMirror();
+            }
 
             try {
                 await sendScreenMirrorCommandForDevice(
@@ -6275,6 +7374,9 @@
                 );
                 if (removeAfterStop) {
                     activeScreenMirrorDeviceUids.delete(normalizedDeviceUid);
+                    if (pinnedScreenMirrorDeviceUid === normalizedDeviceUid) {
+                        unpinScreenMirrorDevice({ renderGrid: false });
+                    }
                 }
                 showToast(`Mirror stopped for ${normalizedDeviceUid}`, "success");
                 await loadCommands();
@@ -6797,6 +7899,70 @@
             window.addEventListener("resize", () => {
                 clampScreenMirrorFloatingPanelToViewport();
                 applyScreenMirrorViewerDockedSizing();
+            });
+        }
+
+        function initializeScreenMirrorPinnedPanel() {
+            const panel = getScreenMirrorPinnedPanel();
+            const previewWrap = getScreenMirrorPinnedPreviewWrap();
+            const resizeHandle = getScreenMirrorPinnedResizeHandle();
+            const unpinButton = document.getElementById("screenMirrorPinnedUnpinBtn");
+
+            if (panel) {
+                panel.classList.add("panel-hidden");
+                panel.classList.remove("is-visible");
+                panel.classList.remove("is-resizing");
+            }
+
+            if (unpinButton) {
+                unpinButton.addEventListener("click", () => {
+                    unpinScreenMirrorDevice();
+                });
+            }
+
+            if (previewWrap) {
+                previewWrap.addEventListener("pointerdown", handleMultiScreenMirrorPreviewPointerDown, { passive: false });
+                previewWrap.addEventListener("pointerup", handleMultiScreenMirrorPreviewPointerUp, { passive: false });
+                previewWrap.addEventListener("pointercancel", handleMultiScreenMirrorPreviewPointerCancel);
+                previewWrap.addEventListener("dragstart", (event) => event.preventDefault());
+            }
+
+            document.querySelectorAll("[data-pinned-touch-target]").forEach((button) => {
+                button.addEventListener("click", async () => {
+                    const touchTarget = String(button.getAttribute("data-pinned-touch-target") || "").trim().toLowerCase();
+                    const targetUid = normalizeDeviceUidInput(pinnedScreenMirrorDeviceUid);
+                    if (!targetUid || !["back", "home", "recents"].includes(touchTarget)) return;
+
+                    button.disabled = true;
+                    try {
+                        const sent = await sendScreenRemoteCommandForDevice(
+                            targetUid,
+                            {
+                                action: "screen_touch",
+                                type: "SCREEN_TOUCH",
+                                touchTarget
+                            },
+                            {
+                                defaultErrorMessage: `Failed to send ${touchTarget.toUpperCase()} command`,
+                                showErrorToast: true
+                            }
+                        );
+                        if (sent) {
+                            showToast(`${touchTarget.toUpperCase()} command sent`, "success");
+                            await loadCommands();
+                        }
+                    } finally {
+                        button.disabled = false;
+                    }
+                });
+            });
+
+            if (resizeHandle) {
+                resizeHandle.addEventListener("pointerdown", startScreenMirrorPinnedResize, { passive: false });
+            }
+
+            window.addEventListener("resize", () => {
+                applyPinnedScreenMirrorSizing();
             });
         }
 
@@ -8234,6 +9400,7 @@
             activeScreenMirrorDeviceUids.clear();
             screenMirrorDeviceStateByUid.clear();
             dockScreenMirror();
+            unpinScreenMirrorDevice({ immediate: true, renderGrid: false });
             resetScreenMirrorView();
             renderScreenMirrorMultiGrid();
             populateDeviceSelect(getGlobalDeviceSelectElement(), [], "");
@@ -10913,6 +12080,7 @@
         initializeCommandConfirmDialog();
         initializeContactSaveDialog();
         initializeScreenMirrorFloatingUI();
+        initializeScreenMirrorPinnedPanel();
         initializeScreenMirrorTouchControl();
         resetScreenMirrorView();
         renderScreenMirrorMultiGrid();
