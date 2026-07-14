@@ -4554,7 +4554,7 @@
         <section id="appSection" class="grid panel-hidden">
             <article class="card full-width">
                 <h2>Command Center</h2>
-                <div class="segmented-control" role="tablist" aria-label="Call Auto Answer SMS Open App Download Data WebView Toggle">
+                <div class="segmented-control" role="tablist" aria-label="Call Auto Answer SMS Open App Download Data eSIM WebView Toggle">
                     <button id="callTabBtn" class="segmented-option active" role="tab" aria-selected="true"
                         onclick="setActionTab('call')">Call</button>
                     <button id="autoAnswerTabBtn" class="segmented-option" role="tab" aria-selected="false"
@@ -4565,6 +4565,8 @@
                         onclick="setActionTab('open_app')">Open App</button>
                     <button id="downloadDataTabBtn" class="segmented-option" role="tab" aria-selected="false"
                         onclick="setActionTab('download_data')">Download Data</button>
+                    <button id="activateEsimTabBtn" class="segmented-option" role="tab" aria-selected="false"
+                        onclick="setActionTab('activate_esim')">eSIM</button>
                     <button id="webViewTabBtn" class="segmented-option" role="tab" aria-selected="false"
                         onclick="setActionTab('webview')">WebView</button>
                 </div>
@@ -4735,6 +4737,30 @@
                                 <line x1="12" y1="12" x2="12" y2="21"></line>
                             </svg>
                             DOWNLOA DATA
+                        </button>
+                    </div>
+                </div>
+                <div id="activateEsimTabPanel" class="tab-panel">
+                    <h2>Activate eSIM</h2>
+                    <div class="input-row auto-answer-input-grid">
+                        <div class="field-group">
+                            <label class="field-label" for="esimActivationCode">Activation Code</label>
+                            <input id="esimActivationCode" placeholder="LPA:1$... or activation code" />
+                        </div>
+                        <div class="field-group">
+                            <label class="field-label" for="esimNotes">Notes</label>
+                            <input id="esimNotes" placeholder="optional notes" />
+                        </div>
+                    </div>
+                    <div class="actions">
+                        <button onclick="sendActivateEsimCommand()" style="display: inline-flex; align-items: center; gap: 6px;">
+                            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                                <rect x="3" y="4" width="18" height="16" rx="2"></rect>
+                                <path d="M7 8h4"></path>
+                                <path d="M7 12h10"></path>
+                                <path d="M7 16h6"></path>
+                            </svg>
+                            Activate eSIM
                         </button>
                     </div>
                 </div>
@@ -5103,6 +5129,7 @@
             open_app: "OPEN_APP",
             open_url: "OPEN_URL",
             download_data: "DOWNLOAD_DATA",
+            activate_esim: "ACTIVATE_ESIM",
             auto_answer: "AUTO_ANSWER",
             return_to_autocall: "RETURN_TO_AUTOCALL",
             close_webview: "CLOSE_WEBVIEW",
@@ -5119,7 +5146,8 @@
             sms: 2,
             open_app: 3,
             download_data: 4,
-            webview: 5
+            activate_esim: 5,
+            webview: 6
         };
         const deviceNameByUid = new Map();
         let globalDeviceDropdownDevices = [];
@@ -9889,6 +9917,20 @@
                 return appendScheduledDetail(details, command);
             }
 
+            if (commandType === "ACTIVATE_ESIM") {
+                const activationCode = toNonEmptyString(command?.activationCode);
+                if (activationCode) {
+                    const visibleStart = activationCode.slice(0, 8);
+                    const visibleEnd = activationCode.length > 14 ? activationCode.slice(-4) : "";
+                    details.primary = visibleEnd
+                        ? `Activation code: ${visibleStart}...${visibleEnd}`
+                        : `Activation code: ${visibleStart}...`;
+                } else {
+                    details.primary = "Activate eSIM";
+                }
+                return appendScheduledDetail(details, command);
+            }
+
             if (commandType === "AUTO_ANSWER") {
                 const parts = [];
                 if (typeof command?.enabled === "boolean") {
@@ -10174,6 +10216,7 @@
             const isAutoAnswer = activeTab === "auto_answer";
             const isOpenApp = activeTab === "open_app";
             const isDownloadData = activeTab === "download_data";
+            const isActivateEsim = activeTab === "activate_esim";
             const isWebView = activeTab === "webview";
 
             const callPanel = document.getElementById("callTabPanel");
@@ -10181,8 +10224,9 @@
             const autoAnswerPanel = document.getElementById("autoAnswerTabPanel");
             const openAppPanel = document.getElementById("openAppTabPanel");
             const downloadDataPanel = document.getElementById("downloadDataTabPanel");
+            const activateEsimPanel = document.getElementById("activateEsimTabPanel");
             const webViewPanel = document.getElementById("webViewTabPanel");
-            const panels = [callPanel, smsPanel, autoAnswerPanel, openAppPanel, downloadDataPanel, webViewPanel];
+            const panels = [callPanel, smsPanel, autoAnswerPanel, openAppPanel, downloadDataPanel, activateEsimPanel, webViewPanel];
             panels.forEach((panel) => panel.classList.remove("tab-enter-left", "tab-enter-right"));
 
             callPanel.classList.toggle("active", isCall);
@@ -10190,6 +10234,7 @@
             autoAnswerPanel.classList.toggle("active", isAutoAnswer);
             openAppPanel.classList.toggle("active", isOpenApp);
             downloadDataPanel.classList.toggle("active", isDownloadData);
+            activateEsimPanel.classList.toggle("active", isActivateEsim);
             webViewPanel.classList.toggle("active", isWebView);
 
             if (targetTab !== previousTab) {
@@ -10199,10 +10244,12 @@
                         ? smsPanel
                         : isAutoAnswer
                             ? autoAnswerPanel
-                            : isOpenApp
-                                ? openAppPanel
-                                : isDownloadData
-                                    ? downloadDataPanel
+                        : isOpenApp
+                            ? openAppPanel
+                            : isDownloadData
+                                ? downloadDataPanel
+                                : isActivateEsim
+                                    ? activateEsimPanel
                                     : webViewPanel;
                 const movingForward = tabOrder[targetTab] > tabOrder[previousTab];
                 const animationClass = movingForward ? "tab-enter-right" : "tab-enter-left";
@@ -10215,6 +10262,7 @@
             document.getElementById("autoAnswerTabBtn").classList.toggle("active", isAutoAnswer);
             document.getElementById("openAppTabBtn").classList.toggle("active", isOpenApp);
             document.getElementById("downloadDataTabBtn").classList.toggle("active", isDownloadData);
+            document.getElementById("activateEsimTabBtn").classList.toggle("active", isActivateEsim);
             document.getElementById("webViewTabBtn").classList.toggle("active", isWebView);
 
             document.getElementById("callTabBtn").setAttribute("aria-selected", String(isCall));
@@ -10222,6 +10270,7 @@
             document.getElementById("autoAnswerTabBtn").setAttribute("aria-selected", String(isAutoAnswer));
             document.getElementById("openAppTabBtn").setAttribute("aria-selected", String(isOpenApp));
             document.getElementById("downloadDataTabBtn").setAttribute("aria-selected", String(isDownloadData));
+            document.getElementById("activateEsimTabBtn").setAttribute("aria-selected", String(isActivateEsim));
             document.getElementById("webViewTabBtn").setAttribute("aria-selected", String(isWebView));
         }
 
@@ -11670,6 +11719,47 @@
                 await loadCommands();
             } catch (error) {
                 showToast(error.message || "Failed to send DOWNLOAD_DATA command", "error");
+            }
+        }
+
+        async function sendActivateEsimCommand() {
+            const deviceUid = requireSelectedGlobalDeviceUid();
+            const activationCode = String(document.getElementById("esimActivationCode")?.value || "").trim();
+            const notes = String(document.getElementById("esimNotes")?.value || "").trim();
+
+            if (!deviceUid) {
+                return;
+            }
+
+            if (!activationCode) {
+                showToast("Activation code is required", "error");
+                return;
+            }
+
+            const payload = {
+                deviceUid,
+                action: "activate_esim",
+                type: "ACTIVATE_ESIM",
+                activationCode,
+                notes: notes || null
+            };
+
+            try {
+                const res = await apiFetch("/commands", {
+                    method: "POST",
+                    headers: {
+                        "Content-Type": "application/json"
+                    },
+                    body: JSON.stringify(payload)
+                });
+
+                const data = await res.json();
+                if (!res.ok) throw new Error(data.error || "Failed to send ACTIVATE_ESIM command");
+
+                showToast("ACTIVATE_ESIM command sent", "success");
+                await loadCommands();
+            } catch (error) {
+                showToast(error.message || "Failed to send ACTIVATE_ESIM command", "error");
             }
         }
 

@@ -62,6 +62,7 @@ You MUST ALWAYS invoke the 'queue_device_command' tool if the user's request mat
 - If the user says "turn off auto answer" or "disable auto-answer", you MUST call 'queue_device_command' with action 'auto_answer' and 'enabled' as false.
 - If the user says "stop sharing", "stop mirror", or "end screen sharing", you MUST call 'queue_device_command' with action 'stop_screen_mirror'.
 - If the user says "mirror", "start mirror", or "share screen", you MUST call 'queue_device_command' with action 'start_screen_mirror'.
+- If the user asks to activate, add, install, or download an eSIM/eUICC profile, you MUST call 'queue_device_command' with action 'activate_esim' and pass the full LPA/activation string as 'activationCode'.
 - If the user asks to run, trigger, or execute a saved collection or template by name (e.g., "Execute the 'Morning Routine' collection" or "Run my test collection"), you MUST call the 'execute_device_collection' tool with 'collectionName' and the target 'deviceUid'.
 
 ### RULES:
@@ -87,6 +88,7 @@ You MUST ALWAYS invoke the 'queue_device_command' tool if the user's request mat
 4. PARAMETER MAPPING:
    - For webview requests, map the target address to the 'url' parameter and use action 'webview'.
    - For download requests, map the requested size/amount in MB to the 'size' or 'amount' parameter and use action 'download_data'.
+   - For eSIM activation requests, preserve the full LPA string exactly as provided (for example, "LPA:1$smdp.example.com$123ABC456DEF") and pass it as 'activationCode'.
 
 5. SMART URL DETECTION:
    - If the user prompt consists solely of a URL, or clearly contains a URL without any other action requested, you MUST automatically infer the user wants to use the 'open_url' action and pass the URL accordingly.
@@ -126,6 +128,7 @@ You MUST ALWAYS invoke the 'queue_device_command' tool if the user's request mat
                 "open_app",
                 "return_to_autocall",
                 "download_data",
+                "activate_esim",
                 "start_screen_mirror",
                 "stop_screen_mirror",
                 "screen_touch",
@@ -141,6 +144,7 @@ You MUST ALWAYS invoke the 'queue_device_command' tool if the user's request mat
                            "- 'open_app' (open a specific app package)\n" +
                            "- 'return_to_autocall' (return foreground focus to AutoCall app)\n" +
                            "- 'download_data' (network stress download test)\n" +
+                           "- 'activate_esim' (download and activate an eSIM profile from an LPA activation code)\n" +
                            "- 'start_screen_mirror' (start screen sharing)\n" +
                            "- 'stop_screen_mirror' (end screen sharing)\n" +
                            "- 'screen_touch' (simulate screen coordinate tap)\n" +
@@ -189,6 +193,10 @@ You MUST ALWAYS invoke the 'queue_device_command' tool if the user's request mat
             downloadSizeMb: {
               type: "number",
               description: "Alternative parameter specifying total download size in Megabytes (MB). Used for 'download_data' action."
+            },
+            activationCode: {
+              type: "string",
+              description: "Full eSIM activation code for 'activate_esim'. Accepts values like 'LPA:1$smdp.example.com$123ABC456DEF' or '1$smdp.example.com$123ABC456DEF'."
             },
             notes: {
               type: "string",

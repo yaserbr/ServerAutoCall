@@ -112,6 +112,7 @@ const COMMAND_CLAIM_SORT = { isImmediate: -1, scheduledAt: 1, createdAt: 1, _id:
 const DUMMY_DOWNLOAD_MIN_MB = 10;
 const DUMMY_DOWNLOAD_MAX_MB = 1000;
 const DUMMY_DOWNLOAD_CHUNK_BYTES = 64 * 1024;
+const ESIM_ACTIVATION_CODE_MAX_LENGTH = 512;
 const SCREEN_MIRROR_MAX_FRAME_BYTES = Math.floor(1.5 * 1024 * 1024);
 const REMOTE_TOUCH_MAX_COORDINATE = 20000;
 const REMOTE_TOUCH_MAX_DURATION_MS = 10000;
@@ -1254,6 +1255,7 @@ function mapCommandForResponse(command) {
     durationSeconds: source.durationSeconds ?? null,
     downloadSizeMb: source.downloadSizeMb ?? null,
     downloadDurationSeconds: source.downloadDurationSeconds ?? null,
+    activationCode: source.activationCode ?? null,
     enabled: source.enabled ?? null,
     autoHangupSeconds: source.autoHangupSeconds ?? null,
     x: source.x ?? null,
@@ -1369,6 +1371,7 @@ function buildCommandDuplicateSignature(commandLike) {
     notes: normalizeCommandComparableString(source.notes),
     durationSeconds: normalizeCommandComparableNumber(source.durationSeconds),
     downloadSizeMb: normalizeCommandComparableNumber(source.downloadSizeMb),
+    activationCode: normalizeCommandComparableString(source.activationCode),
     enabled: typeof source.enabled === "boolean" ? source.enabled : null,
     autoHangupSeconds: normalizeCommandComparableNumber(source.autoHangupSeconds),
     x: normalizeCommandComparableNumber(source.x),
@@ -2472,6 +2475,7 @@ app.post("/commands", requireAuth, async (req, res) => {
       scheduledAt,
       durationSeconds,
       downloadSizeMb,
+      activationCode,
       enabled,
       autoHangupSeconds,
       x,
@@ -2520,6 +2524,7 @@ app.post("/commands", requireAuth, async (req, res) => {
       open_app: "OPEN_APP",
       return_to_autocall: "RETURN_TO_AUTOCALL",
       download_data: "DOWNLOAD_DATA",
+      activate_esim: "ACTIVATE_ESIM",
       start_screen_mirror: "START_SCREEN_MIRROR",
       stop_screen_mirror: "STOP_SCREEN_MIRROR",
       screen_touch: "SCREEN_TOUCH",
@@ -2535,6 +2540,7 @@ app.post("/commands", requireAuth, async (req, res) => {
       OPEN_APP: "open_app",
       RETURN_TO_AUTOCALL: "return_to_autocall",
       DOWNLOAD_DATA: "download_data",
+      ACTIVATE_ESIM: "activate_esim",
       START_SCREEN_MIRROR: "start_screen_mirror",
       STOP_SCREEN_MIRROR: "stop_screen_mirror",
       SCREEN_TOUCH: "screen_touch",
@@ -2560,7 +2566,7 @@ app.post("/commands", requireAuth, async (req, res) => {
       });
       return res.status(400).json({
         error:
-          "Invalid action. Only 'call', 'end', 'sms', 'auto_answer', 'open_url', 'close_webview', 'open_app', 'return_to_autocall', 'download_data', 'start_screen_mirror', 'stop_screen_mirror', 'screen_touch', and 'screen_swipe' are supported."
+          "Invalid action. Only 'call', 'end', 'sms', 'auto_answer', 'open_url', 'close_webview', 'open_app', 'return_to_autocall', 'download_data', 'activate_esim', 'start_screen_mirror', 'stop_screen_mirror', 'screen_touch', and 'screen_swipe' are supported."
       });
     }
 
@@ -2574,7 +2580,7 @@ app.post("/commands", requireAuth, async (req, res) => {
       });
       return res.status(400).json({
         error:
-          "Invalid type. Only 'CALL', 'END', 'SMS', 'AUTO_ANSWER', 'OPEN_URL', 'CLOSE_WEBVIEW', 'OPEN_APP', 'RETURN_TO_AUTOCALL', 'DOWNLOAD_DATA', 'START_SCREEN_MIRROR', 'STOP_SCREEN_MIRROR', 'SCREEN_TOUCH', and 'SCREEN_SWIPE' are supported."
+          "Invalid type. Only 'CALL', 'END', 'SMS', 'AUTO_ANSWER', 'OPEN_URL', 'CLOSE_WEBVIEW', 'OPEN_APP', 'RETURN_TO_AUTOCALL', 'DOWNLOAD_DATA', 'ACTIVATE_ESIM', 'START_SCREEN_MIRROR', 'STOP_SCREEN_MIRROR', 'SCREEN_TOUCH', and 'SCREEN_SWIPE' are supported."
       });
     }
 
@@ -2604,6 +2610,7 @@ app.post("/commands", requireAuth, async (req, res) => {
     const isOpenAppCommand = normalizedAction === "open_app";
     const isReturnToAutoCallCommand = normalizedAction === "return_to_autocall";
     const isDownloadDataCommand = normalizedAction === "download_data";
+    const isActivateEsimCommand = normalizedAction === "activate_esim";
     const isScreenTouchCommand = normalizedAction === "screen_touch";
     const isScreenSwipeCommand = normalizedAction === "screen_swipe";
     const allowsExtraPayloadFields = isReturnToAutoCallCommand;
@@ -2724,6 +2731,26 @@ app.post("/commands", requireAuth, async (req, res) => {
     ) {
       return res.status(400).json({
         error: "downloadSizeMb is only supported for DOWNLOAD_DATA commands"
+      });
+    }
+
+    const normalizedActivationCode =
+      typeof activationCode === "string" ? activationCode.trim() : "";
+    if (isActivateEsimCommand) {
+      if (!normalizedActivationCode) {
+        return res.status(400).json({
+          error: "activationCode is required for ACTIVATE_ESIM commands"
+        });
+      }
+
+      if (normalizedActivationCode.length > ESIM_ACTIVATION_CODE_MAX_LENGTH) {
+        return res.status(400).json({
+          error: `activationCode must be ${ESIM_ACTIVATION_CODE_MAX_LENGTH} characters or less`
+        });
+      }
+    } else if (normalizedActivationCode && !allowsExtraPayloadFields) {
+      return res.status(400).json({
+        error: "activationCode is only supported for ACTIVATE_ESIM commands"
       });
     }
 
@@ -2982,6 +3009,8 @@ app.post("/commands", requireAuth, async (req, res) => {
       }
     } else if (normalizedAction === "download_data") {
       addIfPresent(commandData, "downloadSizeMb", normalizedDownloadSizeMb);
+    } else if (normalizedAction === "activate_esim") {
+      addIfPresent(commandData, "activationCode", normalizedActivationCode);
     } else if (normalizedAction === "screen_touch") {
       addIfPresent(commandData, "x", normalizedX);
       addIfPresent(commandData, "y", normalizedY);
@@ -3051,6 +3080,7 @@ app.post("/commands", requireAuth, async (req, res) => {
         appName: isOpenAppCommand ? normalizedAppName : null,
         resolvedPackageName: isOpenAppCommand ? normalizedResolvedPackageName : null,
         downloadSizeMb: isDownloadDataCommand ? normalizedDownloadSizeMb : null,
+        activationCodeLength: isActivateEsimCommand ? normalizedActivationCode.length : null,
         x: isScreenTouchCommand ? normalizedX ?? null : null,
         y: isScreenTouchCommand ? normalizedY ?? null : null,
         touchTarget: isScreenTouchCommand ? normalizedTouchTarget ?? null : null,
@@ -3677,11 +3707,20 @@ app.post("/commands/:id/status", requireAuthenticatedDevice, async (req, res) =>
 
     // Trigger sequential command collection progress
     if (normalizedStatus === "executed" || normalizedStatus === "failed") {
-      await CommandCollectionService.handleCommandStatusChange(
-        command._id.toString(), // Explicitly pass command ID as string for robust matching
-        normalizedStatus,
-        command.failureReason
-      );
+      try {
+        await CommandCollectionService.handleCommandStatusChange(
+          command._id.toString(), // Explicitly pass command ID as string for robust matching
+          normalizedStatus,
+          command.failureReason
+        );
+      } catch (collectionError) {
+        console.error("[CommandStatus] Collection status hook failed after command save", {
+          commandId: commandIdFrom(command),
+          status: normalizedStatus,
+          error: collectionError?.message,
+          stack: collectionError?.stack
+        });
+      }
     }
 
     logCommandLifecycle("status_updated", {

@@ -24,6 +24,7 @@ const commandTemplateSchema = new mongoose.Schema(
         "open_app",
         "return_to_autocall",
         "download_data",
+        "activate_esim",
         "start_screen_mirror",
         "stop_screen_mirror",
         "screen_touch",
@@ -43,6 +44,7 @@ const commandTemplateSchema = new mongoose.Schema(
         "OPEN_APP",
         "RETURN_TO_AUTOCALL",
         "DOWNLOAD_DATA",
+        "ACTIVATE_ESIM",
         "START_SCREEN_MIRROR",
         "STOP_SCREEN_MIRROR",
         "SCREEN_TOUCH",
@@ -83,6 +85,10 @@ const commandTemplateSchema = new mongoose.Schema(
     },
     downloadDurationSeconds: {
       type: Number,
+      default: null
+    },
+    activationCode: {
+      type: String,
       default: null
     },
     enabled: {

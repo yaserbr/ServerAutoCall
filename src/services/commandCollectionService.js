@@ -131,6 +131,7 @@ class CommandCollectionService {
       durationSeconds: template.durationSeconds || undefined,
       downloadSizeMb: template.downloadSizeMb || undefined,
       downloadDurationSeconds: template.downloadDurationSeconds || undefined,
+      activationCode: template.activationCode || undefined,
       enabled: template.enabled !== undefined && template.enabled !== null ? template.enabled : undefined,
       autoHangupSeconds: template.autoHangupSeconds || undefined,
       collectionId: collection._id,
