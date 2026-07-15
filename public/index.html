@@ -2053,7 +2053,7 @@
 
         .screen-mirror-device-tile {
             box-sizing: border-box;
-            width: calc(var(--screen-mirror-tile-width, 210px) + 20px);
+            width: calc(var(--screen-mirror-tile-width, 420px) + 20px);
             min-width: calc(140px + 20px);
             max-width: 100%;
             flex: 0 0 auto;
@@ -2566,7 +2566,7 @@
         }
 
         .screen-mirror-pinned-panel {
-            --screen-mirror-pinned-width: 210px;
+            --screen-mirror-pinned-width: 420px;
             position: fixed;
             left: 18px;
             bottom: 18px;
@@ -5066,9 +5066,9 @@
         let screenMirrorFloatingCloseTimerId = null;
         const SCREEN_MIRROR_FLOATING_MIN_WIDTH = 280;
         const SCREEN_MIRROR_FLOATING_MIN_HEIGHT = 320;
-        const SCREEN_MIRROR_TILE_WIDTH_MIN = 140;
-        const SCREEN_MIRROR_TILE_WIDTH_MAX = 760;
-        const SCREEN_MIRROR_TILE_WIDTH_DEFAULT = 210;
+        const SCREEN_MIRROR_TILE_WIDTH_MIN = 360;
+        const SCREEN_MIRROR_TILE_WIDTH_MAX = 1080;
+        const SCREEN_MIRROR_TILE_WIDTH_DEFAULT = 420;
         const SCREEN_MIRROR_TILE_DEFAULT_ASPECT_RATIO = "9 / 16.8";
         const SCREEN_MIRROR_PINNED_ANIMATION_MS = 220;
         const SCREEN_MIRROR_WEBRTC_ICE_SERVERS = [];
