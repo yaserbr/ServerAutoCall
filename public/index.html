@@ -5053,9 +5053,8 @@
         const SCREEN_MIRROR_TILE_WIDTH_DEFAULT = 210;
         const SCREEN_MIRROR_TILE_DEFAULT_ASPECT_RATIO = "9 / 16.8";
         const SCREEN_MIRROR_PINNED_ANIMATION_MS = 220;
-        const SCREEN_MIRROR_WEBRTC_ICE_SERVERS = [
-            { urls: "stun:stun.l.google.com:19302" }
-        ];
+        const SCREEN_MIRROR_WEBRTC_ICE_SERVERS = [];
+        const SCREEN_MIRROR_WEBRTC_OFFER_RETRY_MS = 7000;
         const SCREEN_TOUCH_TAP_DISTANCE_THRESHOLD_PX = 12;
         const SCREEN_TOUCH_MIN_SWIPE_DURATION_MS = 80;
         const SCREEN_TOUCH_MAX_SWIPE_DURATION_MS = 5000;
@@ -5737,6 +5736,7 @@
                     mediaStream: null,
                     pendingIceCandidates: [],
                     negotiationInFlight: false,
+                    lastWebRtcOfferAt: 0,
                     tileWidth: SCREEN_MIRROR_TILE_WIDTH_DEFAULT,
                     updatedAt: 0
                 });
@@ -6026,7 +6026,25 @@
 
             const state = getScreenMirrorDeviceState(normalizedDeviceUid);
             if (!state || state.negotiationInFlight) return;
-            if (state.peerConnection && ["connected", "connecting"].includes(String(state.peerConnection.connectionState || "").toLowerCase())) {
+
+            const existingPeerConnection = state.peerConnection;
+            if (existingPeerConnection) {
+                const connectionState = String(existingPeerConnection.connectionState || "").toLowerCase();
+                const signalingState = String(existingPeerConnection.signalingState || "").toLowerCase();
+                const hasStartedNegotiation =
+                    Boolean(existingPeerConnection.localDescription) ||
+                    Boolean(existingPeerConnection.remoteDescription);
+                if (
+                    signalingState !== "closed" &&
+                    !["closed", "failed", "disconnected"].includes(connectionState) &&
+                    (hasStartedNegotiation || ["new", "connecting", "connected"].includes(connectionState))
+                ) {
+                    return;
+                }
+            }
+
+            const now = Date.now();
+            if (state.lastWebRtcOfferAt && now - state.lastWebRtcOfferAt < SCREEN_MIRROR_WEBRTC_OFFER_RETRY_MS) {
                 return;
             }
 
@@ -6040,6 +6058,7 @@
             if (!peerConnection) return;
 
             state.negotiationInFlight = true;
+            state.lastWebRtcOfferAt = now;
             try {
                 const offer = await peerConnection.createOffer();
                 await peerConnection.setLocalDescription(offer);
@@ -6062,11 +6081,12 @@
                         !peerConnection.remoteDescription
                     ) {
                         currentState.negotiationInFlight = false;
+                        closeScreenMirrorPeerConnection(normalizedDeviceUid, { notify: false });
                         if (shouldStartWebRtcForStatus(currentState.status)) {
                             void startWebRtcViewerForDevice(normalizedDeviceUid);
                         }
                     }
-                }, 7000);
+                }, SCREEN_MIRROR_WEBRTC_OFFER_RETRY_MS);
             } catch (error) {
                 console.warn("[SCREEN_MIRROR] WebRTC offer failed", error);
                 closeScreenMirrorPeerConnection(normalizedDeviceUid, { notify: true });
