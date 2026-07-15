@@ -113,7 +113,6 @@ const DUMMY_DOWNLOAD_MIN_MB = 10;
 const DUMMY_DOWNLOAD_MAX_MB = 1000;
 const DUMMY_DOWNLOAD_CHUNK_BYTES = 64 * 1024;
 const ESIM_ACTIVATION_CODE_MAX_LENGTH = 512;
-const SCREEN_MIRROR_MAX_FRAME_BYTES = Math.floor(1.5 * 1024 * 1024);
 const REMOTE_TOUCH_MAX_COORDINATE = 20000;
 const REMOTE_TOUCH_MAX_DURATION_MS = 10000;
 const REMOTE_TOUCH_MIN_DURATION_MS = 50;
@@ -130,6 +129,7 @@ const OPEN_APP_PACKAGE_REGEX = /^[a-zA-Z0-9_]+(\.[a-zA-Z0-9_]+)+$/;
 const DEVICE_AUTH_ALLOW_LEGACY_FALLBACK =
   String(process.env.DEVICE_AUTH_ALLOW_LEGACY_FALLBACK || "").trim().toLowerCase() === "true";
 const screenMirrorSessions = new Map();
+const screenMirrorViewerDeviceBySocketId = new Map();
 const pairingTokenMemoryStore = new Map();
 const requireAuthenticatedDevice = buildRequireDeviceAuth({
   allowLegacyFallback: DEVICE_AUTH_ALLOW_LEGACY_FALLBACK
@@ -1553,7 +1553,11 @@ function ensureScreenMirrorSession(deviceUid) {
       status: "idle",
       startedAt: null,
       lastFrameAt: null,
-      frameCount: 0
+      frameCount: 0,
+      viewerCount: 0,
+      width: null,
+      height: null,
+      fps: null
     });
   }
 
@@ -1576,7 +1580,12 @@ function buildScreenMirrorStatus(deviceUid) {
     status: session.status ?? "idle",
     startedAt: session.startedAt ?? null,
     lastFrameAt: session.lastFrameAt ?? null,
-    frameCount: Number(session.frameCount || 0)
+    frameCount: Number(session.frameCount || 0),
+    viewerCount: Number(session.viewerCount || 0),
+    width: Number.isFinite(Number(session.width)) ? Number(session.width) : null,
+    height: Number.isFinite(Number(session.height)) ? Number(session.height) : null,
+    fps: Number.isFinite(Number(session.fps)) ? Number(session.fps) : null,
+    streamMode: "webrtc"
   };
 }
 
@@ -1590,15 +1599,47 @@ function emitScreenMirrorStatus(deviceUid) {
   io.to(`dashboard:${normalizedDeviceUid}`).emit("screen:status", statusPayload);
 }
 
-function estimateBase64Bytes(base64Value) {
-  if (typeof base64Value !== "string" || !base64Value) return 0;
-  const normalized = base64Value.replace(/\s+/g, "");
-  const length = normalized.length;
-  if (!length) return 0;
+function buildWebRtcSessionDescription(payload = {}) {
+  const type = typeof payload?.type === "string" ? payload.type.trim().toLowerCase() : "";
+  const sdp = typeof payload?.sdp === "string" ? payload.sdp.trim() : "";
+  if (!["offer", "answer"].includes(type) || !sdp) return null;
+  return { type, sdp };
+}
 
-  const padding =
-    normalized.endsWith("==") ? 2 : normalized.endsWith("=") ? 1 : 0;
-  return Math.floor((length * 3) / 4) - padding;
+function buildWebRtcIceCandidate(payload = {}) {
+  const candidate = typeof payload?.candidate === "string" ? payload.candidate.trim() : "";
+  if (!candidate) return null;
+
+  const sdpMid =
+    typeof payload?.sdpMid === "string" && payload.sdpMid.trim()
+      ? payload.sdpMid.trim()
+      : null;
+  const parsedMLineIndex = Number(payload?.sdpMLineIndex);
+  const sdpMLineIndex = Number.isFinite(parsedMLineIndex)
+    ? Math.max(0, Math.round(parsedMLineIndex))
+    : null;
+
+  return {
+    candidate,
+    sdpMid,
+    sdpMLineIndex
+  };
+}
+
+function updateScreenMirrorViewerCount(deviceUid) {
+  const normalizedDeviceUid = normalizeDeviceUid(deviceUid);
+  if (!normalizedDeviceUid) return;
+
+  const session = ensureScreenMirrorSession(normalizedDeviceUid);
+  if (!session) return;
+
+  let viewerCount = 0;
+  for (const mappedDeviceUid of screenMirrorViewerDeviceBySocketId.values()) {
+    if (mappedDeviceUid === normalizedDeviceUid) {
+      viewerCount += 1;
+    }
+  }
+  session.viewerCount = viewerCount;
 }
 
 io.use(createSocketAuthMiddleware());
@@ -1700,6 +1741,15 @@ io.on("connection", (socket) => {
     session.startedAt = nowIsoTimestamp();
     session.lastFrameAt = null;
     session.frameCount = 0;
+    session.width = Number.isFinite(Number(payload?.width))
+      ? Math.max(0, Math.round(Number(payload.width)))
+      : null;
+    session.height = Number.isFinite(Number(payload?.height))
+      ? Math.max(0, Math.round(Number(payload.height)))
+      : null;
+    session.fps = Number.isFinite(Number(payload?.fps))
+      ? Math.max(0, Math.round(Number(payload.fps)))
+      : null;
 
     console.log("[SCREEN_MIRROR] started", { deviceUid });
     emitScreenMirrorStatus(deviceUid);
@@ -1745,54 +1795,163 @@ io.on("connection", (socket) => {
     });
   });
 
-  socket.on("screen:frame", (payload = {}) => {
-    const deviceUid = requireDeviceSocket("screen:frame", payload);
+  socket.on("screen:webrtc-offer", async (payload = {}) => {
+    try {
+      if (!isDashboardSocket(socket)) {
+        logSecurityEvent("socket_event_rejected", {
+          socketId: socket.id,
+          event: "screen:webrtc-offer",
+          reason: "device_socket_cannot_emit_dashboard_webrtc_offer"
+        });
+        socket.emit("security:error", { event: "screen:webrtc-offer", reason: "unauthorized" });
+        return;
+      }
+
+      const deviceUid = normalizeDeviceUid(payload?.deviceUid);
+      const description = buildWebRtcSessionDescription(payload);
+      if (!deviceUid || !description || description.type !== "offer") return;
+
+      const canJoin = await canDashboardJoinDevice(socket.data.userId, deviceUid);
+      if (!canJoin) {
+        logSecurityEvent("socket_webrtc_offer_denied", {
+          socketId: socket.id,
+          event: "screen:webrtc-offer",
+          deviceUid,
+          userId: socket.data.userId,
+          reason: "device_not_owned_by_user"
+        });
+        socket.emit("security:error", { event: "screen:webrtc-offer", reason: "forbidden" });
+        return;
+      }
+
+      socket.join(`dashboard:${deviceUid}`);
+      socket.data.screenMirrorDashboardDeviceUid = deviceUid;
+      screenMirrorViewerDeviceBySocketId.set(socket.id, deviceUid);
+      updateScreenMirrorViewerCount(deviceUid);
+      emitScreenMirrorStatus(deviceUid);
+
+      io.to(`device:${deviceUid}`).emit("screen:webrtc-offer", {
+        deviceUid,
+        viewerId: socket.id,
+        ...description
+      });
+    } catch (error) {
+      logSecurityEvent("socket_webrtc_offer_failed", {
+        socketId: socket.id,
+        event: "screen:webrtc-offer",
+        userId: socket.data.userId ?? null,
+        reason: error?.message || "unknown"
+      });
+      socket.emit("security:error", {
+        event: "screen:webrtc-offer",
+        reason: "internal_error"
+      });
+    }
+  });
+
+  socket.on("screen:webrtc-answer", (payload = {}) => {
+    const deviceUid = requireDeviceSocket("screen:webrtc-answer", payload);
     if (!deviceUid) return;
 
-    const frameBase64 =
-      typeof payload?.frameBase64 === "string" ? payload.frameBase64 : "";
-    if (!frameBase64) return;
-
-    const estimatedBytes = estimateBase64Bytes(frameBase64);
-    if (estimatedBytes > SCREEN_MIRROR_MAX_FRAME_BYTES) {
-      console.warn("[SCREEN_MIRROR] frame too large", {
-        deviceUid,
-        bytes: estimatedBytes
-      });
+    const viewerId = typeof payload?.viewerId === "string" ? payload.viewerId.trim() : "";
+    const expectedDeviceUid = screenMirrorViewerDeviceBySocketId.get(viewerId);
+    const description = buildWebRtcSessionDescription(payload);
+    if (!viewerId || expectedDeviceUid !== deviceUid || !description || description.type !== "answer") {
       return;
     }
 
-    const mimeType =
-      typeof payload?.mimeType === "string" && payload.mimeType.trim()
-        ? payload.mimeType.trim()
-        : "image/jpeg";
-    const width = Number.isFinite(Number(payload?.width))
-      ? Math.max(0, Math.round(Number(payload.width)))
-      : null;
-    const height = Number.isFinite(Number(payload?.height))
-      ? Math.max(0, Math.round(Number(payload.height)))
-      : null;
-    const timestamp = Number.isFinite(Number(payload?.timestamp))
-      ? Math.round(Number(payload.timestamp))
-      : Date.now();
-
-    const session = ensureScreenMirrorSession(deviceUid);
-    if (!session) return;
-
-    session.status = "live";
-    if (!session.startedAt) {
-      session.startedAt = nowIsoTimestamp();
-    }
-    session.lastFrameAt = nowIsoTimestamp();
-    session.frameCount = Number(session.frameCount || 0) + 1;
-
-    io.to(`dashboard:${deviceUid}`).emit("screen:frame", {
+    io.to(viewerId).emit("screen:webrtc-answer", {
       deviceUid,
-      frameBase64,
-      mimeType,
-      width,
-      height,
-      timestamp
+      viewerId,
+      ...description
+    });
+  });
+
+  socket.on("screen:webrtc-ice-candidate", async (payload = {}) => {
+    try {
+      const candidate = buildWebRtcIceCandidate(payload);
+      if (!candidate) return;
+
+      if (isDashboardSocket(socket)) {
+        const deviceUid = normalizeDeviceUid(payload?.deviceUid);
+        if (!deviceUid) return;
+
+        const canJoin = await canDashboardJoinDevice(socket.data.userId, deviceUid);
+        if (!canJoin) {
+          logSecurityEvent("socket_webrtc_ice_denied", {
+            socketId: socket.id,
+            event: "screen:webrtc-ice-candidate",
+            deviceUid,
+            userId: socket.data.userId,
+            reason: "device_not_owned_by_user"
+          });
+          socket.emit("security:error", {
+            event: "screen:webrtc-ice-candidate",
+            reason: "forbidden"
+          });
+          return;
+        }
+
+        screenMirrorViewerDeviceBySocketId.set(socket.id, deviceUid);
+        updateScreenMirrorViewerCount(deviceUid);
+        io.to(`device:${deviceUid}`).emit("screen:webrtc-ice-candidate", {
+          deviceUid,
+          viewerId: socket.id,
+          ...candidate
+        });
+        return;
+      }
+
+      if (isDeviceSocket(socket)) {
+        const deviceUid = requireDeviceSocket("screen:webrtc-ice-candidate", payload);
+        if (!deviceUid) return;
+
+        const viewerId = typeof payload?.viewerId === "string" ? payload.viewerId.trim() : "";
+        const expectedDeviceUid = screenMirrorViewerDeviceBySocketId.get(viewerId);
+        if (!viewerId || expectedDeviceUid !== deviceUid) return;
+
+        io.to(viewerId).emit("screen:webrtc-ice-candidate", {
+          deviceUid,
+          viewerId,
+          ...candidate
+        });
+      }
+    } catch (error) {
+      logSecurityEvent("socket_webrtc_ice_failed", {
+        socketId: socket.id,
+        event: "screen:webrtc-ice-candidate",
+        userId: socket.data.userId ?? null,
+        reason: error?.message || "unknown"
+      });
+    }
+  });
+
+  socket.on("screen:webrtc-viewer-stop", (payload = {}) => {
+    if (!isDashboardSocket(socket)) return;
+
+    const deviceUid =
+      normalizeDeviceUid(payload?.deviceUid) ||
+      normalizeDeviceUid(screenMirrorViewerDeviceBySocketId.get(socket.id));
+    if (!deviceUid) return;
+
+    screenMirrorViewerDeviceBySocketId.delete(socket.id);
+    updateScreenMirrorViewerCount(deviceUid);
+    io.to(`device:${deviceUid}`).emit("screen:webrtc-viewer-left", {
+      deviceUid,
+      viewerId: socket.id
+    });
+    emitScreenMirrorStatus(deviceUid);
+  });
+
+  socket.on("disconnect", () => {
+    const deviceUid = screenMirrorViewerDeviceBySocketId.get(socket.id);
+    if (!deviceUid) return;
+
+    screenMirrorViewerDeviceBySocketId.delete(socket.id);
+    updateScreenMirrorViewerCount(deviceUid);
+    io.to(`device:${deviceUid}`).emit("screen:webrtc-viewer-left", {
+      deviceUid,
+      viewerId: socket.id
     });
     emitScreenMirrorStatus(deviceUid);
   });

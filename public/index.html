@@ -2021,7 +2021,7 @@
             border-radius: 20px;
         }
 
-        .screen-mirror-toast-card .screen-mirror-viewer img {
+        .screen-mirror-toast-card .screen-mirror-viewer video {
             border-radius: 16px;
         }
 
@@ -2309,7 +2309,7 @@
             user-select: none;
         }
 
-        .screen-mirror-viewer img {
+        .screen-mirror-viewer video {
             width: 100%;
             height: 100%;
             object-fit: contain;
@@ -2499,7 +2499,7 @@
             aspect-ratio: auto;
         }
 
-        .screen-mirror-floating-body .screen-mirror-viewer img {
+        .screen-mirror-floating-body .screen-mirror-viewer video {
             border-radius: 18px;
         }
 
@@ -5053,6 +5053,9 @@
         const SCREEN_MIRROR_TILE_WIDTH_DEFAULT = 210;
         const SCREEN_MIRROR_TILE_DEFAULT_ASPECT_RATIO = "9 / 16.8";
         const SCREEN_MIRROR_PINNED_ANIMATION_MS = 220;
+        const SCREEN_MIRROR_WEBRTC_ICE_SERVERS = [
+            { urls: "stun:stun.l.google.com:19302" }
+        ];
         const SCREEN_TOUCH_TAP_DISTANCE_THRESHOLD_PX = 12;
         const SCREEN_TOUCH_MIN_SWIPE_DURATION_MS = 80;
         const SCREEN_TOUCH_MAX_SWIPE_DURATION_MS = 5000;
@@ -5728,9 +5731,12 @@
                     status: "idle",
                     frameCount: 0,
                     lastFrameAt: "--",
-                    frameSrc: "",
                     frameWidth: 0,
                     frameHeight: 0,
+                    peerConnection: null,
+                    mediaStream: null,
+                    pendingIceCandidates: [],
+                    negotiationInFlight: false,
                     tileWidth: SCREEN_MIRROR_TILE_WIDTH_DEFAULT,
                     updatedAt: 0
                 });
@@ -5817,6 +5823,303 @@
             const fromRecord = toNonEmptyString(deviceRecord?.deviceName);
             if (fromRecord) return fromRecord;
             return normalizedDeviceUid;
+        }
+
+        function shouldStartWebRtcForStatus(status) {
+            const normalizedStatus = String(status || "").trim().toLowerCase();
+            return ["live", "running", "active", "started"].includes(normalizedStatus);
+        }
+
+        function getScreenMirrorVideoElements(deviceUid) {
+            const normalizedDeviceUid = normalizeDeviceUidInput(deviceUid);
+            if (!normalizedDeviceUid) return [];
+
+            const selector = `video[data-screen-mirror-video="${normalizedDeviceUid}"]`;
+            const elements = [...document.querySelectorAll(selector)];
+            const popupDocument = getPinnedScreenMirrorPopup()?.document;
+            if (popupDocument) {
+                elements.push(...popupDocument.querySelectorAll(selector));
+            }
+            return elements.filter((element) => element instanceof HTMLVideoElement);
+        }
+
+        function applyPreferredVideoCodecs(transceiver) {
+            try {
+                const capabilities =
+                    typeof RTCRtpReceiver === "undefined"
+                        ? null
+                        : RTCRtpReceiver.getCapabilities?.("video");
+                if (!capabilities?.codecs?.length || typeof transceiver?.setCodecPreferences !== "function") {
+                    return;
+                }
+                const codecScore = (codec) => {
+                    const mimeType = String(codec?.mimeType || "").toLowerCase();
+                    if (mimeType.includes("h264")) return 40;
+                    if (mimeType.includes("vp8")) return 30;
+                    if (mimeType.includes("vp9")) return 20;
+                    if (mimeType.includes("rtx")) return 10;
+                    return 0;
+                };
+                const sortedCodecs = [...capabilities.codecs].sort(
+                    (left, right) => codecScore(right) - codecScore(left)
+                );
+                transceiver.setCodecPreferences(sortedCodecs);
+            } catch (error) {
+                console.warn("[SCREEN_MIRROR] codec preference skipped", error);
+            }
+        }
+
+        function updateScreenMirrorVideoDimensions(deviceUid, videoElement) {
+            const state = getScreenMirrorDeviceState(deviceUid);
+            if (!state || !(videoElement instanceof HTMLVideoElement)) return;
+
+            const videoWidth = toValidPositiveInteger(videoElement.videoWidth);
+            const videoHeight = toValidPositiveInteger(videoElement.videoHeight);
+            if (!videoWidth || !videoHeight) return;
+
+            if (state.frameWidth !== videoWidth || state.frameHeight !== videoHeight) {
+                state.frameWidth = videoWidth;
+                state.frameHeight = videoHeight;
+                applyScreenMirrorTileSizing(deviceUid);
+                if (pinnedScreenMirrorDeviceUid === normalizeDeviceUidInput(deviceUid)) {
+                    applyPinnedScreenMirrorSizing();
+                }
+            }
+        }
+
+        function attachScreenMirrorStreamToDeviceVideos(deviceUid) {
+            const normalizedDeviceUid = normalizeDeviceUidInput(deviceUid);
+            const state = getScreenMirrorDeviceState(normalizedDeviceUid);
+            if (!normalizedDeviceUid || !state) return;
+
+            const videos = getScreenMirrorVideoElements(normalizedDeviceUid);
+            videos.forEach((videoElement) => {
+                if (state.mediaStream && videoElement.srcObject !== state.mediaStream) {
+                    videoElement.srcObject = state.mediaStream;
+                }
+                videoElement.muted = true;
+                videoElement.playsInline = true;
+                videoElement.autoplay = true;
+                videoElement.addEventListener(
+                    "loadedmetadata",
+                    () => updateScreenMirrorVideoDimensions(normalizedDeviceUid, videoElement),
+                    { once: true }
+                );
+                if (videoElement.readyState >= 1) {
+                    updateScreenMirrorVideoDimensions(normalizedDeviceUid, videoElement);
+                }
+                const playResult = videoElement.play?.();
+                if (playResult && typeof playResult.catch === "function") {
+                    playResult.catch(() => {});
+                }
+            });
+        }
+
+        function attachAllScreenMirrorVideos() {
+            activeScreenMirrorDeviceUids.forEach((deviceUid) => {
+                attachScreenMirrorStreamToDeviceVideos(deviceUid);
+            });
+        }
+
+        function closeScreenMirrorPeerConnection(deviceUid, options = {}) {
+            const normalizedDeviceUid = normalizeDeviceUidInput(deviceUid);
+            if (!normalizedDeviceUid) return;
+
+            const state = getScreenMirrorDeviceState(normalizedDeviceUid);
+            if (!state) return;
+
+            if (options.notify !== false && screenMirrorSocket?.connected) {
+                screenMirrorSocket.emit("screen:webrtc-viewer-stop", {
+                    deviceUid: normalizedDeviceUid
+                });
+            }
+
+            try {
+                state.peerConnection?.close?.();
+            } catch (error) {
+                console.warn("[SCREEN_MIRROR] peer close failed", error);
+            }
+
+            if (state.mediaStream) {
+                state.mediaStream.getTracks().forEach((track) => {
+                    try {
+                        track.stop();
+                    } catch (_error) {
+                    }
+                });
+            }
+
+            getScreenMirrorVideoElements(normalizedDeviceUid).forEach((videoElement) => {
+                videoElement.pause?.();
+                videoElement.srcObject = null;
+            });
+
+            state.peerConnection = null;
+            state.mediaStream = null;
+            state.pendingIceCandidates = [];
+            state.negotiationInFlight = false;
+        }
+
+        function ensureScreenMirrorPeerConnection(deviceUid) {
+            const normalizedDeviceUid = normalizeDeviceUidInput(deviceUid);
+            if (!normalizedDeviceUid) return null;
+
+            const state = getScreenMirrorDeviceState(normalizedDeviceUid);
+            if (!state) return null;
+
+            const existingConnectionState = String(state.peerConnection?.connectionState || "").toLowerCase();
+            if (state.peerConnection && !["closed", "failed"].includes(existingConnectionState)) {
+                return state.peerConnection;
+            }
+
+            closeScreenMirrorPeerConnection(normalizedDeviceUid, { notify: false });
+
+            const peerConnection = new RTCPeerConnection({
+                iceServers: SCREEN_MIRROR_WEBRTC_ICE_SERVERS,
+                bundlePolicy: "max-bundle",
+                rtcpMuxPolicy: "require"
+            });
+            const transceiver = peerConnection.addTransceiver("video", { direction: "recvonly" });
+            applyPreferredVideoCodecs(transceiver);
+
+            peerConnection.ontrack = (event) => {
+                const mediaStream = event.streams?.[0] || new MediaStream([event.track]);
+                state.mediaStream = mediaStream;
+                state.status = "live";
+                state.updatedAt = Date.now();
+                attachScreenMirrorStreamToDeviceVideos(normalizedDeviceUid);
+                updateScreenMirrorMultiTile(normalizedDeviceUid);
+            };
+
+            peerConnection.onicecandidate = (event) => {
+                if (!event.candidate || !screenMirrorSocket?.connected) return;
+                screenMirrorSocket.emit("screen:webrtc-ice-candidate", {
+                    deviceUid: normalizedDeviceUid,
+                    candidate: event.candidate.candidate,
+                    sdpMid: event.candidate.sdpMid,
+                    sdpMLineIndex: event.candidate.sdpMLineIndex
+                });
+            };
+
+            peerConnection.onconnectionstatechange = () => {
+                const connectionState = String(peerConnection.connectionState || "");
+                if (["failed", "closed", "disconnected"].includes(connectionState)) {
+                    state.status = connectionState === "failed" ? "error" : state.status;
+                    state.updatedAt = Date.now();
+                    updateScreenMirrorMultiTile(normalizedDeviceUid);
+                }
+            };
+
+            state.peerConnection = peerConnection;
+            state.pendingIceCandidates = [];
+            state.negotiationInFlight = false;
+            return peerConnection;
+        }
+
+        async function startWebRtcViewerForDevice(deviceUid) {
+            const normalizedDeviceUid = normalizeDeviceUidInput(deviceUid);
+            if (!normalizedDeviceUid || !activeScreenMirrorDeviceUids.has(normalizedDeviceUid)) return;
+            if (typeof RTCPeerConnection !== "function") {
+                showToast("This browser does not support WebRTC video", "error");
+                return;
+            }
+
+            const state = getScreenMirrorDeviceState(normalizedDeviceUid);
+            if (!state || state.negotiationInFlight) return;
+            if (state.peerConnection && ["connected", "connecting"].includes(String(state.peerConnection.connectionState || "").toLowerCase())) {
+                return;
+            }
+
+            const socket = ensureScreenMirrorSocket();
+            if (!socket) return;
+            if (!socket.connected) {
+                socket.connect();
+            }
+
+            const peerConnection = ensureScreenMirrorPeerConnection(normalizedDeviceUid);
+            if (!peerConnection) return;
+
+            state.negotiationInFlight = true;
+            try {
+                const offer = await peerConnection.createOffer();
+                await peerConnection.setLocalDescription(offer);
+                const localDescription = peerConnection.localDescription || offer;
+                socket.emit("screen:webrtc-offer", {
+                    deviceUid: normalizedDeviceUid,
+                    type: localDescription.type,
+                    sdp: localDescription.sdp
+                });
+                setTimeout(() => {
+                    const currentState = getScreenMirrorDeviceState(normalizedDeviceUid);
+                    if (
+                        currentState?.peerConnection === peerConnection &&
+                        currentState.negotiationInFlight &&
+                        !peerConnection.remoteDescription
+                    ) {
+                        currentState.negotiationInFlight = false;
+                        if (shouldStartWebRtcForStatus(currentState.status)) {
+                            void startWebRtcViewerForDevice(normalizedDeviceUid);
+                        }
+                    }
+                }, 7000);
+            } catch (error) {
+                console.warn("[SCREEN_MIRROR] WebRTC offer failed", error);
+                closeScreenMirrorPeerConnection(normalizedDeviceUid, { notify: true });
+            }
+        }
+
+        async function applyScreenMirrorWebRtcAnswer(payload = {}) {
+            const deviceUid = normalizeDeviceUidInput(payload?.deviceUid || "");
+            if (!deviceUid || !activeScreenMirrorDeviceUids.has(deviceUid)) return;
+
+            const state = getScreenMirrorDeviceState(deviceUid);
+            const peerConnection = state?.peerConnection;
+            const type = String(payload?.type || "").trim().toLowerCase();
+            const sdp = String(payload?.sdp || "").trim();
+            if (!state || !peerConnection || type !== "answer" || !sdp) return;
+
+            try {
+                await peerConnection.setRemoteDescription(new RTCSessionDescription({ type, sdp }));
+                state.negotiationInFlight = false;
+                const pendingCandidates = Array.isArray(state.pendingIceCandidates)
+                    ? state.pendingIceCandidates.splice(0)
+                    : [];
+                for (const candidate of pendingCandidates) {
+                    await peerConnection.addIceCandidate(candidate);
+                }
+            } catch (error) {
+                console.warn("[SCREEN_MIRROR] WebRTC answer failed", error);
+                closeScreenMirrorPeerConnection(deviceUid, { notify: true });
+            }
+        }
+
+        async function applyScreenMirrorRemoteIceCandidate(payload = {}) {
+            const deviceUid = normalizeDeviceUidInput(payload?.deviceUid || "");
+            if (!deviceUid || !activeScreenMirrorDeviceUids.has(deviceUid)) return;
+
+            const state = getScreenMirrorDeviceState(deviceUid);
+            const peerConnection = state?.peerConnection;
+            const candidateValue = String(payload?.candidate || "").trim();
+            if (!state || !peerConnection || !candidateValue) return;
+
+            const candidate = new RTCIceCandidate({
+                candidate: candidateValue,
+                sdpMid: payload?.sdpMid ?? null,
+                sdpMLineIndex: Number.isFinite(Number(payload?.sdpMLineIndex))
+                    ? Math.max(0, Math.round(Number(payload.sdpMLineIndex)))
+                    : null
+            });
+
+            if (!peerConnection.remoteDescription) {
+                state.pendingIceCandidates.push(candidate);
+                return;
+            }
+
+            try {
+                await peerConnection.addIceCandidate(candidate);
+            } catch (error) {
+                console.warn("[SCREEN_MIRROR] ICE candidate failed", error);
+            }
         }
 
         function getPinnedScreenMirrorPopup() {
@@ -5940,11 +6243,12 @@
             border-color: rgba(15, 23, 42, 0.12);
             background: rgba(255, 255, 255, 0.86);
         }
-        .popup-preview-wrap img {
+        .popup-preview-wrap video {
             width: 100%;
             height: 100%;
             object-fit: contain;
             display: block;
+            background: #000;
         }
         .popup-nav {
             display: grid;
@@ -6059,11 +6363,11 @@
                 return { width: explicitWidth, height: explicitHeight };
             }
 
-            const previewImage = previewWrap?.querySelector?.("img");
-            const naturalWidth = toValidPositiveInteger(previewImage?.naturalWidth);
-            const naturalHeight = toValidPositiveInteger(previewImage?.naturalHeight);
-            if (naturalWidth && naturalHeight) {
-                return { width: naturalWidth, height: naturalHeight };
+            const previewVideo = previewWrap?.querySelector?.("video");
+            const videoWidth = toValidPositiveInteger(previewVideo?.videoWidth);
+            const videoHeight = toValidPositiveInteger(previewVideo?.videoHeight);
+            if (videoWidth && videoHeight) {
+                return { width: videoWidth, height: videoHeight };
             }
 
             return null;
@@ -6438,29 +6742,20 @@
                 titleElement.setAttribute("title", deviceName);
             }
 
-            if (toNonEmptyString(state.frameSrc)) {
-                let previewImage = previewWrap.querySelector("img");
-                if (!previewImage) {
-                    previewWrap.innerHTML = `<img src="${escapeHtml(state.frameSrc)}" alt="Pinned live mirrored screen for ${escapeHtml(deviceName)}" />`;
-                    previewImage = previewWrap.querySelector("img");
-                } else {
-                    if (previewImage.getAttribute("src") !== state.frameSrc) {
-                        previewImage.setAttribute("src", state.frameSrc);
-                    }
-                    previewImage.setAttribute("alt", `Pinned live mirrored screen for ${deviceName}`);
-                }
-                if (previewImage) {
-                    const syncFrameSize = () => {
-                        updateScreenMirrorTileFrameSizeFromImage(pinnedScreenMirrorDeviceUid, previewImage);
-                        applyPinnedScreenMirrorSizing();
-                    };
-                    previewImage.addEventListener("load", syncFrameSize, { once: true });
-                    if (previewImage.complete) {
-                        syncFrameSize();
-                    }
-                }
-            } else {
-                previewWrap.innerHTML = "";
+            let previewVideo = previewWrap.querySelector("video");
+            if (!previewVideo) {
+                previewWrap.innerHTML = `
+                    <video
+                        data-screen-mirror-video="${escapeHtml(pinnedScreenMirrorDeviceUid)}"
+                        autoplay
+                        playsinline
+                        muted
+                        aria-label="Pinned live mirrored screen for ${escapeHtml(deviceName)}"></video>`;
+                previewVideo = previewWrap.querySelector("video");
+            }
+            if (previewVideo) {
+                previewVideo.setAttribute("aria-label", `Pinned live mirrored screen for ${deviceName}`);
+                attachScreenMirrorStreamToDeviceVideos(pinnedScreenMirrorDeviceUid);
             }
 
             applyPinnedScreenMirrorSizing();
@@ -6510,18 +6805,18 @@
             return previewWrap.querySelector(".screen-mirror-tile-preview");
         }
 
-        function updateScreenMirrorTileFrameSizeFromImage(deviceUid, imageElement) {
+        function updateScreenMirrorTileFrameSizeFromVideo(deviceUid, videoElement) {
             const normalizedDeviceUid = normalizeDeviceUidInput(deviceUid);
-            if (!normalizedDeviceUid || !imageElement) return;
-            const naturalWidth = toValidPositiveInteger(imageElement.naturalWidth);
-            const naturalHeight = toValidPositiveInteger(imageElement.naturalHeight);
-            if (!naturalWidth || !naturalHeight) return;
+            if (!normalizedDeviceUid || !videoElement) return;
+            const videoWidth = toValidPositiveInteger(videoElement.videoWidth);
+            const videoHeight = toValidPositiveInteger(videoElement.videoHeight);
+            if (!videoWidth || !videoHeight) return;
 
             const state = getScreenMirrorDeviceState(normalizedDeviceUid);
             if (!state) return;
-            if (state.frameWidth === naturalWidth && state.frameHeight === naturalHeight) return;
-            state.frameWidth = naturalWidth;
-            state.frameHeight = naturalHeight;
+            if (state.frameWidth === videoWidth && state.frameHeight === videoHeight) return;
+            state.frameWidth = videoWidth;
+            state.frameHeight = videoHeight;
             applyScreenMirrorTileSizing(normalizedDeviceUid);
         }
 
@@ -6545,30 +6840,30 @@
                 return { width: explicitWidth, height: explicitHeight };
             }
 
-            const previewImage = getScreenMirrorTilePreviewElement(previewWrap);
-            const naturalWidth = toValidPositiveInteger(previewImage?.naturalWidth);
-            const naturalHeight = toValidPositiveInteger(previewImage?.naturalHeight);
-            if (naturalWidth && naturalHeight) {
-                return { width: naturalWidth, height: naturalHeight };
+            const previewVideo = getScreenMirrorTilePreviewElement(previewWrap);
+            const videoWidth = toValidPositiveInteger(previewVideo?.videoWidth);
+            const videoHeight = toValidPositiveInteger(previewVideo?.videoHeight);
+            if (videoWidth && videoHeight) {
+                return { width: videoWidth, height: videoHeight };
             }
 
             return null;
         }
 
         function mapScreenMirrorTileClientPointToDevicePoint(previewWrap, deviceUid, clientX, clientY) {
-            const previewImage = getScreenMirrorTilePreviewElement(previewWrap);
-            if (!previewImage) return null;
+            const previewVideo = getScreenMirrorTilePreviewElement(previewWrap);
+            if (!previewVideo) return null;
             const sourceSize = getScreenMirrorTileSourceSize(previewWrap, deviceUid);
             if (!sourceSize) return null;
 
-            const imageRect = previewImage.getBoundingClientRect();
-            if (imageRect.width <= 0 || imageRect.height <= 0) {
+            const videoRect = previewVideo.getBoundingClientRect();
+            if (videoRect.width <= 0 || videoRect.height <= 0) {
                 return null;
             }
 
             const drawScale = Math.min(
-                imageRect.width / sourceSize.width,
-                imageRect.height / sourceSize.height
+                videoRect.width / sourceSize.width,
+                videoRect.height / sourceSize.height
             );
             if (!Number.isFinite(drawScale) || drawScale <= 0) {
                 return null;
@@ -6576,10 +6871,10 @@
 
             const drawnWidth = sourceSize.width * drawScale;
             const drawnHeight = sourceSize.height * drawScale;
-            const offsetX = (imageRect.width - drawnWidth) / 2;
-            const offsetY = (imageRect.height - drawnHeight) / 2;
-            const localX = clientX - imageRect.left;
-            const localY = clientY - imageRect.top;
+            const offsetX = (videoRect.width - drawnWidth) / 2;
+            const offsetY = (videoRect.height - drawnHeight) / 2;
+            const localX = clientX - videoRect.left;
+            const localY = clientY - videoRect.top;
 
             if (
                 localX < offsetX ||
@@ -7011,8 +7306,7 @@
                 const state = getScreenMirrorDeviceState(deviceUid) || {
                     status: "idle",
                     frameCount: 0,
-                    lastFrameAt: "--",
-                    frameSrc: ""
+                    lastFrameAt: "--"
                 };
                 const deviceName = getScreenMirrorDeviceDisplayName(deviceUid);
                 const statusText = toNonEmptyString(state.status).toLowerCase() || "idle";
@@ -7020,9 +7314,14 @@
                 const tileWidth = getScreenMirrorTileWidth(deviceUid);
                 const tileAspectRatio = getScreenMirrorTileAspectRatioValue(state);
                 const isPinned = pinnedScreenMirrorDeviceUid === deviceUid;
-                const previewContent = toNonEmptyString(state.frameSrc)
-                    ? `<img class="screen-mirror-tile-preview" src="${escapeHtml(state.frameSrc)}" alt="Live mirrored screen for ${escapeHtml(deviceName)}" />`
-                    : `<span class="screen-mirror-tile-placeholder">Waiting for frames...</span>`;
+                const previewContent = `
+                    <video
+                        class="screen-mirror-tile-preview"
+                        data-screen-mirror-video="${escapeHtml(deviceUid)}"
+                        autoplay
+                        playsinline
+                        muted
+                        aria-label="Live mirrored screen for ${escapeHtml(deviceName)}"></video>`;
 
                 return `
                     <div
@@ -7193,6 +7492,7 @@
                 previewWrap.addEventListener("pointercancel", handleMultiScreenMirrorPreviewPointerCancel);
                 previewWrap.addEventListener("dragstart", (event) => event.preventDefault());
             });
+            attachAllScreenMirrorVideos();
             updateScreenMirrorPinButtons();
         }
 
@@ -7223,20 +7523,21 @@
 
             const previewWrap = tile.querySelector("[data-mirror-field='previewWrap']");
             if (previewWrap) {
-                if (toNonEmptyString(state.frameSrc)) {
-                    previewWrap.innerHTML = `<img class="screen-mirror-tile-preview" src="${escapeHtml(state.frameSrc)}" alt="Live mirrored screen for ${escapeHtml(getScreenMirrorDeviceDisplayName(normalizedDeviceUid))}" />`;
-                    const previewImage = previewWrap.querySelector(".screen-mirror-tile-preview");
-                    if (previewImage instanceof HTMLImageElement) {
-                        const syncFrameSize = () => {
-                            updateScreenMirrorTileFrameSizeFromImage(normalizedDeviceUid, previewImage);
-                        };
-                        previewImage.addEventListener("load", syncFrameSize, { once: true });
-                        if (previewImage.complete) {
-                            syncFrameSize();
-                        }
-                    }
-                } else {
-                    previewWrap.innerHTML = `<span class="screen-mirror-tile-placeholder">Waiting for frames...</span>`;
+                let previewVideo = previewWrap.querySelector(".screen-mirror-tile-preview");
+                if (!(previewVideo instanceof HTMLVideoElement)) {
+                    previewWrap.innerHTML = `
+                        <video
+                            class="screen-mirror-tile-preview"
+                            data-screen-mirror-video="${escapeHtml(normalizedDeviceUid)}"
+                            autoplay
+                            playsinline
+                            muted
+                            aria-label="Live mirrored screen for ${escapeHtml(getScreenMirrorDeviceDisplayName(normalizedDeviceUid))}"></video>`;
+                    previewVideo = previewWrap.querySelector(".screen-mirror-tile-preview");
+                }
+                if (previewVideo instanceof HTMLVideoElement) {
+                    updateScreenMirrorTileFrameSizeFromVideo(normalizedDeviceUid, previewVideo);
+                    attachScreenMirrorStreamToDeviceVideos(normalizedDeviceUid);
                 }
             }
 
@@ -7263,6 +7564,17 @@
             if (Number.isFinite(Number(payload.frameCount))) {
                 state.frameCount = Math.max(0, Math.round(Number(payload.frameCount)));
             }
+            const payloadWidth = Number(payload?.width);
+            const payloadHeight = Number(payload?.height);
+            if (
+                Number.isFinite(payloadWidth) &&
+                Number.isFinite(payloadHeight) &&
+                payloadWidth > 0 &&
+                payloadHeight > 0
+            ) {
+                state.frameWidth = Math.max(1, Math.round(payloadWidth));
+                state.frameHeight = Math.max(1, Math.round(payloadHeight));
+            }
 
             const rawLastFrame = payload.lastFrameAt ?? payload.timestamp ?? null;
             if (rawLastFrame !== null && rawLastFrame !== undefined && rawLastFrame !== "") {
@@ -7273,42 +7585,12 @@
             }
             state.updatedAt = Date.now();
             updateScreenMirrorMultiTile(deviceUid);
-        }
 
-        function applyMultiScreenMirrorFrame(payload = {}) {
-            const deviceUid = normalizeDeviceUidInput(payload?.deviceUid || "");
-            if (!deviceUid || !activeScreenMirrorDeviceUids.has(deviceUid)) {
-                return;
+            if (shouldStartWebRtcForStatus(state.status)) {
+                void startWebRtcViewerForDevice(deviceUid);
+            } else if (["stopped", "error", "idle"].includes(state.status)) {
+                closeScreenMirrorPeerConnection(deviceUid, { notify: false });
             }
-
-            const frameBase64 = typeof payload.frameBase64 === "string" ? payload.frameBase64 : "";
-            if (!frameBase64) return;
-            const state = getScreenMirrorDeviceState(deviceUid);
-            if (!state) return;
-
-            const mimeType =
-                typeof payload.mimeType === "string" && payload.mimeType.trim()
-                    ? payload.mimeType.trim()
-                    : "image/jpeg";
-            const payloadWidth = Number(payload?.width);
-            const payloadHeight = Number(payload?.height);
-            state.frameSrc = `data:${mimeType};base64,${frameBase64}`;
-            if (
-                Number.isFinite(payloadWidth) &&
-                Number.isFinite(payloadHeight) &&
-                payloadWidth > 0 &&
-                payloadHeight > 0
-            ) {
-                state.frameWidth = Math.max(1, Math.round(payloadWidth));
-                state.frameHeight = Math.max(1, Math.round(payloadHeight));
-            }
-            state.status = "live";
-            state.frameCount = Number.isFinite(Number(state.frameCount))
-                ? Math.max(0, Math.round(Number(state.frameCount))) + 1
-                : 1;
-            state.lastFrameAt = new Date(payload.timestamp || Date.now()).toLocaleString();
-            state.updatedAt = Date.now();
-            updateScreenMirrorMultiTile(deviceUid);
         }
 
         async function sendScreenMirrorCommandForDevice(deviceUid, action, type, options = {}) {
@@ -7348,10 +7630,10 @@
             if (!activeScreenMirrorDeviceUids.has(normalizedDeviceUid)) {
                 activeScreenMirrorDeviceUids.add(normalizedDeviceUid);
             }
+            closeScreenMirrorPeerConnection(normalizedDeviceUid, { notify: false });
             const state = getScreenMirrorDeviceState(normalizedDeviceUid);
             if (state) {
                 state.status = "starting";
-                state.frameSrc = "";
                 state.frameCount = 0;
                 state.lastFrameAt = "--";
                 state.frameWidth = 0;
@@ -7388,6 +7670,7 @@
                 state.status = "stopping";
                 state.updatedAt = Date.now();
             }
+            closeScreenMirrorPeerConnection(normalizedDeviceUid, { notify: true });
             renderScreenMirrorMultiGrid();
             if (pinnedScreenMirrorDeviceUid === normalizedDeviceUid) {
                 renderPinnedScreenMirror();
@@ -7402,6 +7685,7 @@
                 );
                 if (removeAfterStop) {
                     activeScreenMirrorDeviceUids.delete(normalizedDeviceUid);
+                    closeScreenMirrorPeerConnection(normalizedDeviceUid, { notify: false });
                     if (pinnedScreenMirrorDeviceUid === normalizedDeviceUid) {
                         unpinScreenMirrorDevice({ renderGrid: false });
                     }
@@ -8112,6 +8396,10 @@
                 });
                 activeScreenMirrorDeviceUids.forEach((deviceUid) => {
                     screenMirrorSocket.emit("dashboard:join", { deviceUid });
+                    const state = getScreenMirrorDeviceState(deviceUid);
+                    if (state && shouldStartWebRtcForStatus(state.status)) {
+                        void startWebRtcViewerForDevice(deviceUid);
+                    }
                 });
             });
             screenMirrorSocket.on("connect_error", (error) => {
@@ -8146,50 +8434,12 @@
                 handleCommandsClearedRealtimeEvent(payload);
             });
 
-            screenMirrorSocket.on("screen:frame", (payload = {}) => {
-                applyMultiScreenMirrorFrame(payload);
-                const legacyLayout = document.getElementById("screenMirrorLegacyLayout");
-                if (!legacyLayout || legacyLayout.classList.contains("panel-hidden")) {
-                    return;
-                }
-                const payloadDeviceUid = normalizeDeviceUidInput(payload?.deviceUid || "");
-                if (!payloadDeviceUid || payloadDeviceUid !== screenMirrorJoinedDeviceUid) {
-                    return;
-                }
+            screenMirrorSocket.on("screen:webrtc-answer", (payload = {}) => {
+                void applyScreenMirrorWebRtcAnswer(payload);
+            });
 
-                const frameBase64 =
-                    typeof payload.frameBase64 === "string" ? payload.frameBase64 : "";
-                if (!frameBase64) return;
-
-                const mimeType =
-                    typeof payload.mimeType === "string" && payload.mimeType.trim()
-                        ? payload.mimeType.trim()
-                        : "image/jpeg";
-                const payloadWidth = Number(payload?.width);
-                const payloadHeight = Number(payload?.height);
-                if (
-                    Number.isFinite(payloadWidth) &&
-                    Number.isFinite(payloadHeight) &&
-                    payloadWidth > 0 &&
-                    payloadHeight > 0
-                ) {
-                    updateScreenMirrorFrameSize(payloadWidth, payloadHeight);
-                }
-                const preview = document.getElementById("screenMirrorPreview");
-                if (preview) {
-                    preview.src = `data:${mimeType};base64,${frameBase64}`;
-                }
-
-                const frameCountElement = document.getElementById("screenMirrorFrameCountText");
-                const currentFrameCount = Number(frameCountElement?.textContent || "0");
-                const nextFrameCount = Number.isFinite(currentFrameCount)
-                    ? currentFrameCount + 1
-                    : 1;
-                applyScreenMirrorStatus({
-                    status: "live",
-                    frameCount: nextFrameCount,
-                    timestamp: payload.timestamp
-                });
+            screenMirrorSocket.on("screen:webrtc-ice-candidate", (payload = {}) => {
+                void applyScreenMirrorRemoteIceCandidate(payload);
             });
 
             return screenMirrorSocket;
@@ -8197,6 +8447,9 @@
 
         function disconnectScreenMirrorSocket() {
             if (!screenMirrorSocket) return;
+            activeScreenMirrorDeviceUids.forEach((deviceUid) => {
+                closeScreenMirrorPeerConnection(deviceUid, { notify: false });
+            });
             screenMirrorSocket.disconnect();
             screenMirrorSocket = null;
             screenMirrorJoinedDeviceUid = "";
