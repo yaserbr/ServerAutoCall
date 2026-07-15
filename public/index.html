@@ -5079,6 +5079,7 @@
         const SCREEN_TOUCH_MIN_SWIPE_DURATION_MS = 80;
         const SCREEN_TOUCH_MAX_SWIPE_DURATION_MS = 5000;
         const screenMirrorLastFrameFallbacks = new WeakMap();
+        const screenMirrorLastFrameCacheByDeviceUid = new Map();
         let pinnedScreenMirrorDeviceUid = "";
         let screenMirrorPinnedCloseTimerId = null;
         let pinnedScreenMirrorPopupWindow = null;
@@ -5869,11 +5870,46 @@
             return elements.filter(isScreenMirrorVideoElement);
         }
 
-        function ensureScreenMirrorLastFrameFallback(videoElement) {
+        function getScreenMirrorLastFrameDeviceUid(videoElement, deviceUid = "") {
+            return normalizeDeviceUidInput(deviceUid) ||
+                normalizeDeviceUidInput(videoElement?.getAttribute?.("data-screen-mirror-video") || "");
+        }
+
+        function getScreenMirrorLastFrameCache(deviceUid) {
+            const normalizedDeviceUid = normalizeDeviceUidInput(deviceUid);
+            if (!normalizedDeviceUid) return null;
+
+            let cache = screenMirrorLastFrameCacheByDeviceUid.get(normalizedDeviceUid);
+            if (!cache) {
+                const canvas = document.createElement("canvas");
+                cache = {
+                    canvas,
+                    context: canvas.getContext("2d", { alpha: false, desynchronized: true }),
+                    hasFrame: false,
+                    width: 0,
+                    height: 0,
+                    updatedAt: 0
+                };
+                screenMirrorLastFrameCacheByDeviceUid.set(normalizedDeviceUid, cache);
+            }
+            return cache;
+        }
+
+        function clearScreenMirrorLastFrameCache(deviceUid) {
+            const normalizedDeviceUid = normalizeDeviceUidInput(deviceUid);
+            if (normalizedDeviceUid) {
+                screenMirrorLastFrameCacheByDeviceUid.delete(normalizedDeviceUid);
+            }
+        }
+
+        function ensureScreenMirrorLastFrameFallback(videoElement, deviceUid = "") {
             if (!isScreenMirrorVideoElement(videoElement)) return null;
 
             const existingState = screenMirrorLastFrameFallbacks.get(videoElement);
-            if (existingState) return existingState;
+            if (existingState) {
+                existingState.deviceUid = getScreenMirrorLastFrameDeviceUid(videoElement, deviceUid) || existingState.deviceUid;
+                return existingState;
+            }
 
             const ownerDocument = videoElement.ownerDocument || document;
             const ownerWindow = ownerDocument.defaultView || window;
@@ -5908,10 +5944,11 @@
                 timerWindow: ownerWindow,
                 intervalId: null,
                 hasFrame: false,
+                deviceUid: getScreenMirrorLastFrameDeviceUid(videoElement, deviceUid),
                 eventNames: ["loadeddata", "playing", "timeupdate", "resize", "stalled", "suspend", "waiting", "emptied"],
                 handleVideoEvent: null
             };
-            state.handleVideoEvent = () => updateScreenMirrorLastFrameFallback(videoElement);
+            state.handleVideoEvent = () => updateScreenMirrorLastFrameFallback(videoElement, state.deviceUid);
             screenMirrorLastFrameFallbacks.set(videoElement, state);
 
             state.eventNames.forEach((eventName) => {
@@ -5973,30 +6010,63 @@
             }
         }
 
-        function captureScreenMirrorLastFrame(videoElement, state) {
-            if (!state?.context || !videoElement.videoWidth || !videoElement.videoHeight) {
+        function paintScreenMirrorCachedLastFrame(videoElement, state) {
+            if (!state?.context) return false;
+
+            const cache = getScreenMirrorLastFrameCache(state.deviceUid);
+            if (!cache?.hasFrame || !cache.canvas.width || !cache.canvas.height) {
                 return false;
             }
 
             const { cssWidth, cssHeight, pixelRatio } = resizeScreenMirrorLastFrameCanvas(videoElement, state);
-            const scale = Math.min(cssWidth / videoElement.videoWidth, cssHeight / videoElement.videoHeight);
-            const frameWidth = videoElement.videoWidth * scale;
-            const frameHeight = videoElement.videoHeight * scale;
+            const scale = Math.min(cssWidth / cache.canvas.width, cssHeight / cache.canvas.height);
+            const frameWidth = cache.canvas.width * scale;
+            const frameHeight = cache.canvas.height * scale;
             const frameX = (cssWidth - frameWidth) / 2;
             const frameY = (cssHeight - frameHeight) / 2;
 
             state.context.setTransform(pixelRatio, 0, 0, pixelRatio, 0, 0);
             state.context.fillStyle = "rgb(3, 8, 22)";
             state.context.fillRect(0, 0, cssWidth, cssHeight);
-            state.context.drawImage(videoElement, frameX, frameY, frameWidth, frameHeight);
+            state.context.drawImage(cache.canvas, frameX, frameY, frameWidth, frameHeight);
             state.hasFrame = true;
+            return true;
+        }
+
+        function captureScreenMirrorLastFrame(videoElement, state) {
+            if (!state?.context || !videoElement.videoWidth || !videoElement.videoHeight) {
+                return false;
+            }
+
+            const cache = getScreenMirrorLastFrameCache(state.deviceUid);
+            if (!cache?.context) return false;
+
+            const videoWidth = Math.max(1, Math.round(videoElement.videoWidth));
+            const videoHeight = Math.max(1, Math.round(videoElement.videoHeight));
+            if (cache.canvas.width !== videoWidth || cache.canvas.height !== videoHeight) {
+                cache.canvas.width = videoWidth;
+                cache.canvas.height = videoHeight;
+            }
+            cache.context.drawImage(videoElement, 0, 0, videoWidth, videoHeight);
+            cache.hasFrame = true;
+            cache.width = videoWidth;
+            cache.height = videoHeight;
+            cache.updatedAt = Date.now();
+
+            paintScreenMirrorCachedLastFrame(videoElement, state);
             state.canvas.classList.remove("is-visible");
             return true;
         }
 
-        function updateScreenMirrorLastFrameFallback(videoElement) {
-            const state = ensureScreenMirrorLastFrameFallback(videoElement);
+        function showScreenMirrorLastFrameFallback(videoElement, state) {
+            const painted = paintScreenMirrorCachedLastFrame(videoElement, state);
+            state.canvas.classList.toggle("is-visible", painted || state.hasFrame);
+        }
+
+        function updateScreenMirrorLastFrameFallback(videoElement, deviceUid = "") {
+            const state = ensureScreenMirrorLastFrameFallback(videoElement, deviceUid);
             if (!state) return;
+            state.deviceUid = getScreenMirrorLastFrameDeviceUid(videoElement, deviceUid) || state.deviceUid;
 
             const hasStream = Boolean(videoElement.srcObject);
             const hasRenderableFrame = hasStream &&
@@ -6005,27 +6075,29 @@
                 videoElement.videoHeight > 0;
 
             if (!hasRenderableFrame) {
-                state.canvas.classList.toggle("is-visible", state.hasFrame);
+                showScreenMirrorLastFrameFallback(videoElement, state);
                 return;
             }
 
             if (doesScreenMirrorFrameLookBlank(videoElement, state)) {
-                state.canvas.classList.toggle("is-visible", state.hasFrame);
+                showScreenMirrorLastFrameFallback(videoElement, state);
                 return;
             }
 
             captureScreenMirrorLastFrame(videoElement, state);
         }
 
-        function startScreenMirrorLastFrameFallback(videoElement) {
-            const state = ensureScreenMirrorLastFrameFallback(videoElement);
+        function startScreenMirrorLastFrameFallback(videoElement, deviceUid = "") {
+            const state = ensureScreenMirrorLastFrameFallback(videoElement, deviceUid);
             if (!state) return;
 
-            updateScreenMirrorLastFrameFallback(videoElement);
+            state.deviceUid = getScreenMirrorLastFrameDeviceUid(videoElement, deviceUid) || state.deviceUid;
+            showScreenMirrorLastFrameFallback(videoElement, state);
+            updateScreenMirrorLastFrameFallback(videoElement, state.deviceUid);
             if (!state.intervalId) {
                 const timerWindow = state.timerWindow || window;
                 state.intervalId = timerWindow.setInterval(() => {
-                    updateScreenMirrorLastFrameFallback(videoElement);
+                    updateScreenMirrorLastFrameFallback(videoElement, state.deviceUid);
                 }, SCREEN_MIRROR_LAST_FRAME_CAPTURE_MS);
             }
         }
@@ -6119,7 +6191,7 @@
                 if (videoElement.readyState >= 1) {
                     updateScreenMirrorVideoDimensions(normalizedDeviceUid, videoElement);
                 }
-                startScreenMirrorLastFrameFallback(videoElement);
+                startScreenMirrorLastFrameFallback(videoElement, normalizedDeviceUid);
                 const playResult = videoElement.play?.();
                 if (playResult && typeof playResult.catch === "function") {
                     playResult.catch(() => {});
@@ -7872,6 +7944,7 @@
                 void startWebRtcViewerForDevice(deviceUid);
             } else if (["stopped", "error", "idle"].includes(state.status)) {
                 closeScreenMirrorPeerConnection(deviceUid, { notify: false });
+                clearScreenMirrorLastFrameCache(deviceUid);
             }
         }
 
@@ -7912,6 +7985,7 @@
             if (!activeScreenMirrorDeviceUids.has(normalizedDeviceUid)) {
                 activeScreenMirrorDeviceUids.add(normalizedDeviceUid);
             }
+            clearScreenMirrorLastFrameCache(normalizedDeviceUid);
             closeScreenMirrorPeerConnection(normalizedDeviceUid, { notify: false });
             const state = getScreenMirrorDeviceState(normalizedDeviceUid);
             if (state) {
@@ -7968,6 +8042,7 @@
                 if (removeAfterStop) {
                     activeScreenMirrorDeviceUids.delete(normalizedDeviceUid);
                     closeScreenMirrorPeerConnection(normalizedDeviceUid, { notify: false });
+                    clearScreenMirrorLastFrameCache(normalizedDeviceUid);
                     if (pinnedScreenMirrorDeviceUid === normalizedDeviceUid) {
                         unpinScreenMirrorDevice({ renderGrid: false });
                     }
