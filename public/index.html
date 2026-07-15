@@ -3775,7 +3775,7 @@
                     <img class="header-logo" src="/images/icon.png" alt="AutoCall logo" />
                     <div>
                         <h1>IT Quality Assurance</h1>
-                        <p id="8v6t4j">Made by Yaser Badr Alrashid</p>
+                        <p id="8v6t4j">Made by Yaser Alrashid</p>
                     </div>
                 </div>
                 <div class="header-right-tools">
@@ -6093,6 +6093,29 @@
             }
         }
 
+        function sanitizeScreenMirrorAnswerSdp(rawSdp) {
+            let removedIncompatibleLines = 0;
+            const sanitized = String(rawSdp || "")
+                .replace(/\r\n/g, "\n")
+                .replace(/\r/g, "\n")
+                .split("\n")
+                .map((line) => line.trimEnd())
+                .filter((line) => {
+                    if (/^a=ssrc:\d+\s+msid:\S+\s+\S+/.test(line)) {
+                        removedIncompatibleLines += 1;
+                        return false;
+                    }
+                    return line.trim();
+                })
+                .join("\r\n");
+            if (removedIncompatibleLines > 0) {
+                console.info(
+                    `[SCREEN_MIRROR] Removed ${removedIncompatibleLines} browser-incompatible SDP line(s)`
+                );
+            }
+            return sanitized ? `${sanitized}\r\n` : "";
+        }
+
         async function applyScreenMirrorWebRtcAnswer(payload = {}) {
             const deviceUid = normalizeDeviceUidInput(payload?.deviceUid || "");
             if (!deviceUid || !activeScreenMirrorDeviceUids.has(deviceUid)) return;
@@ -6100,7 +6123,7 @@
             const state = getScreenMirrorDeviceState(deviceUid);
             const peerConnection = state?.peerConnection;
             const type = String(payload?.type || "").trim().toLowerCase();
-            const sdp = String(payload?.sdp || "").trim();
+            const sdp = sanitizeScreenMirrorAnswerSdp(payload?.sdp || "");
             if (!state || !peerConnection || type !== "answer" || !sdp) return;
 
             try {
