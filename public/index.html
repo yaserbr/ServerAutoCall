@@ -6044,10 +6044,15 @@
                 const offer = await peerConnection.createOffer();
                 await peerConnection.setLocalDescription(offer);
                 const localDescription = peerConnection.localDescription || offer;
-                socket.emit("screen:webrtc-offer", {
-                    deviceUid: normalizedDeviceUid,
+                const signalDescription = {
                     type: localDescription.type,
                     sdp: localDescription.sdp
+                };
+                socket.emit("screen:webrtc-offer", {
+                    deviceUid: normalizedDeviceUid,
+                    ...signalDescription,
+                    description: signalDescription,
+                    offer: signalDescription
                 });
                 setTimeout(() => {
                     const currentState = getScreenMirrorDeviceState(normalizedDeviceUid);

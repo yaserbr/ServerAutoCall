@@ -1600,10 +1600,52 @@ function emitScreenMirrorStatus(deviceUid) {
 }
 
 function buildWebRtcSessionDescription(payload = {}) {
-  const type = typeof payload?.type === "string" ? payload.type.trim().toLowerCase() : "";
-  const sdp = typeof payload?.sdp === "string" ? payload.sdp.trim() : "";
-  if (!["offer", "answer"].includes(type) || !sdp) return null;
-  return { type, sdp };
+  const descriptionSources = [
+    payload,
+    payload?.description,
+    payload?.offer,
+    payload?.answer,
+    payload?.sessionDescription,
+    payload?.desc
+  ];
+
+  for (const source of descriptionSources) {
+    let normalizedSource = source;
+    if (typeof normalizedSource === "string") {
+      try {
+        normalizedSource = JSON.parse(normalizedSource);
+      } catch (_error) {
+        normalizedSource = { sdp: normalizedSource };
+      }
+    }
+
+    if (!normalizedSource || typeof normalizedSource !== "object") continue;
+
+    const type =
+      typeof normalizedSource?.type === "string"
+        ? normalizedSource.type.trim().toLowerCase()
+        : "";
+    let sdp =
+      typeof normalizedSource?.sdp === "string"
+        ? normalizedSource.sdp.trim()
+        : "";
+    if (sdp.startsWith('"') && sdp.endsWith('"')) {
+      try {
+        sdp = JSON.parse(sdp);
+      } catch (_error) {
+      }
+    }
+    sdp = String(sdp || "")
+      .replace(/\\r\\n/g, "\r\n")
+      .replace(/\\n/g, "\n")
+      .replace(/\\r/g, "\r")
+      .trim();
+
+    if (!["offer", "answer"].includes(type) || !sdp || !sdp.startsWith("v=")) continue;
+    return { type, sdp };
+  }
+
+  return null;
 }
 
 function buildWebRtcIceCandidate(payload = {}) {
