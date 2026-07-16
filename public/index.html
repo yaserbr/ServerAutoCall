@@ -6359,6 +6359,9 @@
             applyPreferredVideoCodecs(transceiver);
 
             peerConnection.ontrack = (event) => {
+                if (event.receiver) {
+                    event.receiver.playoutDelayHint = 0;
+                }
                 const mediaStream = event.streams?.[0] || new MediaStream([event.track]);
                 state.mediaStream = mediaStream;
                 state.status = "live";
