@@ -5073,6 +5073,9 @@
         const SCREEN_MIRROR_PINNED_ANIMATION_MS = 220;
         const SCREEN_MIRROR_WEBRTC_ICE_SERVERS = [];
         const SCREEN_MIRROR_WEBRTC_OFFER_RETRY_MS = 7000;
+        const SCREEN_MIRROR_FIRST_FRAME_TIMEOUT_MS = 2600;
+        const SCREEN_MIRROR_FIRST_FRAME_RETRY_MAX = 4;
+        const SCREEN_MIRROR_FIRST_FRAME_RETRY_DELAY_MS = 450;
         const SCREEN_MIRROR_LAST_FRAME_CAPTURE_MS = 450;
         const SCREEN_MIRROR_LAST_FRAME_SAMPLE_SIZE = 8;
         const SCREEN_TOUCH_TAP_DISTANCE_THRESHOLD_PX = 12;
@@ -5759,6 +5762,8 @@
                     pendingIceCandidates: [],
                     negotiationInFlight: false,
                     lastWebRtcOfferAt: 0,
+                    firstFrameWatchTimerId: null,
+                    firstFrameRetryCount: 0,
                     tileWidth: SCREEN_MIRROR_TILE_WIDTH_DEFAULT,
                     updatedAt: 0
                 });
@@ -6126,6 +6131,76 @@
             });
         }
 
+        function hasScreenMirrorRenderableVideoFrame(deviceUid) {
+            return getScreenMirrorVideoElements(deviceUid).some((videoElement) =>
+                videoElement.readyState >= 2 &&
+                videoElement.videoWidth > 0 &&
+                videoElement.videoHeight > 0
+            );
+        }
+
+        function clearScreenMirrorFirstFrameWatch(deviceUid, resetRetryCount = false) {
+            const state = getScreenMirrorDeviceState(deviceUid);
+            if (!state) return;
+
+            if (state.firstFrameWatchTimerId) {
+                clearTimeout(state.firstFrameWatchTimerId);
+                state.firstFrameWatchTimerId = null;
+            }
+            if (resetRetryCount) {
+                state.firstFrameRetryCount = 0;
+            }
+        }
+
+        function markScreenMirrorFirstFrameVisible(deviceUid) {
+            if (!hasScreenMirrorRenderableVideoFrame(deviceUid)) return;
+            clearScreenMirrorFirstFrameWatch(deviceUid, true);
+        }
+
+        function scheduleScreenMirrorFirstFrameWatch(deviceUid) {
+            const normalizedDeviceUid = normalizeDeviceUidInput(deviceUid);
+            const state = getScreenMirrorDeviceState(normalizedDeviceUid);
+            if (!normalizedDeviceUid || !state) return;
+
+            if (hasScreenMirrorRenderableVideoFrame(normalizedDeviceUid)) {
+                markScreenMirrorFirstFrameVisible(normalizedDeviceUid);
+                return;
+            }
+
+            if (state.firstFrameWatchTimerId) {
+                clearTimeout(state.firstFrameWatchTimerId);
+            }
+
+            state.firstFrameWatchTimerId = setTimeout(() => {
+                state.firstFrameWatchTimerId = null;
+
+                if (!activeScreenMirrorDeviceUids.has(normalizedDeviceUid)) return;
+                if (!shouldStartWebRtcForStatus(state.status)) return;
+                if (hasScreenMirrorRenderableVideoFrame(normalizedDeviceUid)) {
+                    markScreenMirrorFirstFrameVisible(normalizedDeviceUid);
+                    return;
+                }
+                if (state.firstFrameRetryCount >= SCREEN_MIRROR_FIRST_FRAME_RETRY_MAX) {
+                    console.warn("[SCREEN_MIRROR] First frame still missing after retries", {
+                        deviceUid: normalizedDeviceUid,
+                        retries: state.firstFrameRetryCount
+                    });
+                    return;
+                }
+
+                state.firstFrameRetryCount += 1;
+                state.lastWebRtcOfferAt = 0;
+                closeScreenMirrorPeerConnection(normalizedDeviceUid, { notify: true });
+                setTimeout(() => {
+                    const currentState = getScreenMirrorDeviceState(normalizedDeviceUid);
+                    if (!currentState || !activeScreenMirrorDeviceUids.has(normalizedDeviceUid)) return;
+                    if (hasScreenMirrorRenderableVideoFrame(normalizedDeviceUid)) return;
+                    currentState.lastWebRtcOfferAt = 0;
+                    void startWebRtcViewerForDevice(normalizedDeviceUid, { force: true });
+                }, SCREEN_MIRROR_FIRST_FRAME_RETRY_DELAY_MS);
+            }, SCREEN_MIRROR_FIRST_FRAME_TIMEOUT_MS);
+        }
+
         function applyPreferredVideoCodecs(transceiver) {
             try {
                 const capabilities =
@@ -6168,6 +6243,7 @@
                     applyPinnedScreenMirrorSizing();
                 }
             }
+            markScreenMirrorFirstFrameVisible(deviceUid);
         }
 
         function attachScreenMirrorStreamToDeviceVideos(deviceUid) {
@@ -6185,11 +6261,24 @@
                 videoElement.autoplay = true;
                 videoElement.addEventListener(
                     "loadedmetadata",
-                    () => updateScreenMirrorVideoDimensions(normalizedDeviceUid, videoElement),
+                    () => {
+                        updateScreenMirrorVideoDimensions(normalizedDeviceUid, videoElement);
+                        markScreenMirrorFirstFrameVisible(normalizedDeviceUid);
+                    },
                     { once: true }
                 );
+                ["loadeddata", "canplay", "playing", "timeupdate", "resize"].forEach((eventName) => {
+                    videoElement.addEventListener(
+                        eventName,
+                        () => markScreenMirrorFirstFrameVisible(normalizedDeviceUid),
+                        { once: true }
+                    );
+                });
                 if (videoElement.readyState >= 1) {
                     updateScreenMirrorVideoDimensions(normalizedDeviceUid, videoElement);
+                }
+                if (videoElement.readyState >= 2) {
+                    markScreenMirrorFirstFrameVisible(normalizedDeviceUid);
                 }
                 startScreenMirrorLastFrameFallback(videoElement, normalizedDeviceUid);
                 const playResult = videoElement.play?.();
@@ -6211,6 +6300,8 @@
 
             const state = getScreenMirrorDeviceState(normalizedDeviceUid);
             if (!state) return;
+
+            clearScreenMirrorFirstFrameWatch(normalizedDeviceUid, false);
 
             if (options.notify !== false && screenMirrorSocket?.connected) {
                 screenMirrorSocket.emit("screen:webrtc-viewer-stop", {
@@ -6274,6 +6365,7 @@
                 state.updatedAt = Date.now();
                 attachScreenMirrorStreamToDeviceVideos(normalizedDeviceUid);
                 updateScreenMirrorMultiTile(normalizedDeviceUid);
+                scheduleScreenMirrorFirstFrameWatch(normalizedDeviceUid);
             };
 
             peerConnection.onicecandidate = (event) => {
@@ -6301,7 +6393,7 @@
             return peerConnection;
         }
 
-        async function startWebRtcViewerForDevice(deviceUid) {
+        async function startWebRtcViewerForDevice(deviceUid, options = {}) {
             const normalizedDeviceUid = normalizeDeviceUidInput(deviceUid);
             if (!normalizedDeviceUid || !activeScreenMirrorDeviceUids.has(normalizedDeviceUid)) return;
             if (typeof RTCPeerConnection !== "function") {
@@ -6311,9 +6403,13 @@
 
             const state = getScreenMirrorDeviceState(normalizedDeviceUid);
             if (!state || state.negotiationInFlight) return;
+            const forceRestart = options.force === true;
 
             const existingPeerConnection = state.peerConnection;
-            if (existingPeerConnection) {
+            if (forceRestart && existingPeerConnection) {
+                closeScreenMirrorPeerConnection(normalizedDeviceUid, { notify: true });
+                state.lastWebRtcOfferAt = 0;
+            } else if (existingPeerConnection) {
                 const connectionState = String(existingPeerConnection.connectionState || "").toLowerCase();
                 const signalingState = String(existingPeerConnection.signalingState || "").toLowerCase();
                 const hasStartedNegotiation =
@@ -6329,7 +6425,7 @@
             }
 
             const now = Date.now();
-            if (state.lastWebRtcOfferAt && now - state.lastWebRtcOfferAt < SCREEN_MIRROR_WEBRTC_OFFER_RETRY_MS) {
+            if (!forceRestart && state.lastWebRtcOfferAt && now - state.lastWebRtcOfferAt < SCREEN_MIRROR_WEBRTC_OFFER_RETRY_MS) {
                 return;
             }
 
@@ -6420,6 +6516,7 @@
                 for (const candidate of pendingCandidates) {
                     await peerConnection.addIceCandidate(candidate);
                 }
+                scheduleScreenMirrorFirstFrameWatch(deviceUid);
             } catch (error) {
                 console.warn("[SCREEN_MIRROR] WebRTC answer failed", error);
                 closeScreenMirrorPeerConnection(deviceUid, { notify: true });
@@ -7994,6 +8091,7 @@
                 state.lastFrameAt = "--";
                 state.frameWidth = 0;
                 state.frameHeight = 0;
+                state.firstFrameRetryCount = 0;
                 state.updatedAt = Date.now();
             }
             renderScreenMirrorMultiGrid();
