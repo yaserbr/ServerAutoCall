@@ -116,7 +116,6 @@ const ESIM_ACTIVATION_CODE_MAX_LENGTH = 512;
 const REMOTE_TOUCH_MAX_COORDINATE = 20000;
 const REMOTE_TOUCH_MAX_DURATION_MS = 10000;
 const REMOTE_TOUCH_MIN_DURATION_MS = 50;
-const DEVICE_ONLINE_WINDOW_MS = 30 * 1000;
 const PAIRING_TOKEN_BYTES = 32;
 const PAIRING_TOKEN_TTL_MS = 5 * 60 * 1000;
 const PAIRING_TOKEN_TYPE = "AUTOCALL_PAIRING";
@@ -130,6 +129,8 @@ const DEVICE_AUTH_ALLOW_LEGACY_FALLBACK =
   String(process.env.DEVICE_AUTH_ALLOW_LEGACY_FALLBACK || "").trim().toLowerCase() === "true";
 const screenMirrorSessions = new Map();
 const screenMirrorViewerDeviceBySocketId = new Map();
+const activeDeviceSocketIdsByUid = new Map();
+const deviceUidBySocketId = new Map();
 const pairingTokenMemoryStore = new Map();
 const requireAuthenticatedDevice = buildRequireDeviceAuth({
   allowLegacyFallback: DEVICE_AUTH_ALLOW_LEGACY_FALLBACK
@@ -1141,11 +1142,71 @@ function toPlainObject(documentOrObject) {
   return documentOrObject;
 }
 
-function isDeviceOnlineByLastSeen(lastSeenValue) {
-  if (!lastSeenValue) return false;
-  const parsedDate = new Date(lastSeenValue);
-  if (Number.isNaN(parsedDate.getTime())) return false;
-  return Date.now() - parsedDate.getTime() <= DEVICE_ONLINE_WINDOW_MS;
+function getActiveDeviceSocketCount(deviceUid) {
+  const normalizedDeviceUid = normalizeDeviceUid(deviceUid);
+  if (!normalizedDeviceUid) return 0;
+  return activeDeviceSocketIdsByUid.get(normalizedDeviceUid)?.size ?? 0;
+}
+
+function isDeviceOnlineBySocket(deviceUid) {
+  return getActiveDeviceSocketCount(deviceUid) > 0;
+}
+
+function registerDeviceSocketConnection(socket, deviceUid) {
+  const normalizedDeviceUid = normalizeDeviceUid(deviceUid);
+  if (!normalizedDeviceUid || !socket?.id) return 0;
+
+  const previousDeviceUid = deviceUidBySocketId.get(socket.id);
+  if (previousDeviceUid && previousDeviceUid !== normalizedDeviceUid) {
+    const previousSocketIds = activeDeviceSocketIdsByUid.get(previousDeviceUid);
+    if (previousSocketIds) {
+      previousSocketIds.delete(socket.id);
+      if (previousSocketIds.size === 0) {
+        activeDeviceSocketIdsByUid.delete(previousDeviceUid);
+      }
+    }
+    emitDevicePresenceStatus(previousDeviceUid);
+  }
+
+  let socketIds = activeDeviceSocketIdsByUid.get(normalizedDeviceUid);
+  if (!socketIds) {
+    socketIds = new Set();
+    activeDeviceSocketIdsByUid.set(normalizedDeviceUid, socketIds);
+  }
+  socketIds.add(socket.id);
+  deviceUidBySocketId.set(socket.id, normalizedDeviceUid);
+  socket.data.commandDeviceUid = normalizedDeviceUid;
+  return socketIds.size;
+}
+
+function unregisterDeviceSocketConnection(socketId) {
+  const normalizedSocketId = typeof socketId === "string" ? socketId.trim() : "";
+  if (!normalizedSocketId) return "";
+
+  const deviceUid = deviceUidBySocketId.get(normalizedSocketId);
+  if (!deviceUid) return "";
+
+  deviceUidBySocketId.delete(normalizedSocketId);
+  const socketIds = activeDeviceSocketIdsByUid.get(deviceUid);
+  if (socketIds) {
+    socketIds.delete(normalizedSocketId);
+    if (socketIds.size === 0) {
+      activeDeviceSocketIdsByUid.delete(deviceUid);
+    }
+  }
+
+  return deviceUid;
+}
+
+function emitDevicePresenceStatus(deviceUid) {
+  const normalizedDeviceUid = normalizeDeviceUid(deviceUid);
+  if (!normalizedDeviceUid) return;
+
+  io.to(`dashboard:${normalizedDeviceUid}`).emit("device:presence", {
+    deviceUid: normalizedDeviceUid,
+    online: isDeviceOnlineBySocket(normalizedDeviceUid),
+    connectedSocketCount: getActiveDeviceSocketCount(normalizedDeviceUid)
+  });
 }
 
 function mapLinkedAccountForResponse(linkedAccountLike) {
@@ -1232,7 +1293,7 @@ function mapDeviceForResponse(device, linkedAccount) {
     deviceUid: source.deviceUid,
     deviceName: ensureDeviceName(source),
     platform: source.platform ?? null,
-    online: isDeviceOnlineByLastSeen(source.lastSeen),
+    online: isDeviceOnlineBySocket(source.deviceUid),
     lastSeen: formatUtcForRiyadhDisplay(source.lastSeen),
     linkedAccount: normalizedLinkedAccount
   };
@@ -1718,7 +1779,13 @@ io.on("connection", (socket) => {
 
     socket.data.screenMirrorDeviceUid = deviceUid;
     socket.join(`device:${deviceUid}`);
-    console.log("[SCREEN_MIRROR] device joined", { deviceUid });
+    const activeSocketCount = registerDeviceSocketConnection(socket, deviceUid);
+    emitDevicePresenceStatus(deviceUid);
+    console.log("[DEVICE_SOCKET] device joined", {
+      deviceUid,
+      socketId: socket.id,
+      activeSocketCount
+    });
   });
 
   socket.on("dashboard:join", async (payload = {}) => {
@@ -1986,16 +2053,27 @@ io.on("connection", (socket) => {
   });
 
   socket.on("disconnect", () => {
-    const deviceUid = screenMirrorViewerDeviceBySocketId.get(socket.id);
-    if (!deviceUid) return;
+    const disconnectedDeviceUid = unregisterDeviceSocketConnection(socket.id);
+    if (disconnectedDeviceUid) {
+      const activeSocketCount = getActiveDeviceSocketCount(disconnectedDeviceUid);
+      emitDevicePresenceStatus(disconnectedDeviceUid);
+      console.log("[DEVICE_SOCKET] device disconnected", {
+        deviceUid: disconnectedDeviceUid,
+        socketId: socket.id,
+        activeSocketCount
+      });
+    }
 
-    screenMirrorViewerDeviceBySocketId.delete(socket.id);
-    updateScreenMirrorViewerCount(deviceUid);
-    io.to(`device:${deviceUid}`).emit("screen:webrtc-viewer-left", {
-      deviceUid,
-      viewerId: socket.id
-    });
-    emitScreenMirrorStatus(deviceUid);
+    const deviceUid = screenMirrorViewerDeviceBySocketId.get(socket.id);
+    if (deviceUid) {
+      screenMirrorViewerDeviceBySocketId.delete(socket.id);
+      updateScreenMirrorViewerCount(deviceUid);
+      io.to(`device:${deviceUid}`).emit("screen:webrtc-viewer-left", {
+        deviceUid,
+        viewerId: socket.id
+      });
+      emitScreenMirrorStatus(deviceUid);
+    }
   });
 });
 
@@ -4069,7 +4147,7 @@ app.post("/agent/chat", requireAuth, async (req, res) => {
       deviceUid: d.deviceUid,
       deviceName: d.deviceName || buildDefaultDeviceName(d.deviceUid),
       platform: d.platform,
-      online: isDeviceOnlineByLastSeen(d.lastSeen)
+      online: isDeviceOnlineBySocket(d.deviceUid)
     }));
 
     if (formattedDevices.length === 0) {
