@@ -1532,6 +1532,70 @@ function buildDuePendingCommandFilter(deviceUid) {
   };
 }
 
+async function claimNextPendingCommandForDevice(deviceUid, options = {}) {
+  const normalizedDeviceUid = normalizeDeviceUid(deviceUid);
+  if (!normalizedDeviceUid) {
+    const error = new Error(DEVICE_UID_FORMAT_ERROR);
+    error.statusCode = 400;
+    throw error;
+  }
+
+  const transport = typeof options.transport === "string" ? options.transport : "unknown";
+  const claimFilter = buildDuePendingCommandFilter(normalizedDeviceUid);
+  const claimedCommand = await Command.findOneAndUpdate(
+    claimFilter,
+    {
+      $set: {
+        status: "executing"
+      },
+      $unset: {
+        failureReason: 1,
+        executedAt: 1,
+        downloadDurationSeconds: 1
+      }
+    },
+    {
+      sort: COMMAND_CLAIM_SORT,
+      new: true
+    }
+  );
+
+  if (!claimedCommand) {
+    logCommandLifecycle("claim_none", {
+      deviceUid: normalizedDeviceUid,
+      oldStatus: "pending",
+      newStatus: null,
+      details: { transport }
+    });
+    return { success: true, command: null };
+  }
+
+  logCommandLifecycle("claimed", {
+    commandId: commandIdFrom(claimedCommand),
+    deviceUid: normalizedDeviceUid,
+    oldStatus: "pending",
+    newStatus: "executing",
+    details: {
+      action: claimedCommand.action,
+      type: claimedCommand.type,
+      transport
+    }
+  });
+  if (claimedCommand.action === "return_to_autocall") {
+    logReturnToAutoCallEvent({
+      stage: "claimed",
+      commandId: commandIdFrom(claimedCommand),
+      deviceUid: normalizedDeviceUid,
+      status: "executing"
+    });
+  }
+
+  return {
+    success: true,
+    command: emitCommandUpdated(claimedCommand)
+  };
+}
+
 function logCommandLifecycle(eventName, payload = {}) {
   console.log("[CommandLifecycle]", {
     event: eventName,
@@ -1786,6 +1850,57 @@ io.on("connection", (socket) => {
       socketId: socket.id,
       activeSocketCount
     });
+  });
+
+  const acknowledgeCommandClaim = (ack, payload, response) => {
+    const requestId = typeof payload?.requestId === "string" ? payload.requestId.trim() : "";
+    const responsePayload = {
+      ...(response && typeof response === "object" ? response : { success: false }),
+      ...(requestId ? { requestId } : {})
+    };
+
+    if (typeof ack === "function") {
+      ack(responsePayload);
+      return;
+    }
+
+    socket.emit("command:claim:response", responsePayload);
+  };
+
+  socket.on("command:claim", async (payload = {}, ack) => {
+    const deviceUid = requireDeviceSocket("command:claim", payload);
+    if (!deviceUid) {
+      acknowledgeCommandClaim(ack, payload, { success: false, error: "unauthorized" });
+      return;
+    }
+
+    try {
+      if (deviceUidBySocketId.get(socket.id) !== deviceUid) {
+        socket.join(`device:${deviceUid}`);
+        const activeSocketCount = registerDeviceSocketConnection(socket, deviceUid);
+        emitDevicePresenceStatus(deviceUid);
+        console.log("[DEVICE_SOCKET] command claim auto-joined device socket", {
+          deviceUid,
+          socketId: socket.id,
+          activeSocketCount
+        });
+      }
+
+      const claimResponse = await claimNextPendingCommandForDevice(deviceUid, {
+        transport: "socket"
+      });
+      acknowledgeCommandClaim(ack, payload, claimResponse);
+    } catch (error) {
+      console.error("[SocketCommandClaim] failed", {
+        socketId: socket.id,
+        deviceUid,
+        error: error?.message || "unknown"
+      });
+      acknowledgeCommandClaim(ack, payload, {
+        success: false,
+        error: error?.statusCode === 400 ? DEVICE_UID_FORMAT_ERROR : "internal_error"
+      });
+    }
   });
 
   socket.on("dashboard:join", async (payload = {}) => {
@@ -3585,59 +3700,11 @@ app.post("/commands/claim", requireAuthenticatedDevice, async (req, res) => {
       return res.status(400).json({ error: DEVICE_UID_FORMAT_ERROR });
     }
 
-    const claimFilter = buildDuePendingCommandFilter(normalizedDeviceUid);
-    const claimedCommand = await Command.findOneAndUpdate(
-      claimFilter,
-      {
-        $set: {
-          status: "executing"
-        },
-        $unset: {
-          failureReason: 1,
-          executedAt: 1,
-          downloadDurationSeconds: 1
-        }
-      },
-      {
-        sort: COMMAND_CLAIM_SORT,
-        new: true
-      }
+    return res.json(
+      await claimNextPendingCommandForDevice(normalizedDeviceUid, {
+        transport: "http"
+      })
     );
-
-    if (!claimedCommand) {
-      logCommandLifecycle("claim_none", {
-        deviceUid: normalizedDeviceUid,
-        oldStatus: "pending",
-        newStatus: null
-      });
-      return res.json({ success: true, command: null });
-    }
-
-    logCommandLifecycle("claimed", {
-      commandId: commandIdFrom(claimedCommand),
-      deviceUid: normalizedDeviceUid,
-      oldStatus: "pending",
-      newStatus: "executing",
-      details: {
-        action: claimedCommand.action,
-        type: claimedCommand.type
-      }
-    });
-    if (claimedCommand.action === "return_to_autocall") {
-      logReturnToAutoCallEvent({
-        stage: "claimed",
-        commandId: commandIdFrom(claimedCommand),
-        deviceUid: normalizedDeviceUid,
-        status: "executing"
-      });
-    }
-
-    const claimedCommandResponse = emitCommandUpdated(claimedCommand);
-
-    return res.json({
-      success: true,
-      command: claimedCommandResponse
-    });
   } catch (error) {
     return handleServerError(res, error, "POST /commands/claim");
   }
