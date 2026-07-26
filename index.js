@@ -3872,7 +3872,7 @@ app.post("/commands/:id/cancel-and-end", requireAuth, async (req, res) => {
       { _id: existingCommand._id, status: "pending" },
       {
         $set: {
-          status: "failed",
+          status: "cancelled",
           failureReason: cancelledFailureReason
         },
         $unset: {
@@ -3895,7 +3895,7 @@ app.post("/commands/:id/cancel-and-end", requireAuth, async (req, res) => {
       commandId: commandIdFrom(cancelledCommand),
       deviceUid: cancelledCommand.deviceUid,
       oldStatus: "pending",
-      newStatus: "failed",
+      newStatus: "cancelled",
       details: {
         failureReason: cancelledFailureReason
       }
@@ -4021,7 +4021,7 @@ app.post("/commands/:id/status", requireAuthenticatedDevice, async (req, res) =>
 
     const normalizedStatus =
       typeof status === "string" ? status.trim().toLowerCase() : "";
-    const validStatuses = new Set(["pending", "executing", "executed", "failed"]);
+    const validStatuses = new Set(["pending", "executing", "executed", "failed", "cancelled"]);
 
     if (!validStatuses.has(normalizedStatus)) {
       console.warn("[CommandStatus] Invalid status callback rejected", {
@@ -4030,15 +4030,16 @@ app.post("/commands/:id/status", requireAuthenticatedDevice, async (req, res) =>
         status
       });
       return res.status(400).json({
-        error: "Invalid status. Only 'pending', 'executing', 'executed', and 'failed' are supported."
+        error: "Invalid status. Only 'pending', 'executing', 'executed', 'failed', and 'cancelled' are supported."
       });
     }
 
     const allowedTransitions = {
-      pending: new Set(["pending", "executing", "executed", "failed"]),
-      executing: new Set(["executing", "executed", "failed"]),
+      pending: new Set(["pending", "executing", "executed", "failed", "cancelled"]),
+      executing: new Set(["executing", "executed", "failed", "cancelled"]),
       executed: new Set(["executed"]),
-      failed: new Set(["failed"])
+      failed: new Set(["failed"]),
+      cancelled: new Set(["cancelled"])
     };
 
     const canTransition = allowedTransitions[command.status]?.has(normalizedStatus);
@@ -4075,7 +4076,7 @@ app.post("/commands/:id/status", requireAuthenticatedDevice, async (req, res) =>
       }
       command.executedAt = new Date(toUtcISOString());
       unsetIfPresent(command, "failureReason");
-    } else if (normalizedStatus === "failed") {
+    } else if (normalizedStatus === "failed" || normalizedStatus === "cancelled") {
       const normalizedFailureReason =
         typeof failureReason === "string" ? failureReason.trim() : "";
       if (normalizedFailureReason) {
@@ -4093,7 +4094,7 @@ app.post("/commands/:id/status", requireAuthenticatedDevice, async (req, res) =>
     const commandResponse = emitCommandUpdated(command);
 
     // Trigger sequential command collection progress
-    if (normalizedStatus === "executed" || normalizedStatus === "failed") {
+    if (["executed", "failed", "cancelled"].includes(normalizedStatus)) {
       try {
         await CommandCollectionService.handleCommandStatusChange(
           command._id.toString(), // Explicitly pass command ID as string for robust matching
@@ -4117,7 +4118,7 @@ app.post("/commands/:id/status", requireAuthenticatedDevice, async (req, res) =>
       newStatus: normalizedStatus,
       details: {
         failureReason:
-          normalizedStatus === "failed"
+          normalizedStatus === "failed" || normalizedStatus === "cancelled"
             ? command.failureReason ?? null
             : null,
         downloadDurationSeconds:
@@ -4132,7 +4133,10 @@ app.post("/commands/:id/status", requireAuthenticatedDevice, async (req, res) =>
         commandId: commandIdFrom(command),
         deviceUid: command.deviceUid,
         status: normalizedStatus,
-        failureReason: normalizedStatus === "failed" ? command.failureReason ?? null : null
+        failureReason:
+          normalizedStatus === "failed" || normalizedStatus === "cancelled"
+            ? command.failureReason ?? null
+            : null
       });
     }
 

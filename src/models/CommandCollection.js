@@ -192,7 +192,7 @@ const commandCollectionSchema = new mongoose.Schema(
     },
     status: {
       type: String,
-      enum: ["pending", "executing", "executed", "failed"],
+      enum: ["pending", "executing", "executed", "failed", "cancelled"],
       default: "pending",
       index: true
     },

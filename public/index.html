@@ -1856,6 +1856,12 @@
             background: rgba(239, 68, 68, 0.18);
         }
 
+        .status-cancelled {
+            color: #cbd5e1;
+            border-color: rgba(148, 163, 184, 0.45);
+            background: rgba(148, 163, 184, 0.18);
+        }
+
         .status-pending {
             color: #fcd34d;
             border-color: rgba(245, 158, 11, 0.5);
@@ -3078,6 +3084,12 @@
             color: #991b1b;
             border-color: rgba(153, 27, 27, 0.28);
             background: #fee2e2;
+        }
+
+        body.light-mode .status-cancelled {
+            color: #475569;
+            border-color: rgba(71, 85, 105, 0.24);
+            background: #e2e8f0;
         }
 
         body.light-mode .status-pending {
@@ -5148,7 +5160,8 @@
             executing: 0,
             pending: 1,
             executed: 2,
-            failed: 3
+            failed: 3,
+            cancelled: 4
         };
         const commandActionToType = {
             call: "CALL",
@@ -10786,6 +10799,9 @@
             }
             if (normalizedStatus === "failed") {
                 return { label: "failed", className: "status-failed" };
+            }
+            if (normalizedStatus === "cancelled") {
+                return { label: "cancelled", className: "status-cancelled" };
             }
             if (normalizedStatus === "pending") {
                 return { label: "pending", className: "status-pending" };

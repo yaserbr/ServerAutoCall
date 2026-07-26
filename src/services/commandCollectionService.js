@@ -185,7 +185,7 @@ class CommandCollectionService {
     }
 
     const normalizedStatus = String(newStatus).trim().toLowerCase();
-    if (!["executed", "failed"].includes(normalizedStatus)) {
+    if (!["executed", "failed", "cancelled"].includes(normalizedStatus)) {
       console.warn(`[CommandCollection Service] Invalid/non-terminal status callback ignored for collection progression.`, {
         commandId,
         status: normalizedStatus
@@ -285,9 +285,9 @@ class CommandCollectionService {
             delayAfterSeconds
           });
         }
-      } else if (normalizedStatus === "failed") {
-        console.error(`[CommandCollection Service] HALTING SEQUENCE: Step ${idx + 1} reported failure. Reason: ${failureReason || "N/A"}`);
-        collection.status = "failed";
+      } else if (normalizedStatus === "failed" || normalizedStatus === "cancelled") {
+        console.error(`[CommandCollection Service] HALTING SEQUENCE: Step ${idx + 1} reported ${normalizedStatus}. Reason: ${failureReason || "N/A"}`);
+        collection.status = normalizedStatus === "cancelled" ? "cancelled" : "failed";
         await collection.save();
         console.log(`[CommandCollection Service] Collection '${collection.name}' halted successfully.`);
       }
