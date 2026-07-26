@@ -99,6 +99,7 @@ const DEVICE_UID_LENGTH = 5;
 const DEVICE_UID_REGEX = new RegExp(`^[a-z0-9]{${DEVICE_UID_LENGTH}}$`);
 const DEVICE_UID_FORMAT_ERROR = `deviceUid must be exactly ${DEVICE_UID_LENGTH} lowercase letters or digits`;
 const COMMAND_FETCH_WINDOW_MS = 24 * 60 * 60 * 1000;
+const MAX_SCHEDULED_COMMAND_SYNC = 100;
 const COMMAND_DUPLICATE_GUARD_WINDOW_MS = (() => {
   const parsed = Number(process.env.COMMAND_DUPLICATE_GUARD_WINDOW_MS);
   if (!Number.isFinite(parsed)) return 3000;
@@ -1336,6 +1337,7 @@ function mapCommandForResponse(command) {
     status: source.status,
     failureReason: source.failureReason ?? null,
     scheduledAt: formatUtcForRiyadhDisplay(source.scheduledAt),
+    scheduledAtUtc: source.scheduledAt ? new Date(source.scheduledAt).toISOString() : null,
     isImmediate:
       typeof source.isImmediate === "boolean"
         ? source.isImmediate
@@ -1360,13 +1362,16 @@ function emitCommandCreated(command, options = {}) {
   return commandResponse;
 }
 
-function emitCommandUpdated(command) {
+function emitCommandUpdated(command, options = {}) {
   const commandResponse = mapCommandForResponse(command);
   const deviceUid = normalizeDeviceUid(commandResponse.deviceUid);
   if (!deviceUid) {
     return commandResponse;
   }
 
+  if (options.notifyDevice === true) {
+    io.to(`device:${deviceUid}`).emit("command:updated", commandResponse);
+  }
   io.to(`dashboard:${deviceUid}`).emit("command:updated", commandResponse);
 
   return commandResponse;
@@ -1391,6 +1396,7 @@ function emitCommandsCleared(deviceUids, deletedCount = 0) {
   };
 
   normalizedDeviceUids.forEach((deviceUid) => {
+    io.to(`device:${deviceUid}`).emit("commands:cleared", payload);
     io.to(`dashboard:${deviceUid}`).emit("commands:cleared", payload);
   });
 }
@@ -1532,6 +1538,28 @@ function buildDuePendingCommandFilter(deviceUid) {
   };
 }
 
+async function listFutureScheduledCommandsForDevice(deviceUid) {
+  const normalizedDeviceUid = normalizeDeviceUid(deviceUid);
+  if (!normalizedDeviceUid) {
+    return { commands: [], complete: true };
+  }
+
+  const futureScheduledCommands = await Command.find({
+    deviceUid: normalizedDeviceUid,
+    status: "pending",
+    createdAt: { $gte: getCommandFetchCutoffDate() },
+    scheduledAt: { $gt: new Date(toUtcISOString()) }
+  })
+    .sort({ scheduledAt: 1, createdAt: 1, _id: 1 })
+    .limit(MAX_SCHEDULED_COMMAND_SYNC + 1);
+
+  const visibleScheduledCommands = futureScheduledCommands.slice(0, MAX_SCHEDULED_COMMAND_SYNC);
+  return {
+    commands: visibleScheduledCommands.map((command) => mapCommandForResponse(command)),
+    complete: futureScheduledCommands.length <= MAX_SCHEDULED_COMMAND_SYNC
+  };
+}
+
 async function claimNextPendingCommandForDevice(deviceUid, options = {}) {
   const normalizedDeviceUid = normalizeDeviceUid(deviceUid);
   if (!normalizedDeviceUid) {
@@ -1561,13 +1589,23 @@ async function claimNextPendingCommandForDevice(deviceUid, options = {}) {
   );
 
   if (!claimedCommand) {
+    const scheduledCommandSync = await listFutureScheduledCommandsForDevice(normalizedDeviceUid);
     logCommandLifecycle("claim_none", {
       deviceUid: normalizedDeviceUid,
       oldStatus: "pending",
       newStatus: null,
-      details: { transport }
+      details: {
+        transport,
+        scheduledSyncCount: scheduledCommandSync.commands.length,
+        scheduledSyncComplete: scheduledCommandSync.complete
+      }
     });
-    return { success: true, command: null };
+    return {
+      success: true,
+      command: null,
+      scheduledCommands: scheduledCommandSync.commands,
+      scheduledCommandsComplete: scheduledCommandSync.complete
+    };
   }
 
   logCommandLifecycle("claimed", {
@@ -1590,9 +1628,12 @@ async function claimNextPendingCommandForDevice(deviceUid, options = {}) {
     });
   }
 
+  const scheduledCommandSync = await listFutureScheduledCommandsForDevice(normalizedDeviceUid);
   return {
     success: true,
-    command: emitCommandUpdated(claimedCommand)
+    command: emitCommandUpdated(claimedCommand),
+    scheduledCommands: scheduledCommandSync.commands,
+    scheduledCommandsComplete: scheduledCommandSync.complete
   };
 }
 
@@ -3860,7 +3901,7 @@ app.post("/commands/:id/cancel-and-end", requireAuth, async (req, res) => {
       }
     });
 
-    const cancelledCommandResponse = emitCommandUpdated(cancelledCommand);
+    const cancelledCommandResponse = emitCommandUpdated(cancelledCommand, { notifyDevice: true });
     const cancelledIsEndCommand =
       cancelledCommand.action === "end" || cancelledCommand.type === "END";
     let endCommand = null;
