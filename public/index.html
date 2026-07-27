@@ -2226,6 +2226,38 @@
             opacity: 1;
         }
 
+        .screen-mirror-tap-feedback {
+            position: absolute;
+            left: 0;
+            top: 0;
+            z-index: 5;
+            width: 52px;
+            height: 52px;
+            border-radius: 999px;
+            pointer-events: none;
+            transform: translate(-50%, -50%) scale(0.35);
+            border: 2px solid rgba(103, 232, 249, 0.95);
+            background: radial-gradient(circle, rgba(103, 232, 249, 0.36) 0 18%, rgba(103, 232, 249, 0.16) 19% 42%, rgba(103, 232, 249, 0) 43%);
+            box-shadow: 0 0 0 1px rgba(8, 47, 73, 0.28), 0 0 22px rgba(34, 211, 238, 0.35);
+            animation: screenMirrorTapRipple 520ms ease-out forwards;
+        }
+
+        @keyframes screenMirrorTapRipple {
+            0% {
+                opacity: 0.95;
+                transform: translate(-50%, -50%) scale(0.35);
+            }
+
+            70% {
+                opacity: 0.45;
+            }
+
+            100% {
+                opacity: 0;
+                transform: translate(-50%, -50%) scale(1.45);
+            }
+        }
+
         .screen-mirror-tile-placeholder {
             color: rgba(214, 234, 255, 0.74);
             font-size: 0.74rem;
@@ -2351,6 +2383,10 @@
             box-shadow:
                 inset 0 0 0 1px rgba(255, 255, 255, 0.08),
                 0 0 0 2px rgba(34, 197, 94, 0.55);
+        }
+
+        .screen-mirror-viewer .screen-mirror-tap-feedback {
+            z-index: 4;
         }
 
         .screen-mirror-pin-overlay-btn {
@@ -4925,8 +4961,7 @@
         <div
             id="screenMirrorPinnedPreviewWrap"
             class="screen-mirror-tile-preview-wrap screen-mirror-pinned-preview-wrap"
-            data-mirror-field="previewWrap"
-            title="Tap or swipe to control this pinned device"></div>
+            data-mirror-field="previewWrap"></div>
         <div class="screen-mirror-system-nav" aria-label="Android navigation controls for pinned device">
             <button
                 type="button"
@@ -6734,6 +6769,34 @@
         .screen-mirror-last-frame-canvas.is-visible {
             opacity: 1;
         }
+        .screen-mirror-tap-feedback {
+            position: absolute;
+            left: 0;
+            top: 0;
+            z-index: 5;
+            width: 52px;
+            height: 52px;
+            border-radius: 999px;
+            pointer-events: none;
+            transform: translate(-50%, -50%) scale(0.35);
+            border: 2px solid rgba(103, 232, 249, 0.95);
+            background: radial-gradient(circle, rgba(103, 232, 249, 0.36) 0 18%, rgba(103, 232, 249, 0.16) 19% 42%, rgba(103, 232, 249, 0) 43%);
+            box-shadow: 0 0 0 1px rgba(8, 47, 73, 0.28), 0 0 22px rgba(34, 211, 238, 0.35);
+            animation: screenMirrorTapRipple 520ms ease-out forwards;
+        }
+        @keyframes screenMirrorTapRipple {
+            0% {
+                opacity: 0.95;
+                transform: translate(-50%, -50%) scale(0.35);
+            }
+            70% {
+                opacity: 0.45;
+            }
+            100% {
+                opacity: 0;
+                transform: translate(-50%, -50%) scale(1.45);
+            }
+        }
         .popup-nav {
             display: grid;
             grid-template-columns: repeat(3, minmax(0, 1fr));
@@ -6770,7 +6833,7 @@
                 </button>
             </div>
         </header>
-        <div id="screenMirrorPopupPreviewWrap" class="popup-preview-wrap" title="Tap or swipe to control this device"></div>
+        <div id="screenMirrorPopupPreviewWrap" class="popup-preview-wrap"></div>
         <nav class="popup-nav" aria-label="Android navigation controls">
             <button type="button" class="popup-nav-btn" data-popup-touch-target="back" title="Back" aria-label="Back">
                 <svg viewBox="0 0 24 24" aria-hidden="true">
@@ -6973,6 +7036,11 @@
                 pointerDistance <= SCREEN_TOUCH_TAP_DISTANCE_THRESHOLD_PX &&
                 endPointForTap
             ) {
+                showScreenMirrorTapFeedback(
+                    gestureStateSnapshot.previewWrap,
+                    event.clientX,
+                    event.clientY
+                );
                 await sendScreenRemoteCommandForDevice(
                     pinnedScreenMirrorDeviceUid,
                     {
@@ -7509,6 +7577,7 @@
                 pointerDistance <= SCREEN_TOUCH_TAP_DISTANCE_THRESHOLD_PX &&
                 endPointForTap
             ) {
+                showScreenMirrorTapFeedback(previewWrap, event.clientX, event.clientY);
                 await sendScreenRemoteCommandForDevice(
                     deviceUid,
                     {
@@ -7856,8 +7925,7 @@
                         <div
                             class="screen-mirror-tile-preview-wrap"
                             data-mirror-field="previewWrap"
-                            data-device-uid="${escapeHtml(deviceUid)}"
-                            title="Tap or swipe to control this device">
+                            data-device-uid="${escapeHtml(deviceUid)}">
                             ${previewContent}
                         </div>
                         <div class="screen-mirror-system-nav" aria-label="Android navigation controls for ${escapeHtml(deviceName)}">
@@ -9143,6 +9211,28 @@
             return null;
         }
 
+        function showScreenMirrorTapFeedback(targetElement, clientX, clientY) {
+            if (
+                !targetElement ||
+                typeof targetElement.getBoundingClientRect !== "function" ||
+                typeof targetElement.appendChild !== "function"
+            ) {
+                return;
+            }
+
+            const ownerDocument = targetElement.ownerDocument || document;
+            const rect = targetElement.getBoundingClientRect();
+            if (rect.width <= 0 || rect.height <= 0) return;
+
+            const ripple = ownerDocument.createElement("span");
+            ripple.className = "screen-mirror-tap-feedback";
+            ripple.style.left = `${clientX - rect.left}px`;
+            ripple.style.top = `${clientY - rect.top}px`;
+            ripple.setAttribute("aria-hidden", "true");
+            ripple.addEventListener("animationend", () => ripple.remove(), { once: true });
+            targetElement.appendChild(ripple);
+        }
+
         function mapScreenClientPointToDevicePoint(clientX, clientY) {
             const preview = document.getElementById("screenMirrorPreview");
             if (!preview) return null;
@@ -9324,6 +9414,11 @@
                 pointerDistance <= SCREEN_TOUCH_TAP_DISTANCE_THRESHOLD_PX &&
                 endPointForTap
             ) {
+                showScreenMirrorTapFeedback(
+                    getScreenMirrorViewerNode(),
+                    event.clientX,
+                    event.clientY
+                );
                 await sendScreenRemoteCommand(
                     {
                         action: "screen_touch",
