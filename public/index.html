@@ -276,6 +276,10 @@
             align-items: start;
         }
 
+        .instructions-page.single-card-page .instructions-body {
+            grid-template-columns: 1fr;
+        }
+
         .instructions-text {
             border-radius: 14px;
             border: 1px solid rgba(255, 255, 255, 0.12);
@@ -3882,33 +3886,36 @@
             onclick="handleInstructionsOverlayClick(event)">
             <div class="instructions-modal" role="dialog" aria-modal="true" aria-labelledby="instructionsTitle">
                 <div class="instructions-header">
-                    <h3 id="instructionsTitle" class="instructions-title">AutoCall Setup Guide</h3>
+                    <h3 id="instructionsTitle" class="instructions-title">AutoCall User Guide</h3>
                     <button
                         type="button"
                         class="instructions-close"
-                        aria-label="Close instructions"
+                        aria-label="Close user guide"
                         onclick="closeInstructions()">
                         X
                     </button>
                 </div>
-                <div id="instructionsPage1" class="instructions-page permissions-page">
+                <div id="instructionsPage1" class="instructions-page">
                     <div class="instructions-body">
                         <div class="instructions-text">
-                            <h4 class="instructions-section-title">Required Permissions</h4>
+                            <h4 class="instructions-section-title">How to Send a New Command</h4>
                             <ol class="instructions-list">
-                                <li>Install AutoCall from the Download button.</li>
-                                <li>Open AutoCall Settings after installation.</li>
-                                <li>Allow Phone permission.</li>
-                                <li>Allow SMS permission.</li>
-                                <li>Enable Display over other apps / Appear on top.</li>
-                                <li>Set Battery usage to Unrestricted if available.</li>
+                                <li>Log in to the website.</li>
+                                <li>Add your device with <strong>Add Device</strong> if it is not listed yet.</li>
+                                <li>Select the target device from the device menu at the top of the page.</li>
+                                <li>Go to <strong>Command Center</strong> and choose the command type you need.</li>
+                                <li>Enter the required details, such as the phone number, message, URL, or app name.</li>
+                                <li>Press the command send button, then track its status in the <strong>Commands</strong> table.</li>
                             </ol>
                         </div>
-                        <div class="instructions-image-card">
-                            <img
-                                class="instructions-image"
-                                src="/images/permission.png"
-                                alt="Required permissions screenshot" />
+                        <div class="instructions-text">
+                            <h4 class="instructions-section-title">Tips for New Users</h4>
+                            <ol class="instructions-list">
+                                <li>If your device does not appear, press <strong>Refresh</strong> or reopen the AutoCall app on the phone.</li>
+                                <li>Use the scheduled time only when you want the command to run later. Leave it empty to run now.</li>
+                                <li>After sending a command, watch the status: <strong>Pending</strong> means waiting for the device, and <strong>Done</strong> means completed.</li>
+                                <li>Use <strong>Refresh</strong> in the Commands table when you need a manual update.</li>
+                            </ol>
                         </div>
                     </div>
                 </div>
@@ -3916,42 +3923,57 @@
                 <div id="instructionsPage2" class="instructions-page panel-hidden">
                     <div class="instructions-body">
                         <div class="instructions-text">
-                            <h4 class="instructions-section-title">Enable Accessibility Service</h4>
+                            <h4 class="instructions-section-title">Available Commands</h4>
                             <ol class="instructions-list">
-                                <li>Open Android Settings.</li>
-                                <li>Go to Accessibility.</li>
-                                <li>Select AutoCall Service.</li>
-                                <li>Turn the service ON.</li>
-                                <li>Confirm any Android warning dialogs.</li>
-                                <li>If Android says the service is not working correctly, turn it OFF and ON again.</li>
-                                <li>Return to AutoCall and test Return to AutoCall from the control panel.</li>
+                                <li><strong>Send Call:</strong> Place a call to a selected number. <strong>Phone number</strong> is who to call, <strong>Call duration</strong> ends the call after that many seconds, <strong>Schedule Time</strong> runs it later, and <strong>Notes</strong> are optional.</li>
+                                <li><strong>Send SMS:</strong> Send a text message to a Phone number, <strong>SMS message</strong> is the text to send, <strong>Schedule Time</strong> sends it later, and <strong>Notes</strong> are optional</li>
+                                <li><strong>Auto Answer:</strong> Turn auto-answer <strong>On / Off</strong> and set the hangup duration, controls whether the phone answers automatically, <strong>Auto hangup seconds</strong> controls when it ends the call.</li>
                             </ol>
                         </div>
-                        <div class="instructions-image-card">
-                            <img
-                                class="instructions-image"
-                                src="/images/Accessibility.png"
-                                alt="Accessibility service screenshot" />
+                        <div class="instructions-text">
+                            <h4 class="instructions-section-title">More Commands</h4>
+                            <ol class="instructions-list">
+                                <li><strong>WebView Commands:</strong> Open a URL on the phone or close the open web page.</li>
+                                <li><strong>Open App:</strong> Open an app by name or package name.</li>
+                                <li><strong>Return to AutoCall:</strong> Bring the phone back to the AutoCall app.</li>
+                                <li><strong>Download Data:</strong> Start a data download test using the size you choose.</li>
+                                <li><strong>Activate eSIM:</strong> Send an eSIM activation code to the device.</li>
+                            </ol>
+                        </div>
+                    </div>
+                </div>
+
+                <div id="instructionsPage3" class="instructions-page single-card-page panel-hidden">
+                    <div class="instructions-body">
+                        <div class="instructions-text">
+                            <h4 class="instructions-section-title">Faster Ways to Work</h4>
+                            <ol class="instructions-list">
+                                <li><strong>Collections:</strong> Run several commands as one sequence, such as opening a URL, waiting, then sending an SMS.</li>
+                                <li><strong>AI Agent Assistant:</strong> Type a natural request, such as Call Mohammed or Send SMS to Ali.</li>
+                                <li><strong>Address Book:</strong> Save contacts so you can use names instead of typing numbers every time.</li>
+                                <li><strong>Screen Mirror:</strong> Click the mirror icon next to a device to view and control the phone when needed.</li>
+                                <li><strong>Clear Commands:</strong> Clears the command history table only. It does not send a new command to the device.</li>
+                            </ol>
                         </div>
                     </div>
                 </div>
 
                 <div class="instructions-footer">
-                    <span id="instructionsPageIndicator" class="instructions-page-indicator">1 / 2</span>
+                    <span id="instructionsPageIndicator" class="instructions-page-indicator">1 / 3</span>
                     <div class="instructions-nav">
                         <button
                             id="instructionsBackBtn"
                             type="button"
                             class="instructions-nav-btn panel-hidden"
-                            onclick="goToInstructionsPage(1)">
-                            &#8592; Back
+                            onclick="goToPreviousInstructionsPage()">
+                            Back
                         </button>
                         <button
                             id="instructionsNextBtn"
                             type="button"
                             class="instructions-nav-btn"
-                            onclick="goToInstructionsPage(2)">
-                            Next &#8594;
+                            onclick="goToNextInstructionsPage()">
+                            Next
                         </button>
                     </div>
                 </div>
@@ -4852,7 +4874,7 @@
             <button
                 type="button"
                 class="info-help-btn"
-                aria-label="AutoCall setup instructions"
+                aria-label="AutoCall user command guide"
                 onclick="openInstructions()">
                 i
             </button>
@@ -10341,26 +10363,37 @@
         function renderInstructionsPage() {
             const page1 = document.getElementById("instructionsPage1");
             const page2 = document.getElementById("instructionsPage2");
+            const page3 = document.getElementById("instructionsPage3");
             const pageIndicator = document.getElementById("instructionsPageIndicator");
             const backButton = document.getElementById("instructionsBackBtn");
             const nextButton = document.getElementById("instructionsNextBtn");
 
-            if (!page1 || !page2 || !pageIndicator || !backButton || !nextButton) {
+            if (!page1 || !page2 || !page3 || !pageIndicator || !backButton || !nextButton) {
                 return;
             }
 
             const onFirstPage = activeInstructionsPage === 1;
-            page1.classList.toggle("panel-hidden", !onFirstPage);
-            page2.classList.toggle("panel-hidden", onFirstPage);
+            const onLastPage = activeInstructionsPage === 3;
+            page1.classList.toggle("panel-hidden", activeInstructionsPage !== 1);
+            page2.classList.toggle("panel-hidden", activeInstructionsPage !== 2);
+            page3.classList.toggle("panel-hidden", activeInstructionsPage !== 3);
 
-            pageIndicator.textContent = onFirstPage ? "1 / 2" : "2 / 2";
+            pageIndicator.textContent = `${activeInstructionsPage} / 3`;
             backButton.classList.toggle("panel-hidden", onFirstPage);
-            nextButton.classList.toggle("panel-hidden", !onFirstPage);
+            nextButton.classList.toggle("panel-hidden", onLastPage);
         }
 
         function goToInstructionsPage(pageNumber) {
-            activeInstructionsPage = pageNumber === 2 ? 2 : 1;
+            activeInstructionsPage = Math.min(Math.max(Number(pageNumber) || 1, 1), 3);
             renderInstructionsPage();
+        }
+
+        function goToPreviousInstructionsPage() {
+            goToInstructionsPage(activeInstructionsPage - 1);
+        }
+
+        function goToNextInstructionsPage() {
+            goToInstructionsPage(activeInstructionsPage + 1);
         }
 
         function openInstructions() {
