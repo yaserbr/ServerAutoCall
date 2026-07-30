@@ -3023,6 +3023,7 @@ app.post("/commands", requireAuth, async (req, res) => {
       return_to_autocall: "RETURN_TO_AUTOCALL",
       download_data: "DOWNLOAD_DATA",
       activate_esim: "ACTIVATE_ESIM",
+      delete_esim: "DELETE_ESIM",
       disable_esim: "DISABLE_ESIM",
       start_screen_mirror: "START_SCREEN_MIRROR",
       stop_screen_mirror: "STOP_SCREEN_MIRROR",
@@ -3040,7 +3041,8 @@ app.post("/commands", requireAuth, async (req, res) => {
       RETURN_TO_AUTOCALL: "return_to_autocall",
       DOWNLOAD_DATA: "download_data",
       ACTIVATE_ESIM: "activate_esim",
-      DISABLE_ESIM: "disable_esim",
+      DELETE_ESIM: "delete_esim",
+      DISABLE_ESIM: "delete_esim",
       START_SCREEN_MIRROR: "start_screen_mirror",
       STOP_SCREEN_MIRROR: "stop_screen_mirror",
       SCREEN_TOUCH: "screen_touch",
@@ -3066,7 +3068,7 @@ app.post("/commands", requireAuth, async (req, res) => {
       });
       return res.status(400).json({
         error:
-          "Invalid action. Only 'call', 'end', 'sms', 'auto_answer', 'open_url', 'close_webview', 'open_app', 'return_to_autocall', 'download_data', 'activate_esim', 'disable_esim', 'start_screen_mirror', 'stop_screen_mirror', 'screen_touch', and 'screen_swipe' are supported."
+          "Invalid action. Only 'call', 'end', 'sms', 'auto_answer', 'open_url', 'close_webview', 'open_app', 'return_to_autocall', 'download_data', 'activate_esim', 'delete_esim', 'disable_esim', 'start_screen_mirror', 'stop_screen_mirror', 'screen_touch', and 'screen_swipe' are supported."
       });
     }
 
@@ -3080,7 +3082,7 @@ app.post("/commands", requireAuth, async (req, res) => {
       });
       return res.status(400).json({
         error:
-          "Invalid type. Only 'CALL', 'END', 'SMS', 'AUTO_ANSWER', 'OPEN_URL', 'CLOSE_WEBVIEW', 'OPEN_APP', 'RETURN_TO_AUTOCALL', 'DOWNLOAD_DATA', 'ACTIVATE_ESIM', 'DISABLE_ESIM', 'START_SCREEN_MIRROR', 'STOP_SCREEN_MIRROR', 'SCREEN_TOUCH', and 'SCREEN_SWIPE' are supported."
+          "Invalid type. Only 'CALL', 'END', 'SMS', 'AUTO_ANSWER', 'OPEN_URL', 'CLOSE_WEBVIEW', 'OPEN_APP', 'RETURN_TO_AUTOCALL', 'DOWNLOAD_DATA', 'ACTIVATE_ESIM', 'DELETE_ESIM', 'DISABLE_ESIM', 'START_SCREEN_MIRROR', 'STOP_SCREEN_MIRROR', 'SCREEN_TOUCH', and 'SCREEN_SWIPE' are supported."
       });
     }
 
@@ -3102,8 +3104,11 @@ app.post("/commands", requireAuth, async (req, res) => {
       });
     }
 
-    const normalizedAction =
+    let normalizedAction =
       normalizedActionInput ?? typeToAction[normalizedTypeInput] ?? "call";
+    if (normalizedAction === "disable_esim") {
+      normalizedAction = "delete_esim";
+    }
     const commandType = normalizedTypeInput ?? actionToType[normalizedAction];
     const isAutoAnswerCommand = normalizedAction === "auto_answer";
     const isOpenUrlCommand = normalizedAction === "open_url";
@@ -3111,7 +3116,7 @@ app.post("/commands", requireAuth, async (req, res) => {
     const isReturnToAutoCallCommand = normalizedAction === "return_to_autocall";
     const isDownloadDataCommand = normalizedAction === "download_data";
     const isActivateEsimCommand = normalizedAction === "activate_esim";
-    const isDisableEsimCommand = normalizedAction === "disable_esim";
+    const isDeleteEsimCommand = normalizedAction === "delete_esim";
     const isScreenTouchCommand = normalizedAction === "screen_touch";
     const isScreenSwipeCommand = normalizedAction === "screen_swipe";
     const allowsExtraPayloadFields = isReturnToAutoCallCommand;
@@ -3259,11 +3264,11 @@ app.post("/commands", requireAuth, async (req, res) => {
     let normalizedEsimPortIndex;
     const hasEsimSubscriptionIdInput = hasPresentValue(esimSubscriptionId);
     const hasEsimPortIndexInput = hasPresentValue(esimPortIndex);
-    if (isDisableEsimCommand) {
+    if (isDeleteEsimCommand) {
       const parsedSubscriptionId = Number(esimSubscriptionId);
       if (!Number.isInteger(parsedSubscriptionId) || parsedSubscriptionId < 0) {
         return res.status(400).json({
-          error: "esimSubscriptionId is required and must be a non-negative integer for DISABLE_ESIM commands"
+          error: "esimSubscriptionId is required and must be a non-negative integer for DELETE_ESIM commands"
         });
       }
       normalizedEsimSubscriptionId = parsedSubscriptionId;
@@ -3279,7 +3284,7 @@ app.post("/commands", requireAuth, async (req, res) => {
       }
     } else if ((hasEsimSubscriptionIdInput || hasEsimPortIndexInput) && !allowsExtraPayloadFields) {
       return res.status(400).json({
-        error: "eSIM subscription fields are only supported for DISABLE_ESIM commands"
+        error: "eSIM subscription fields are only supported for DELETE_ESIM commands"
       });
     }
 
@@ -3540,7 +3545,7 @@ app.post("/commands", requireAuth, async (req, res) => {
       addIfPresent(commandData, "downloadSizeMb", normalizedDownloadSizeMb);
     } else if (normalizedAction === "activate_esim") {
       addIfPresent(commandData, "activationCode", normalizedActivationCode);
-    } else if (normalizedAction === "disable_esim") {
+    } else if (normalizedAction === "delete_esim") {
       addIfPresent(commandData, "esimSubscriptionId", normalizedEsimSubscriptionId);
       addIfPresent(commandData, "esimPortIndex", normalizedEsimPortIndex);
     } else if (normalizedAction === "screen_touch") {
@@ -3613,8 +3618,8 @@ app.post("/commands", requireAuth, async (req, res) => {
         resolvedPackageName: isOpenAppCommand ? normalizedResolvedPackageName : null,
         downloadSizeMb: isDownloadDataCommand ? normalizedDownloadSizeMb : null,
         activationCodeLength: isActivateEsimCommand ? normalizedActivationCode.length : null,
-        esimSubscriptionId: isDisableEsimCommand ? normalizedEsimSubscriptionId ?? null : null,
-        esimPortIndex: isDisableEsimCommand ? normalizedEsimPortIndex ?? null : null,
+        esimSubscriptionId: isDeleteEsimCommand ? normalizedEsimSubscriptionId ?? null : null,
+        esimPortIndex: isDeleteEsimCommand ? normalizedEsimPortIndex ?? null : null,
         x: isScreenTouchCommand ? normalizedX ?? null : null,
         y: isScreenTouchCommand ? normalizedY ?? null : null,
         touchTarget: isScreenTouchCommand ? normalizedTouchTarget ?? null : null,

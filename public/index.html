@@ -1748,7 +1748,7 @@
             font-size: 0.86rem;
         }
 
-        .esim-disable-btn {
+        .esim-delete-btn {
             padding: 8px 10px;
             border-radius: 10px;
             white-space: nowrap;
@@ -5372,7 +5372,7 @@
             open_url: "OPEN_URL",
             download_data: "DOWNLOAD_DATA",
             activate_esim: "ACTIVATE_ESIM",
-            disable_esim: "DISABLE_ESIM",
+            delete_esim: "DELETE_ESIM",
             auto_answer: "AUTO_ANSWER",
             return_to_autocall: "RETURN_TO_AUTOCALL",
             close_webview: "CLOSE_WEBVIEW",
@@ -5526,21 +5526,21 @@
                         </div>
                         <button
                             type="button"
-                            class="danger-button esim-disable-btn"
+                            class="danger-button esim-delete-btn"
                             data-esim-subscription-id="${subscriptionId}"
                             data-esim-port-index="${Number.isInteger(portIndex) && portIndex >= 0 ? portIndex : ""}">
-                            Disable
+                            Delete
                         </button>
                     </div>
                 `;
             }).join("");
 
-            list.querySelectorAll(".esim-disable-btn").forEach((button) => {
+            list.querySelectorAll(".esim-delete-btn").forEach((button) => {
                 button.addEventListener("click", () => {
                     const subscriptionId = Number(button.getAttribute("data-esim-subscription-id"));
                     const rawPortIndex = button.getAttribute("data-esim-port-index") || "";
                     const portIndex = rawPortIndex === "" ? null : Number(rawPortIndex);
-                    void sendDisableEsimCommand(subscriptionId, portIndex);
+                    void sendDeleteEsimCommand(subscriptionId, portIndex);
                 });
             });
         }
@@ -11119,7 +11119,7 @@
                 return appendScheduledDetail(details, command);
             }
 
-            if (commandType === "DISABLE_ESIM") {
+            if (commandType === "DELETE_ESIM" || commandType === "DISABLE_ESIM") {
                 const subscriptionId = Number(command?.esimSubscriptionId);
                 const portIndex = Number(command?.esimPortIndex);
                 const parts = [];
@@ -11129,7 +11129,7 @@
                 if (Number.isInteger(portIndex) && portIndex >= 0) {
                     parts.push(`Port: ${portIndex}`);
                 }
-                details.primary = parts.length ? parts.join(" | ") : "Disable eSIM";
+                details.primary = parts.length ? parts.join(" | ") : "Delete eSIM";
                 return appendScheduledDetail(details, command);
             }
 
@@ -12970,7 +12970,7 @@
             }
         }
 
-        async function sendDisableEsimCommand(subscriptionId, portIndex) {
+        async function sendDeleteEsimCommand(subscriptionId, portIndex) {
             const deviceUid = requireSelectedGlobalDeviceUid();
             const normalizedSubscriptionId = Number(subscriptionId);
             const normalizedPortIndex = portIndex === null || portIndex === undefined || portIndex === ""
@@ -12993,9 +12993,9 @@
             }
 
             const confirmed = await openCommandConfirmDialog({
-                title: "Disable eSIM",
-                message: `Send disable command for eSIM subscription ${normalizedSubscriptionId} on device ${deviceUid}?`,
-                confirmLabel: "Disable eSIM"
+                title: "Delete eSIM",
+                message: `Permanently delete eSIM subscription ${normalizedSubscriptionId} from device ${deviceUid}?`,
+                confirmLabel: "Delete eSIM"
             });
             if (!confirmed) {
                 return;
@@ -13003,10 +13003,10 @@
 
             const payload = {
                 deviceUid,
-                action: "disable_esim",
-                type: "DISABLE_ESIM",
+                action: "delete_esim",
+                type: "DELETE_ESIM",
                 esimSubscriptionId: normalizedSubscriptionId,
-                notes: `Disable eSIM subscription ${normalizedSubscriptionId}`
+                notes: `Delete eSIM subscription ${normalizedSubscriptionId}`
             };
             if (normalizedPortIndex !== null) {
                 payload.esimPortIndex = normalizedPortIndex;
@@ -13022,12 +13022,12 @@
                 });
 
                 const data = await res.json();
-                if (!res.ok) throw new Error(data.error || "Failed to send DISABLE_ESIM command");
+                if (!res.ok) throw new Error(data.error || "Failed to send DELETE_ESIM command");
 
-                showToast("DISABLE_ESIM command sent", "success");
+                showToast("DELETE_ESIM command sent", "success");
                 await loadCommands();
             } catch (error) {
-                showToast(error.message || "Failed to send DISABLE_ESIM command", "error");
+                showToast(error.message || "Failed to send DELETE_ESIM command", "error");
             }
         }
 
