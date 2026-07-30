@@ -76,6 +76,53 @@ const deviceSchema = new mongoose.Schema(
     lastSeen: {
       type: Date,
       default: null
+    },
+    esimSubscriptions: {
+      type: [
+        {
+          subscriptionId: {
+            type: Number,
+            required: true
+          },
+          displayName: {
+            type: String,
+            default: ""
+          },
+          carrierName: {
+            type: String,
+            default: ""
+          },
+          phoneNumber: {
+            type: String,
+            default: null
+          },
+          simSlotIndex: {
+            type: Number,
+            default: null
+          },
+          isEmbedded: {
+            type: Boolean,
+            default: true
+          },
+          portIndex: {
+            type: Number,
+            default: null
+          },
+          isDefaultVoice: {
+            type: Boolean,
+            default: false
+          },
+          isDefaultSms: {
+            type: Boolean,
+            default: false
+          },
+          isDefaultData: {
+            type: Boolean,
+            default: false
+          }
+        }
+      ],
+      default: []
     }
   },
   {

@@ -132,6 +132,14 @@ class CommandCollectionService {
       downloadSizeMb: template.downloadSizeMb || undefined,
       downloadDurationSeconds: template.downloadDurationSeconds || undefined,
       activationCode: template.activationCode || undefined,
+      esimSubscriptionId:
+        template.esimSubscriptionId !== undefined && template.esimSubscriptionId !== null
+          ? template.esimSubscriptionId
+          : undefined,
+      esimPortIndex:
+        template.esimPortIndex !== undefined && template.esimPortIndex !== null
+          ? template.esimPortIndex
+          : undefined,
       enabled: template.enabled !== undefined && template.enabled !== null ? template.enabled : undefined,
       autoHangupSeconds: template.autoHangupSeconds || undefined,
       collectionId: collection._id,

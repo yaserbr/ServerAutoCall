@@ -35,6 +35,7 @@ const commandSchema = new mongoose.Schema(
         "return_to_autocall",
         "download_data",
         "activate_esim",
+        "disable_esim",
         "start_screen_mirror",
         "stop_screen_mirror",
         "screen_touch",
@@ -55,6 +56,7 @@ const commandSchema = new mongoose.Schema(
         "RETURN_TO_AUTOCALL",
         "DOWNLOAD_DATA",
         "ACTIVATE_ESIM",
+        "DISABLE_ESIM",
         "START_SCREEN_MIRROR",
         "STOP_SCREEN_MIRROR",
         "SCREEN_TOUCH",
@@ -90,6 +92,12 @@ const commandSchema = new mongoose.Schema(
     },
     activationCode: {
       type: String
+    },
+    esimSubscriptionId: {
+      type: Number
+    },
+    esimPortIndex: {
+      type: Number
     },
     enabled: {
       type: Boolean

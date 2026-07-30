@@ -1660,6 +1660,100 @@
             grid-template-columns: repeat(3, minmax(0, 1fr));
         }
 
+        .esim-active-panel {
+            margin: 4px 0 14px;
+            display: grid;
+            gap: 10px;
+        }
+
+        .esim-active-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 10px;
+            flex-wrap: wrap;
+        }
+
+        .esim-active-title {
+            margin: 0;
+            color: #eaf7ff;
+            font-size: 0.96rem;
+            font-weight: 800;
+        }
+
+        .esim-refresh-btn {
+            padding: 7px 10px;
+            border-radius: 10px;
+            font-size: 0.78rem;
+        }
+
+        .esim-list {
+            display: grid;
+            gap: 8px;
+        }
+
+        .esim-card {
+            display: grid;
+            grid-template-columns: minmax(0, 1fr) auto;
+            gap: 10px;
+            align-items: center;
+            padding: 10px;
+            border-radius: 12px;
+            border: 1px solid rgba(103, 232, 249, 0.24);
+            background: rgba(7, 14, 28, 0.34);
+        }
+
+        .esim-card-main {
+            min-width: 0;
+            display: grid;
+            gap: 4px;
+        }
+
+        .esim-card-title {
+            min-width: 0;
+            color: #f3f8ff;
+            font-size: 0.9rem;
+            font-weight: 800;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+
+        .esim-card-meta {
+            color: #bfd0ea;
+            font-size: 0.76rem;
+            line-height: 1.35;
+        }
+
+        .esim-card-badges {
+            display: flex;
+            align-items: center;
+            gap: 5px;
+            flex-wrap: wrap;
+        }
+
+        .esim-badge {
+            border-radius: 999px;
+            padding: 3px 7px;
+            border: 1px solid rgba(255, 255, 255, 0.18);
+            background: rgba(255, 255, 255, 0.08);
+            color: #dbeafe;
+            font-size: 0.68rem;
+            font-weight: 800;
+        }
+
+        .esim-empty {
+            margin: 0;
+            color: var(--muted);
+            font-size: 0.86rem;
+        }
+
+        .esim-disable-btn {
+            padding: 8px 10px;
+            border-radius: 10px;
+            white-space: nowrap;
+        }
+
         .field-label {
             font-size: 0.84rem;
             color: var(--muted);
@@ -4874,6 +4968,13 @@
                 </div>
                 <div id="activateEsimTabPanel" class="tab-panel">
                     <h2>Activate eSIM</h2>
+                    <div class="esim-active-panel">
+                        <div class="esim-active-header">
+                            <p class="esim-active-title">Active eSIM profiles</p>
+                            <button type="button" class="esim-refresh-btn" onclick="refreshActiveEsimProfiles()">Refresh</button>
+                        </div>
+                        <div id="activeEsimList" class="esim-list"></div>
+                    </div>
                     <div class="input-row auto-answer-input-grid">
                         <div class="field-group">
                             <label class="field-label" for="esimActivationCode">Activation Code</label>
@@ -5271,6 +5372,7 @@
             open_url: "OPEN_URL",
             download_data: "DOWNLOAD_DATA",
             activate_esim: "ACTIVATE_ESIM",
+            disable_esim: "DISABLE_ESIM",
             auto_answer: "AUTO_ANSWER",
             return_to_autocall: "RETURN_TO_AUTOCALL",
             close_webview: "CLOSE_WEBVIEW",
@@ -5346,6 +5448,106 @@
                 showToast("Please select a device first", "error");
             }
             return deviceUid;
+        }
+
+        function getSelectedGlobalDeviceRecord() {
+            const selectedUid = getSelectedGlobalDeviceUid();
+            if (!selectedUid || !Array.isArray(globalDeviceDropdownDevices)) return null;
+            return globalDeviceDropdownDevices.find((device) => {
+                return normalizeDeviceUidInput(device?.deviceUid || "") === selectedUid;
+            }) || null;
+        }
+
+        function getActiveEsimProfilesForSelectedDevice() {
+            const selectedDevice = getSelectedGlobalDeviceRecord();
+            const profiles = Array.isArray(selectedDevice?.esimSubscriptions)
+                ? selectedDevice.esimSubscriptions
+                : [];
+            return profiles.filter((profile) => {
+                const subscriptionId = Number(profile?.subscriptionId);
+                return Number.isInteger(subscriptionId) && subscriptionId >= 0;
+            });
+        }
+
+        function buildEsimProfileTitle(profile) {
+            const displayName = toNonEmptyString(profile?.displayName);
+            const carrierName = toNonEmptyString(profile?.carrierName);
+            if (displayName && carrierName && displayName.toLowerCase() !== carrierName.toLowerCase()) {
+                return `${displayName} - ${carrierName}`;
+            }
+            return displayName || carrierName || `eSIM ${profile?.subscriptionId}`;
+        }
+
+        function renderActiveEsimProfiles() {
+            const list = document.getElementById("activeEsimList");
+            if (!list) return;
+
+            const selectedUid = getSelectedGlobalDeviceUid();
+            if (!selectedUid) {
+                list.innerHTML = "<p class='esim-empty'>Select a device to view active eSIM profiles.</p>";
+                return;
+            }
+
+            const profiles = getActiveEsimProfilesForSelectedDevice();
+            if (!profiles.length) {
+                list.innerHTML = "<p class='esim-empty'>No active eSIM profiles reported by this device yet.</p>";
+                return;
+            }
+
+            list.innerHTML = profiles.map((profile) => {
+                const subscriptionId = Number(profile.subscriptionId);
+                const portIndex = Number(profile.portIndex);
+                const title = escapeHtml(buildEsimProfileTitle(profile));
+                const phoneNumber = toNonEmptyString(profile.phoneNumber);
+                const slot = Number(profile.simSlotIndex);
+                const metaParts = [`Subscription ${subscriptionId}`];
+                if (Number.isInteger(portIndex) && portIndex >= 0) {
+                    metaParts.push(`Port ${portIndex}`);
+                }
+                if (Number.isInteger(slot) && slot >= 0) {
+                    metaParts.push(`Slot ${slot}`);
+                }
+                if (phoneNumber) {
+                    metaParts.push(phoneNumber);
+                }
+
+                const badges = [
+                    profile.isDefaultVoice ? "Voice" : "",
+                    profile.isDefaultSms ? "SMS" : "",
+                    profile.isDefaultData ? "Data" : ""
+                ].filter(Boolean).map((label) => `<span class="esim-badge">${label}</span>`).join("");
+
+                return `
+                    <div class="esim-card">
+                        <div class="esim-card-main">
+                            <div class="esim-card-title">${title}</div>
+                            <div class="esim-card-meta">${escapeHtml(metaParts.join(" | "))}</div>
+                            ${badges ? `<div class="esim-card-badges">${badges}</div>` : ""}
+                        </div>
+                        <button
+                            type="button"
+                            class="danger-button esim-disable-btn"
+                            data-esim-subscription-id="${subscriptionId}"
+                            data-esim-port-index="${Number.isInteger(portIndex) && portIndex >= 0 ? portIndex : ""}">
+                            Disable
+                        </button>
+                    </div>
+                `;
+            }).join("");
+
+            list.querySelectorAll(".esim-disable-btn").forEach((button) => {
+                button.addEventListener("click", () => {
+                    const subscriptionId = Number(button.getAttribute("data-esim-subscription-id"));
+                    const rawPortIndex = button.getAttribute("data-esim-port-index") || "";
+                    const portIndex = rawPortIndex === "" ? null : Number(rawPortIndex);
+                    void sendDisableEsimCommand(subscriptionId, portIndex);
+                });
+            });
+        }
+
+        async function refreshActiveEsimProfiles() {
+            await loadDevicesToSelect();
+            renderActiveEsimProfiles();
         }
 
         function getCommandDashboardDeviceUids(devices) {
@@ -5830,6 +6032,7 @@
                 const selectedUid = normalizeDeviceUidInput(event?.target?.value || "");
                 syncGlobalDeviceDropdown(globalDeviceDropdownDevices, selectedUid);
                 updateScreenMirrorFloatingTitle();
+                renderActiveEsimProfiles();
             });
 
             dropdownTrigger.addEventListener("pointerdown", () => {
@@ -10916,6 +11119,20 @@
                 return appendScheduledDetail(details, command);
             }
 
+            if (commandType === "DISABLE_ESIM") {
+                const subscriptionId = Number(command?.esimSubscriptionId);
+                const portIndex = Number(command?.esimPortIndex);
+                const parts = [];
+                if (Number.isInteger(subscriptionId) && subscriptionId >= 0) {
+                    parts.push(`Subscription: ${subscriptionId}`);
+                }
+                if (Number.isInteger(portIndex) && portIndex >= 0) {
+                    parts.push(`Port: ${portIndex}`);
+                }
+                details.primary = parts.length ? parts.join(" | ") : "Disable eSIM";
+                return appendScheduledDetail(details, command);
+            }
+
             if (commandType === "AUTO_ANSWER") {
                 const parts = [];
                 if (typeof command?.enabled === "boolean") {
@@ -11334,6 +11551,7 @@
                 rememberDevices(data);
                 syncCommandDashboardSubscriptions(data);
                 renderDevicesTable(data);
+                renderActiveEsimProfiles();
                 setRawFallback("devices", data, false);
             } catch (error) {
                 renderDevicesTable([]);
@@ -11418,6 +11636,7 @@
                 rememberDevices(data);
                 syncCommandDashboardSubscriptions(data);
                 populateDeviceSelect(globalSelect, data, previousGlobalValue);
+                renderActiveEsimProfiles();
                 renderScreenMirrorMultiGrid();
             } catch (error) {
                 populateDeviceSelect(getGlobalDeviceSelectElement(), [], "");
@@ -12748,6 +12967,67 @@
                 await loadCommands();
             } catch (error) {
                 showToast(error.message || "Failed to send ACTIVATE_ESIM command", "error");
+            }
+        }
+
+        async function sendDisableEsimCommand(subscriptionId, portIndex) {
+            const deviceUid = requireSelectedGlobalDeviceUid();
+            const normalizedSubscriptionId = Number(subscriptionId);
+            const normalizedPortIndex = portIndex === null || portIndex === undefined || portIndex === ""
+                ? null
+                : Number(portIndex);
+
+            if (!deviceUid) {
+                return;
+            }
+            if (!Number.isInteger(normalizedSubscriptionId) || normalizedSubscriptionId < 0) {
+                showToast("Invalid eSIM subscription", "error");
+                return;
+            }
+            if (
+                normalizedPortIndex !== null &&
+                (!Number.isInteger(normalizedPortIndex) || normalizedPortIndex < 0)
+            ) {
+                showToast("Invalid eSIM port", "error");
+                return;
+            }
+
+            const confirmed = await openCommandConfirmDialog({
+                title: "Disable eSIM",
+                message: `Send disable command for eSIM subscription ${normalizedSubscriptionId} on device ${deviceUid}?`,
+                confirmLabel: "Disable eSIM"
+            });
+            if (!confirmed) {
+                return;
+            }
+
+            const payload = {
+                deviceUid,
+                action: "disable_esim",
+                type: "DISABLE_ESIM",
+                esimSubscriptionId: normalizedSubscriptionId,
+                notes: `Disable eSIM subscription ${normalizedSubscriptionId}`
+            };
+            if (normalizedPortIndex !== null) {
+                payload.esimPortIndex = normalizedPortIndex;
+            }
+
+            try {
+                const res = await apiFetch("/commands", {
+                    method: "POST",
+                    headers: {
+                        "Content-Type": "application/json"
+                    },
+                    body: JSON.stringify(payload)
+                });
+
+                const data = await res.json();
+                if (!res.ok) throw new Error(data.error || "Failed to send DISABLE_ESIM command");
+
+                showToast("DISABLE_ESIM command sent", "success");
+                await loadCommands();
+            } catch (error) {
+                showToast(error.message || "Failed to send DISABLE_ESIM command", "error");
             }
         }
 

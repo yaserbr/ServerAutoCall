@@ -1122,6 +1122,44 @@ function extractDeviceRegistrationInput(body) {
   };
 }
 
+function normalizeEsimSubscriptions(value) {
+  if (!Array.isArray(value)) return [];
+
+  const seenSubscriptionIds = new Set();
+  return value
+    .map((item) => {
+      if (!item || typeof item !== "object") return null;
+      const subscriptionId = Number(item.subscriptionId);
+      if (!Number.isInteger(subscriptionId) || subscriptionId < 0) return null;
+      if (seenSubscriptionIds.has(subscriptionId)) return null;
+      seenSubscriptionIds.add(subscriptionId);
+
+      const portIndex = Number(item.portIndex);
+      const simSlotIndex = Number(item.simSlotIndex);
+      const phoneNumber =
+        typeof item.phoneNumber === "string" && item.phoneNumber.trim()
+          ? item.phoneNumber.trim().slice(0, 40)
+          : null;
+
+      return {
+        subscriptionId,
+        displayName:
+          typeof item.displayName === "string" ? item.displayName.trim().slice(0, 80) : "",
+        carrierName:
+          typeof item.carrierName === "string" ? item.carrierName.trim().slice(0, 80) : "",
+        phoneNumber,
+        simSlotIndex: Number.isInteger(simSlotIndex) ? simSlotIndex : null,
+        isEmbedded: true,
+        portIndex: Number.isInteger(portIndex) && portIndex >= 0 ? portIndex : null,
+        isDefaultVoice: item.isDefaultVoice === true,
+        isDefaultSms: item.isDefaultSms === true,
+        isDefaultData: item.isDefaultData === true
+      };
+    })
+    .filter(Boolean)
+    .slice(0, 8);
+}
+
 function buildDefaultDeviceName(deviceUid) {
   const sanitized = String(deviceUid || "")
     .replace(/[^a-zA-Z0-9]/g, "")
@@ -1296,7 +1334,8 @@ function mapDeviceForResponse(device, linkedAccount) {
     platform: source.platform ?? null,
     online: isDeviceOnlineBySocket(source.deviceUid),
     lastSeen: formatUtcForRiyadhDisplay(source.lastSeen),
-    linkedAccount: normalizedLinkedAccount
+    linkedAccount: normalizedLinkedAccount,
+    esimSubscriptions: normalizeEsimSubscriptions(source.esimSubscriptions)
   };
 }
 
@@ -1318,6 +1357,8 @@ function mapCommandForResponse(command) {
     downloadSizeMb: source.downloadSizeMb ?? null,
     downloadDurationSeconds: source.downloadDurationSeconds ?? null,
     activationCode: source.activationCode ?? null,
+    esimSubscriptionId: source.esimSubscriptionId ?? null,
+    esimPortIndex: source.esimPortIndex ?? null,
     enabled: source.enabled ?? null,
     autoHangupSeconds: source.autoHangupSeconds ?? null,
     x: source.x ?? null,
@@ -1439,6 +1480,8 @@ function buildCommandDuplicateSignature(commandLike) {
     durationSeconds: normalizeCommandComparableNumber(source.durationSeconds),
     downloadSizeMb: normalizeCommandComparableNumber(source.downloadSizeMb),
     activationCode: normalizeCommandComparableString(source.activationCode),
+    esimSubscriptionId: normalizeCommandComparableNumber(source.esimSubscriptionId),
+    esimPortIndex: normalizeCommandComparableNumber(source.esimPortIndex),
     enabled: typeof source.enabled === "boolean" ? source.enabled : null,
     autoHangupSeconds: normalizeCommandComparableNumber(source.autoHangupSeconds),
     x: normalizeCommandComparableNumber(source.x),
@@ -2433,6 +2476,10 @@ app.post("/devices/register", async (req, res) => {
   try {
     const { payload, normalizedDeviceUid, normalizedDeviceName, normalizedPlatform } =
       extractDeviceRegistrationInput(req.body);
+    const hasEsimSubscriptionsPayload = Array.isArray(payload?.esimSubscriptions);
+    const normalizedEsimSubscriptions = hasEsimSubscriptionsPayload
+      ? normalizeEsimSubscriptions(payload.esimSubscriptions)
+      : null;
     const requestInfo = {
       contentType: req.headers["content-type"] ?? null,
       userAgent: req.headers["user-agent"] ?? null,
@@ -2470,6 +2517,7 @@ app.post("/devices/register", async (req, res) => {
         deviceUid: normalizedDeviceUid,
         deviceName: normalizedDeviceName ?? buildDefaultDeviceName(normalizedDeviceUid),
         platform: normalizedPlatform,
+        ...(hasEsimSubscriptionsPayload ? { esimSubscriptions: normalizedEsimSubscriptions } : {}),
         online: true,
         lastSeen: now
       });
@@ -2485,6 +2533,9 @@ app.post("/devices/register", async (req, res) => {
 
       if (normalizedPlatform) {
         device.platform = normalizedPlatform;
+      }
+      if (hasEsimSubscriptionsPayload) {
+        device.esimSubscriptions = normalizedEsimSubscriptions;
       }
     }
 
@@ -2535,6 +2586,9 @@ app.post("/devices/register", async (req, res) => {
         if (normalizedPlatform) {
           existingDevice.platform = normalizedPlatform;
         }
+        if (hasEsimSubscriptionsPayload) {
+          existingDevice.esimSubscriptions = normalizedEsimSubscriptions;
+        }
 
         if (!existingDevice.deviceTokenHash) {
           issuedDeviceToken = issueDeviceTokenForDevice(existingDevice);
@@ -2574,6 +2628,10 @@ app.post("/devices/register", async (req, res) => {
 app.post("/devices/heartbeat", requireAuthenticatedDeviceAllowBootstrap, async (req, res) => {
   try {
     const { payload } = extractDeviceRegistrationInput(req.body);
+    const hasEsimSubscriptionsPayload = Array.isArray(payload?.esimSubscriptions);
+    const normalizedEsimSubscriptions = hasEsimSubscriptionsPayload
+      ? normalizeEsimSubscriptions(payload.esimSubscriptions)
+      : null;
     const normalizedDeviceUid = req.deviceUid;
     const device = req.authenticatedDevice;
     console.log("[DeviceHeartbeat] Incoming request:", {
@@ -2608,6 +2666,9 @@ app.post("/devices/heartbeat", requireAuthenticatedDeviceAllowBootstrap, async (
 
     if (!normalizeDeviceName(device.deviceName)) {
       device.deviceName = buildDefaultDeviceName(normalizedDeviceUid);
+    }
+    if (hasEsimSubscriptionsPayload) {
+      device.esimSubscriptions = normalizedEsimSubscriptions;
     }
 
     await device.save();
@@ -2911,6 +2972,8 @@ app.post("/commands", requireAuth, async (req, res) => {
       durationSeconds,
       downloadSizeMb,
       activationCode,
+      esimSubscriptionId,
+      esimPortIndex,
       enabled,
       autoHangupSeconds,
       x,
@@ -2960,6 +3023,7 @@ app.post("/commands", requireAuth, async (req, res) => {
       return_to_autocall: "RETURN_TO_AUTOCALL",
       download_data: "DOWNLOAD_DATA",
       activate_esim: "ACTIVATE_ESIM",
+      disable_esim: "DISABLE_ESIM",
       start_screen_mirror: "START_SCREEN_MIRROR",
       stop_screen_mirror: "STOP_SCREEN_MIRROR",
       screen_touch: "SCREEN_TOUCH",
@@ -2976,6 +3040,7 @@ app.post("/commands", requireAuth, async (req, res) => {
       RETURN_TO_AUTOCALL: "return_to_autocall",
       DOWNLOAD_DATA: "download_data",
       ACTIVATE_ESIM: "activate_esim",
+      DISABLE_ESIM: "disable_esim",
       START_SCREEN_MIRROR: "start_screen_mirror",
       STOP_SCREEN_MIRROR: "stop_screen_mirror",
       SCREEN_TOUCH: "screen_touch",
@@ -3001,7 +3066,7 @@ app.post("/commands", requireAuth, async (req, res) => {
       });
       return res.status(400).json({
         error:
-          "Invalid action. Only 'call', 'end', 'sms', 'auto_answer', 'open_url', 'close_webview', 'open_app', 'return_to_autocall', 'download_data', 'activate_esim', 'start_screen_mirror', 'stop_screen_mirror', 'screen_touch', and 'screen_swipe' are supported."
+          "Invalid action. Only 'call', 'end', 'sms', 'auto_answer', 'open_url', 'close_webview', 'open_app', 'return_to_autocall', 'download_data', 'activate_esim', 'disable_esim', 'start_screen_mirror', 'stop_screen_mirror', 'screen_touch', and 'screen_swipe' are supported."
       });
     }
 
@@ -3015,7 +3080,7 @@ app.post("/commands", requireAuth, async (req, res) => {
       });
       return res.status(400).json({
         error:
-          "Invalid type. Only 'CALL', 'END', 'SMS', 'AUTO_ANSWER', 'OPEN_URL', 'CLOSE_WEBVIEW', 'OPEN_APP', 'RETURN_TO_AUTOCALL', 'DOWNLOAD_DATA', 'ACTIVATE_ESIM', 'START_SCREEN_MIRROR', 'STOP_SCREEN_MIRROR', 'SCREEN_TOUCH', and 'SCREEN_SWIPE' are supported."
+          "Invalid type. Only 'CALL', 'END', 'SMS', 'AUTO_ANSWER', 'OPEN_URL', 'CLOSE_WEBVIEW', 'OPEN_APP', 'RETURN_TO_AUTOCALL', 'DOWNLOAD_DATA', 'ACTIVATE_ESIM', 'DISABLE_ESIM', 'START_SCREEN_MIRROR', 'STOP_SCREEN_MIRROR', 'SCREEN_TOUCH', and 'SCREEN_SWIPE' are supported."
       });
     }
 
@@ -3046,6 +3111,7 @@ app.post("/commands", requireAuth, async (req, res) => {
     const isReturnToAutoCallCommand = normalizedAction === "return_to_autocall";
     const isDownloadDataCommand = normalizedAction === "download_data";
     const isActivateEsimCommand = normalizedAction === "activate_esim";
+    const isDisableEsimCommand = normalizedAction === "disable_esim";
     const isScreenTouchCommand = normalizedAction === "screen_touch";
     const isScreenSwipeCommand = normalizedAction === "screen_swipe";
     const allowsExtraPayloadFields = isReturnToAutoCallCommand;
@@ -3186,6 +3252,34 @@ app.post("/commands", requireAuth, async (req, res) => {
     } else if (normalizedActivationCode && !allowsExtraPayloadFields) {
       return res.status(400).json({
         error: "activationCode is only supported for ACTIVATE_ESIM commands"
+      });
+    }
+
+    let normalizedEsimSubscriptionId;
+    let normalizedEsimPortIndex;
+    const hasEsimSubscriptionIdInput = hasPresentValue(esimSubscriptionId);
+    const hasEsimPortIndexInput = hasPresentValue(esimPortIndex);
+    if (isDisableEsimCommand) {
+      const parsedSubscriptionId = Number(esimSubscriptionId);
+      if (!Number.isInteger(parsedSubscriptionId) || parsedSubscriptionId < 0) {
+        return res.status(400).json({
+          error: "esimSubscriptionId is required and must be a non-negative integer for DISABLE_ESIM commands"
+        });
+      }
+      normalizedEsimSubscriptionId = parsedSubscriptionId;
+
+      if (hasEsimPortIndexInput) {
+        const parsedPortIndex = Number(esimPortIndex);
+        if (!Number.isInteger(parsedPortIndex) || parsedPortIndex < 0) {
+          return res.status(400).json({
+            error: "esimPortIndex must be a non-negative integer"
+          });
+        }
+        normalizedEsimPortIndex = parsedPortIndex;
+      }
+    } else if ((hasEsimSubscriptionIdInput || hasEsimPortIndexInput) && !allowsExtraPayloadFields) {
+      return res.status(400).json({
+        error: "eSIM subscription fields are only supported for DISABLE_ESIM commands"
       });
     }
 
@@ -3446,6 +3540,9 @@ app.post("/commands", requireAuth, async (req, res) => {
       addIfPresent(commandData, "downloadSizeMb", normalizedDownloadSizeMb);
     } else if (normalizedAction === "activate_esim") {
       addIfPresent(commandData, "activationCode", normalizedActivationCode);
+    } else if (normalizedAction === "disable_esim") {
+      addIfPresent(commandData, "esimSubscriptionId", normalizedEsimSubscriptionId);
+      addIfPresent(commandData, "esimPortIndex", normalizedEsimPortIndex);
     } else if (normalizedAction === "screen_touch") {
       addIfPresent(commandData, "x", normalizedX);
       addIfPresent(commandData, "y", normalizedY);
@@ -3516,6 +3613,8 @@ app.post("/commands", requireAuth, async (req, res) => {
         resolvedPackageName: isOpenAppCommand ? normalizedResolvedPackageName : null,
         downloadSizeMb: isDownloadDataCommand ? normalizedDownloadSizeMb : null,
         activationCodeLength: isActivateEsimCommand ? normalizedActivationCode.length : null,
+        esimSubscriptionId: isDisableEsimCommand ? normalizedEsimSubscriptionId ?? null : null,
+        esimPortIndex: isDisableEsimCommand ? normalizedEsimPortIndex ?? null : null,
         x: isScreenTouchCommand ? normalizedX ?? null : null,
         y: isScreenTouchCommand ? normalizedY ?? null : null,
         touchTarget: isScreenTouchCommand ? normalizedTouchTarget ?? null : null,
