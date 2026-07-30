@@ -5497,12 +5497,16 @@
             list.innerHTML = profiles.map((profile) => {
                 const subscriptionId = Number(profile.subscriptionId);
                 const portIndex = Number(profile.portIndex);
+                const cardId = Number(profile.cardId);
                 const title = escapeHtml(buildEsimProfileTitle(profile));
                 const phoneNumber = toNonEmptyString(profile.phoneNumber);
                 const slot = Number(profile.simSlotIndex);
                 const metaParts = [`Subscription ${subscriptionId}`];
                 if (Number.isInteger(portIndex) && portIndex >= 0) {
                     metaParts.push(`Port ${portIndex}`);
+                }
+                if (Number.isInteger(cardId) && cardId >= 0) {
+                    metaParts.push(`Card ${cardId}`);
                 }
                 if (Number.isInteger(slot) && slot >= 0) {
                     metaParts.push(`Slot ${slot}`);
@@ -11119,7 +11123,7 @@
                 return appendScheduledDetail(details, command);
             }
 
-            if (commandType === "DELETE_ESIM" || commandType === "DISABLE_ESIM") {
+            if (commandType === "DELETE_ESIM") {
                 const subscriptionId = Number(command?.esimSubscriptionId);
                 const portIndex = Number(command?.esimPortIndex);
                 const parts = [];

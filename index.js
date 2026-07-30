@@ -1136,6 +1136,7 @@ function normalizeEsimSubscriptions(value) {
 
       const portIndex = Number(item.portIndex);
       const simSlotIndex = Number(item.simSlotIndex);
+      const cardId = Number(item.cardId);
       const phoneNumber =
         typeof item.phoneNumber === "string" && item.phoneNumber.trim()
           ? item.phoneNumber.trim().slice(0, 40)
@@ -1150,6 +1151,7 @@ function normalizeEsimSubscriptions(value) {
         phoneNumber,
         simSlotIndex: Number.isInteger(simSlotIndex) ? simSlotIndex : null,
         isEmbedded: true,
+        cardId: Number.isInteger(cardId) && cardId >= 0 ? cardId : null,
         portIndex: Number.isInteger(portIndex) && portIndex >= 0 ? portIndex : null,
         isDefaultVoice: item.isDefaultVoice === true,
         isDefaultSms: item.isDefaultSms === true,
@@ -3024,7 +3026,6 @@ app.post("/commands", requireAuth, async (req, res) => {
       download_data: "DOWNLOAD_DATA",
       activate_esim: "ACTIVATE_ESIM",
       delete_esim: "DELETE_ESIM",
-      disable_esim: "DISABLE_ESIM",
       start_screen_mirror: "START_SCREEN_MIRROR",
       stop_screen_mirror: "STOP_SCREEN_MIRROR",
       screen_touch: "SCREEN_TOUCH",
@@ -3042,7 +3043,6 @@ app.post("/commands", requireAuth, async (req, res) => {
       DOWNLOAD_DATA: "download_data",
       ACTIVATE_ESIM: "activate_esim",
       DELETE_ESIM: "delete_esim",
-      DISABLE_ESIM: "delete_esim",
       START_SCREEN_MIRROR: "start_screen_mirror",
       STOP_SCREEN_MIRROR: "stop_screen_mirror",
       SCREEN_TOUCH: "screen_touch",
@@ -3068,7 +3068,7 @@ app.post("/commands", requireAuth, async (req, res) => {
       });
       return res.status(400).json({
         error:
-          "Invalid action. Only 'call', 'end', 'sms', 'auto_answer', 'open_url', 'close_webview', 'open_app', 'return_to_autocall', 'download_data', 'activate_esim', 'delete_esim', 'disable_esim', 'start_screen_mirror', 'stop_screen_mirror', 'screen_touch', and 'screen_swipe' are supported."
+          "Invalid action. Only 'call', 'end', 'sms', 'auto_answer', 'open_url', 'close_webview', 'open_app', 'return_to_autocall', 'download_data', 'activate_esim', 'delete_esim', 'start_screen_mirror', 'stop_screen_mirror', 'screen_touch', and 'screen_swipe' are supported."
       });
     }
 
@@ -3082,7 +3082,7 @@ app.post("/commands", requireAuth, async (req, res) => {
       });
       return res.status(400).json({
         error:
-          "Invalid type. Only 'CALL', 'END', 'SMS', 'AUTO_ANSWER', 'OPEN_URL', 'CLOSE_WEBVIEW', 'OPEN_APP', 'RETURN_TO_AUTOCALL', 'DOWNLOAD_DATA', 'ACTIVATE_ESIM', 'DELETE_ESIM', 'DISABLE_ESIM', 'START_SCREEN_MIRROR', 'STOP_SCREEN_MIRROR', 'SCREEN_TOUCH', and 'SCREEN_SWIPE' are supported."
+          "Invalid type. Only 'CALL', 'END', 'SMS', 'AUTO_ANSWER', 'OPEN_URL', 'CLOSE_WEBVIEW', 'OPEN_APP', 'RETURN_TO_AUTOCALL', 'DOWNLOAD_DATA', 'ACTIVATE_ESIM', 'DELETE_ESIM', 'START_SCREEN_MIRROR', 'STOP_SCREEN_MIRROR', 'SCREEN_TOUCH', and 'SCREEN_SWIPE' are supported."
       });
     }
 
@@ -3106,9 +3106,6 @@ app.post("/commands", requireAuth, async (req, res) => {
 
     let normalizedAction =
       normalizedActionInput ?? typeToAction[normalizedTypeInput] ?? "call";
-    if (normalizedAction === "disable_esim") {
-      normalizedAction = "delete_esim";
-    }
     const commandType = normalizedTypeInput ?? actionToType[normalizedAction];
     const isAutoAnswerCommand = normalizedAction === "auto_answer";
     const isOpenUrlCommand = normalizedAction === "open_url";
