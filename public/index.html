@@ -550,40 +550,38 @@
                 </div>
                 <div id="autoAnswerTabPanel" class="tab-panel">
                     <h2>Auto Answer</h2>
-                    <div class="input-row auto-answer-input-grid auto-answer-three-col-grid">
-                        <div class="inline-toggle-row">
-                            <div class="premium-toggle-wrapper">
-                                <input id="autoAnswerEnabled" class="premium-toggle-input" type="checkbox" checked />
-                                <label for="autoAnswerEnabled" class="premium-toggle-label" aria-label="Toggle Auto Answer">
-                                    <!-- State OFF: Muted Phone -->
-                                    <div class="premium-toggle-icon icon-off">
-                                        <svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
-                                            <path d="M10.68 13.31a16 16 0 0 0 3.41 2.6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7 2 2 0 0 1 1.72 2v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.79 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L8.09 9.91"/>
-                                            <line x1="22" y1="2" x2="2" y2="22"/>
-                                        </svg>
-                                    </div>
-                                    <!-- State ON: Ringing Phone with sound waves -->
-                                    <div class="premium-toggle-icon icon-on">
-                                        <svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
-                                            <path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.79 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 22 16.92z"/>
-                                            <path class="wave wave-1" d="M14.05 2a9 9 0 0 1 8 8" />
-                                            <path class="wave wave-2" d="M14.05 6a5 5 0 0 1 4 4" />
-                                        </svg>
-                                    </div>
-                                </label>
-                            </div>
-                        </div>
+                    <div class="input-row auto-answer-input-grid">
                         <input id="autoAnswerHangupSeconds" type="text" inputmode="numeric" pattern="[0-9]*"
                             placeholder="Auto hangup seconds" oninput="sanitizeDurationInput(event)" />
                         <input id="autoAnswerNotes" placeholder="optional notes" />
                     </div>
-                    <div class="actions">
+                    <div class="actions" style="display: flex; align-items: center; gap: 14px;">
                         <button onclick="sendAutoAnswer()" style="display: inline-flex; align-items: center; gap: 6px;">
                             <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
                                 <polyline points="20 6 9 17 4 12"></polyline>
                             </svg>
                             Apply
                         </button>
+                        <div class="premium-toggle-wrapper">
+                            <input id="autoAnswerEnabled" class="premium-toggle-input" type="checkbox" checked />
+                            <label for="autoAnswerEnabled" class="premium-toggle-label" aria-label="Toggle Auto Answer">
+                                <!-- State OFF: Muted Phone -->
+                                <div class="premium-toggle-icon icon-off">
+                                    <svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+                                        <path d="M10.68 13.31a16 16 0 0 0 3.41 2.6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L8.09 9.91"/>
+                                        <line x1="22" y1="2" x2="2" y2="22"/>
+                                    </svg>
+                                </div>
+                                <!-- State ON: Ringing Phone with sound waves -->
+                                <div class="premium-toggle-icon icon-on">
+                                    <svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+                                        <path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.79 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 22 16.92z"/>
+                                        <path class="wave wave-1" d="M14.05 2a9 9 0 0 1 8 8" />
+                                        <path class="wave wave-2" d="M14.05 6a5 5 0 0 1 4 4" />
+                                    </svg>
+                                </div>
+                            </label>
+                        </div>
                     </div>
                 </div>
                 <div id="smsTabPanel" class="tab-panel">
