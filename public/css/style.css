@@ -1680,24 +1680,40 @@
 
         .esim-list {
             display: grid;
-            gap: 8px;
+            grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+            gap: 16px;
         }
 
         .esim-card {
-            display: grid;
-            grid-template-columns: minmax(0, 1fr) auto;
-            gap: 10px;
-            align-items: center;
-            padding: 10px;
-            border-radius: 12px;
-            border: 1px solid rgba(103, 232, 249, 0.24);
-            background: rgba(7, 14, 28, 0.34);
+            display: flex;
+            flex-direction: column;
+            justify-content: space-between;
+            gap: 14px;
+            padding: 16px;
+            border-radius: 16px;
+            border: 1px solid rgba(255, 255, 255, 0.08);
+            background: rgba(255, 255, 255, 0.02);
+            backdrop-filter: blur(14px) saturate(135%);
+            -webkit-backdrop-filter: blur(14px) saturate(135%);
+            box-shadow: 0 8px 24px rgba(0, 0, 0, 0.18), inset 0 1px 0 rgba(255, 255, 255, 0.1);
+            transition: transform 0.3s cubic-bezier(0.25, 0.8, 0.25, 1),
+                        box-shadow 0.3s cubic-bezier(0.25, 0.8, 0.25, 1),
+                        border-color 0.3s ease;
+        }
+
+        .esim-card:hover {
+            transform: translateY(-2px);
+            border-color: rgba(103, 232, 249, 0.5);
+            box-shadow: 0 12px 30px rgba(0, 0, 0, 0.3), 
+                        0 0 20px rgba(103, 232, 249, 0.12),
+                        inset 0 1px 0 rgba(255, 255, 255, 0.15);
         }
 
         .esim-card-main {
             min-width: 0;
-            display: grid;
-            gap: 4px;
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
         }
 
         .esim-card-title {
@@ -1721,6 +1737,7 @@
             align-items: center;
             gap: 5px;
             flex-wrap: wrap;
+            margin-top: 2px;
         }
 
         .esim-badge {
@@ -1740,9 +1757,14 @@
         }
 
         .esim-delete-btn {
-            padding: 8px 10px;
+            padding: 8px 12px;
             border-radius: 10px;
             white-space: nowrap;
+            width: 100%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            margin-top: 4px;
         }
 
         .field-label {
