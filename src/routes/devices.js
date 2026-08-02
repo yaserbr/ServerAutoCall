@@ -96,10 +96,11 @@ function createDevicesRouter({
         device.online = true;
         device.lastSeen = now;
 
-        if (normalizedDeviceName) {
+        if (!normalizeDeviceName(device.deviceName)) {
+          device.deviceName =
+            normalizedDeviceName ?? buildDefaultDeviceName(normalizedDeviceUid);
+        } else if (device.deviceName === buildDefaultDeviceName(normalizedDeviceUid) && normalizedDeviceName) {
           device.deviceName = normalizedDeviceName;
-        } else if (!normalizeDeviceName(device.deviceName)) {
-          device.deviceName = buildDefaultDeviceName(normalizedDeviceUid);
         }
 
         if (normalizedPlatform) {
@@ -149,10 +150,14 @@ function createDevicesRouter({
 
           existingDevice.online = true;
           existingDevice.lastSeen = now;
-          if (normalizedDeviceName) {
+          if (!normalizeDeviceName(existingDevice.deviceName)) {
+            existingDevice.deviceName =
+              normalizedDeviceName ?? buildDefaultDeviceName(normalizedDeviceUid);
+          } else if (
+            existingDevice.deviceName === buildDefaultDeviceName(normalizedDeviceUid) &&
+            normalizedDeviceName
+          ) {
             existingDevice.deviceName = normalizedDeviceName;
-          } else if (!normalizeDeviceName(existingDevice.deviceName)) {
-            existingDevice.deviceName = buildDefaultDeviceName(normalizedDeviceUid);
           }
           if (normalizedPlatform) {
             existingDevice.platform = normalizedPlatform;

@@ -5409,6 +5409,33 @@
             });
         }
 
+        function applyDeviceRenameResponse(device) {
+            const normalizedUid = normalizeDeviceUidInput(device?.deviceUid || "");
+            const normalizedName = toNonEmptyString(device?.deviceName);
+            if (!normalizedUid || !normalizedName) return;
+
+            deviceNameByUid.set(normalizedUid, normalizedName);
+            const previousGlobalValue = getSelectedGlobalDeviceUid() || normalizedUid;
+            const existingDevices = Array.isArray(globalDeviceDropdownDevices)
+                ? globalDeviceDropdownDevices
+                : [];
+            const hasExistingDevice = existingDevices.some((item) => {
+                return normalizeDeviceUidInput(item?.deviceUid || "") === normalizedUid;
+            });
+            const updatedDevices = hasExistingDevice
+                ? existingDevices.map((item) => {
+                    return normalizeDeviceUidInput(item?.deviceUid || "") === normalizedUid
+                        ? { ...item, ...device, deviceUid: normalizedUid, deviceName: normalizedName }
+                        : item;
+                })
+                : [...existingDevices, { ...device, deviceUid: normalizedUid, deviceName: normalizedName }];
+
+            populateDeviceSelect(getGlobalDeviceSelectElement(), updatedDevices, previousGlobalValue);
+            renderDevicesTable(updatedDevices);
+            renderCommandsFromCache();
+            renderScreenMirrorMultiGrid();
+        }
+
         function escapeHtml(value) {
             return String(value)
                 .replaceAll("&", "&amp;")
@@ -6489,9 +6516,10 @@
                 const data = await res.json();
                 if (!res.ok) throw new Error(data.error || "Failed to rename device");
 
+                applyDeviceRenameResponse(data.device);
                 showToast("Device renamed", "success");
-                await loadDevices();
-                await loadDevicesToSelect();
+                void loadDevices();
+                void loadDevicesToSelect();
             } catch (error) {
                 showToast(error.message || "Failed to rename device", "error");
             }
