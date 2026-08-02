@@ -1377,7 +1377,7 @@
         .inline-toggle-row {
             display: flex;
             align-items: center;
-            justify-content: space-between;
+            justify-content: center;
             gap: 12px;
             height: var(--control-height);
             padding: 0 12px;
