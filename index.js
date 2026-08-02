@@ -910,6 +910,55 @@ function addIfPresent(obj, key, value) {
   }
 }
 
+function normalizeOptionalCommandSubscriptionId(commandLike, targetDevice) {
+  if (!commandLike || typeof commandLike !== "object") {
+    return { ok: true };
+  }
+
+  if (!hasPresentValue(commandLike.subscriptionId)) {
+    delete commandLike.subscriptionId;
+    return { ok: true };
+  }
+
+  const action = typeof commandLike.action === "string"
+    ? commandLike.action.trim().toLowerCase()
+    : "";
+  const type = typeof commandLike.type === "string"
+    ? commandLike.type.trim().toUpperCase()
+    : "";
+  const isCallOrSmsCommand = action === "call" || action === "sms" || type === "CALL" || type === "SMS";
+  if (!isCallOrSmsCommand) {
+    return {
+      ok: false,
+      error: "subscriptionId is only supported for CALL and SMS commands"
+    };
+  }
+
+  const parsedSubscriptionId = Number(commandLike.subscriptionId);
+  if (!Number.isInteger(parsedSubscriptionId) || parsedSubscriptionId < 0) {
+    return {
+      ok: false,
+      error: "subscriptionId must be a non-negative integer"
+    };
+  }
+
+  const reportedSubscriptions = Array.isArray(targetDevice?.esimSubscriptions)
+    ? targetDevice.esimSubscriptions
+    : [];
+  if (
+    reportedSubscriptions.length > 0 &&
+    !reportedSubscriptions.some((profile) => Number(profile?.subscriptionId) === parsedSubscriptionId)
+  ) {
+    return {
+      ok: false,
+      error: "subscriptionId does not belong to the selected device"
+    };
+  }
+
+  commandLike.subscriptionId = parsedSubscriptionId;
+  return { ok: true };
+}
+
 function unsetIfPresent(document, key) {
   if (!document || typeof document.get !== "function" || typeof document.set !== "function") {
     return;
@@ -1364,6 +1413,7 @@ function mapCommandForResponse(command) {
     activationCode: source.activationCode ?? null,
     esimSubscriptionId: source.esimSubscriptionId ?? null,
     esimPortIndex: source.esimPortIndex ?? null,
+    subscriptionId: source.subscriptionId ?? null,
     enabled: source.enabled ?? null,
     autoHangupSeconds: source.autoHangupSeconds ?? null,
     x: source.x ?? null,
@@ -1487,6 +1537,7 @@ function buildCommandDuplicateSignature(commandLike) {
     activationCode: normalizeCommandComparableString(source.activationCode),
     esimSubscriptionId: normalizeCommandComparableNumber(source.esimSubscriptionId),
     esimPortIndex: normalizeCommandComparableNumber(source.esimPortIndex),
+    subscriptionId: normalizeCommandComparableNumber(source.subscriptionId),
     enabled: typeof source.enabled === "boolean" ? source.enabled : null,
     autoHangupSeconds: normalizeCommandComparableNumber(source.autoHangupSeconds),
     x: normalizeCommandComparableNumber(source.x),
@@ -2650,6 +2701,17 @@ app.post("/agent/chat", requireAuth, async (req, res) => {
         isImmediate: agentResult.draftCommand.isImmediate !== false,
         createdAt: new Date(toUtcISOString())
       };
+      const subscriptionValidation = normalizeOptionalCommandSubscriptionId(
+        finalCommandData,
+        targetDevice
+      );
+      if (!subscriptionValidation.ok) {
+        return res.status(400).json({
+          error: subscriptionValidation.error,
+          response: "I couldn't queue that command because the selected SIM/eSIM is not valid for this device.",
+          draftCommand: null
+        });
+      }
 
       const command = await Command.create(finalCommandData);
 
@@ -2728,6 +2790,13 @@ app.post("/agent/chat/confirm", requireAuth, async (req, res) => {
       status: "pending",
       createdAt: new Date(toUtcISOString())
     };
+    const subscriptionValidation = normalizeOptionalCommandSubscriptionId(
+      finalCommandData,
+      targetDevice
+    );
+    if (!subscriptionValidation.ok) {
+      return res.status(400).json({ error: subscriptionValidation.error });
+    }
 
     const command = await Command.create(finalCommandData);
 

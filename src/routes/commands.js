@@ -64,6 +64,7 @@ function createCommandsRouter({
         activationCode,
         esimSubscriptionId,
         esimPortIndex,
+        subscriptionId,
         enabled,
         autoHangupSeconds,
         x,
@@ -205,6 +206,7 @@ function createCommandsRouter({
       const isScreenTouchCommand = normalizedAction === "screen_touch";
       const isScreenSwipeCommand = normalizedAction === "screen_swipe";
       const allowsExtraPayloadFields = isReturnToAutoCallCommand;
+      const isCallOrSmsCommand = normalizedAction === "call" || normalizedAction === "sms";
 
       const receivedPhoneNumberRaw = typeof phoneNumber === "string" ? phoneNumber : "";
       const normalizedPhoneNumber = receivedPhoneNumberRaw.trim();
@@ -371,6 +373,37 @@ function createCommandsRouter({
         return res.status(400).json({
           error: "eSIM subscription fields are only supported for DELETE_ESIM commands"
         });
+      }
+
+      let normalizedSubscriptionId;
+      const hasSubscriptionIdInput = hasPresentValue(subscriptionId);
+      if (hasSubscriptionIdInput) {
+        if (!isCallOrSmsCommand && !allowsExtraPayloadFields) {
+          return res.status(400).json({
+            error: "subscriptionId is only supported for CALL and SMS commands"
+          });
+        }
+
+        const parsedSubscriptionId = Number(subscriptionId);
+        if (!Number.isInteger(parsedSubscriptionId) || parsedSubscriptionId < 0) {
+          return res.status(400).json({
+            error: "subscriptionId must be a non-negative integer"
+          });
+        }
+
+        const reportedSubscriptions = Array.isArray(targetDevice.esimSubscriptions)
+          ? targetDevice.esimSubscriptions
+          : [];
+        if (
+          reportedSubscriptions.length > 0 &&
+          !reportedSubscriptions.some((profile) => Number(profile?.subscriptionId) === parsedSubscriptionId)
+        ) {
+          return res.status(400).json({
+            error: "subscriptionId does not belong to the selected device"
+          });
+        }
+
+        normalizedSubscriptionId = parsedSubscriptionId;
       }
 
       let normalizedEnabled;
@@ -613,9 +646,11 @@ function createCommandsRouter({
       if (normalizedAction === "call") {
         addIfPresent(commandData, "phoneNumber", normalizedPhoneNumber);
         addIfPresent(commandData, "durationSeconds", normalizedDurationSeconds);
+        addIfPresent(commandData, "subscriptionId", normalizedSubscriptionId);
       } else if (normalizedAction === "sms") {
         addIfPresent(commandData, "phoneNumber", normalizedPhoneNumber);
         addIfPresent(commandData, "message", normalizedMessage);
+        addIfPresent(commandData, "subscriptionId", normalizedSubscriptionId);
       } else if (normalizedAction === "open_url") {
         addIfPresent(commandData, "url", normalizedUrl);
       } else if (normalizedAction === "open_app") {
@@ -705,6 +740,7 @@ function createCommandsRouter({
           activationCodeLength: isActivateEsimCommand ? normalizedActivationCode.length : null,
           esimSubscriptionId: isDeleteEsimCommand ? normalizedEsimSubscriptionId ?? null : null,
           esimPortIndex: isDeleteEsimCommand ? normalizedEsimPortIndex ?? null : null,
+          subscriptionId: isCallOrSmsCommand ? normalizedSubscriptionId ?? null : null,
           x: isScreenTouchCommand ? normalizedX ?? null : null,
           y: isScreenTouchCommand ? normalizedY ?? null : null,
           touchTarget: isScreenTouchCommand ? normalizedTouchTarget ?? null : null,

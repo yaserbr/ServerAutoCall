@@ -200,6 +200,7 @@
         };
         const deviceNameByUid = new Map();
         let globalDeviceDropdownDevices = [];
+        const selectedCommandSubscriptionIdByDeviceUid = new Map();
         let isGlobalDeviceDropdownOpen = false;
         let globalDeviceDropdownCloseTimerId = null;
         let hasBoundGlobalDeviceDropdownEvents = false;
@@ -275,6 +276,69 @@
             });
         }
 
+        function getSelectedCommandSubscriptionIdForDevice(deviceUid = getSelectedGlobalDeviceUid()) {
+            const normalizedDeviceUid = normalizeDeviceUidInput(deviceUid || "");
+            if (!normalizedDeviceUid) return null;
+            const value = Number(selectedCommandSubscriptionIdByDeviceUid.get(normalizedDeviceUid));
+            return Number.isInteger(value) && value >= 0 ? value : null;
+        }
+
+        function findActiveEsimProfile(subscriptionId) {
+            const normalizedSubscriptionId = Number(subscriptionId);
+            if (!Number.isInteger(normalizedSubscriptionId) || normalizedSubscriptionId < 0) {
+                return null;
+            }
+            return getActiveEsimProfilesForSelectedDevice().find((profile) => {
+                return Number(profile?.subscriptionId) === normalizedSubscriptionId;
+            }) || null;
+        }
+
+        function syncSelectedCommandSubscriptionForSelectedDevice() {
+            const selectedUid = getSelectedGlobalDeviceUid();
+            if (!selectedUid) return null;
+
+            const selectedSubscriptionId = getSelectedCommandSubscriptionIdForDevice(selectedUid);
+            if (selectedSubscriptionId === null) return null;
+
+            const selectedProfile = findActiveEsimProfile(selectedSubscriptionId);
+            if (!selectedProfile) {
+                selectedCommandSubscriptionIdByDeviceUid.delete(selectedUid);
+                return null;
+            }
+
+            return selectedProfile;
+        }
+
+        function setSelectedCommandSubscriptionForSelectedDevice(subscriptionId) {
+            const selectedUid = getSelectedGlobalDeviceUid();
+            const normalizedSubscriptionId = Number(subscriptionId);
+            if (!selectedUid || !Number.isInteger(normalizedSubscriptionId) || normalizedSubscriptionId < 0) {
+                return;
+            }
+            selectedCommandSubscriptionIdByDeviceUid.set(selectedUid, normalizedSubscriptionId);
+            renderActiveEsimProfiles();
+        }
+
+        function updateSelectedEsimCommandRoute(selectedProfile = null) {
+            const routeElement = document.getElementById("selectedEsimCommandRoute");
+            if (!routeElement) return;
+
+            const selectedUid = getSelectedGlobalDeviceUid();
+            if (!selectedUid) {
+                routeElement.textContent = "Command SIM: select a device";
+                return;
+            }
+
+            if (!selectedProfile) {
+                routeElement.textContent = "Command SIM: device default";
+                return;
+            }
+
+            routeElement.textContent =
+                `Command SIM: ${buildEsimProfileTitle(selectedProfile)} ` +
+                `(subscription ${selectedProfile.subscriptionId})`;
+        }
+
         function buildEsimProfileTitle(profile) {
             const displayName = toNonEmptyString(profile?.displayName);
             const carrierName = toNonEmptyString(profile?.carrierName);
@@ -291,19 +355,25 @@
             const selectedUid = getSelectedGlobalDeviceUid();
             if (!selectedUid) {
                 list.innerHTML = "<p class='esim-empty'>Select a device to view active eSIM profiles.</p>";
+                updateSelectedEsimCommandRoute(null);
                 return;
             }
 
             const profiles = getActiveEsimProfilesForSelectedDevice();
             if (!profiles.length) {
+                selectedCommandSubscriptionIdByDeviceUid.delete(selectedUid);
                 list.innerHTML = "<p class='esim-empty'>No active eSIM profiles reported by this device yet.</p>";
+                updateSelectedEsimCommandRoute(null);
                 return;
             }
+
+            const selectedProfile = syncSelectedCommandSubscriptionForSelectedDevice();
+            const selectedSubscriptionId = selectedProfile ? Number(selectedProfile.subscriptionId) : null;
+            updateSelectedEsimCommandRoute(selectedProfile);
 
             list.innerHTML = profiles.map((profile) => {
                 const subscriptionId = Number(profile.subscriptionId);
                 const portIndex = Number(profile.portIndex);
-                const cardId = Number(profile.cardId);
                 const title = escapeHtml(buildEsimProfileTitle(profile));
                 const phoneNumber = toNonEmptyString(profile.phoneNumber);
                 const slot = Number(profile.simSlotIndex);
@@ -317,9 +387,15 @@
                     profile.isDefaultSms ? "SMS" : "",
                     profile.isDefaultData ? "Data" : ""
                 ].filter(Boolean).map((label) => `<span class="esim-badge">${label}</span>`).join("");
+                const isSelected = subscriptionId === selectedSubscriptionId;
 
                 return `
-                    <div class="esim-card">
+                    <div
+                        class="esim-card${isSelected ? " selected" : ""}"
+                        role="button"
+                        tabindex="0"
+                        aria-pressed="${isSelected ? "true" : "false"}"
+                        data-esim-select-subscription-id="${subscriptionId}">
                         <div class="esim-card-main">
                             <div class="esim-card-title">${title}</div>
                             <div class="esim-card-meta">${escapeHtml(metaParts.join(" | "))}</div>
@@ -336,8 +412,22 @@
                 `;
             }).join("");
 
+            list.querySelectorAll(".esim-card").forEach((card) => {
+                const selectCard = () => {
+                    const subscriptionId = Number(card.getAttribute("data-esim-select-subscription-id"));
+                    setSelectedCommandSubscriptionForSelectedDevice(subscriptionId);
+                };
+                card.addEventListener("click", selectCard);
+                card.addEventListener("keydown", (event) => {
+                    if (event.key !== "Enter" && event.key !== " ") return;
+                    event.preventDefault();
+                    selectCard();
+                });
+            });
+
             list.querySelectorAll(".esim-delete-btn").forEach((button) => {
-                button.addEventListener("click", () => {
+                button.addEventListener("click", (event) => {
+                    event.stopPropagation();
                     const subscriptionId = Number(button.getAttribute("data-esim-subscription-id"));
                     const rawPortIndex = button.getAttribute("data-esim-port-index") || "";
                     const portIndex = rawPortIndex === "" ? null : Number(rawPortIndex);
@@ -5399,6 +5489,7 @@
             authToken = "";
             authenticatedUser = null;
             deviceNameByUid.clear();
+            selectedCommandSubscriptionIdByDeviceUid.clear();
             stopCommandsAutoRefresh();
             stopDevicesSelectRefresh();
             disconnectScreenMirrorSocket();
@@ -5838,6 +5929,13 @@
             return details;
         }
 
+        function appendCommandSubscriptionDetail(parts, command) {
+            const subscriptionId = Number(command?.subscriptionId);
+            if (Number.isInteger(subscriptionId) && subscriptionId >= 0) {
+                parts.push(`SIM: subscription ${subscriptionId}`);
+            }
+        }
+
         function getCommandDetails(command) {
             const commandType = getCommandType(command);
             const details = {
@@ -5856,6 +5954,7 @@
                 if (Number.isFinite(durationSeconds) && durationSeconds > 0) {
                     parts.push(`Duration: ${Math.round(durationSeconds)}s`);
                 }
+                appendCommandSubscriptionDetail(parts, command);
 
                 details.primary = parts.length ? parts.join(" | ") : "-";
                 return appendScheduledDetail(details, command);
@@ -5872,6 +5971,7 @@
                 if (message) {
                     parts.push(`Message: ${message}`);
                 }
+                appendCommandSubscriptionDetail(parts, command);
 
                 details.primary = parts.length ? parts.join(" | ") : "-";
                 return appendScheduledDetail(details, command);
@@ -7143,9 +7243,15 @@
                 } else if (action === "call") {
                     params.phoneNumber = tmpl.phoneNumber || "";
                     params.durationSeconds = tmpl.durationSeconds || 30;
+                    if (Number.isInteger(Number(tmpl.subscriptionId)) && Number(tmpl.subscriptionId) >= 0) {
+                        params.subscriptionId = Number(tmpl.subscriptionId);
+                    }
                 } else if (action === "sms") {
                     params.phoneNumber = tmpl.phoneNumber || "";
                     params.message = tmpl.message || "";
+                    if (Number.isInteger(Number(tmpl.subscriptionId)) && Number(tmpl.subscriptionId) >= 0) {
+                        params.subscriptionId = Number(tmpl.subscriptionId);
+                    }
                 } else if (action === "auto_answer") {
                     params.enabled = tmpl.enabled !== false;
                     params.autoHangupSeconds = tmpl.autoHangupSeconds || 15;
@@ -7177,13 +7283,24 @@
                 return;
             }
 
+            const selectedDeviceUidForTemplate = getSelectedGlobalDeviceUid();
             const templatesPayload = timelineSteps.map(step => {
-                return {
+                const templatePayload = {
                     action: step.action,
                     type: step.action.toUpperCase(),
                     delayAfterSeconds: getTimelineDelayForPayload(step),
                     ...step.params
                 };
+                const selectedSubscriptionId = getSelectedCommandSubscriptionIdForDevice(selectedDeviceUidForTemplate);
+                if (
+                    (step.action === "call" || step.action === "sms") &&
+                    Number.isInteger(selectedSubscriptionId) &&
+                    selectedSubscriptionId >= 0 &&
+                    templatePayload.subscriptionId === undefined
+                ) {
+                    templatePayload.subscriptionId = selectedSubscriptionId;
+                }
+                return templatePayload;
             });
 
             const payload = {
@@ -7566,12 +7683,22 @@
             }
 
             const templatesPayload = timelineSteps.map(step => {
-                return {
+                const templatePayload = {
                     action: step.action,
                     type: step.action.toUpperCase(),
                     delayAfterSeconds: getTimelineDelayForPayload(step),
                     ...step.params
                 };
+                const selectedSubscriptionId = getSelectedCommandSubscriptionIdForDevice(deviceUid);
+                if (
+                    (step.action === "call" || step.action === "sms") &&
+                    Number.isInteger(selectedSubscriptionId) &&
+                    selectedSubscriptionId >= 0 &&
+                    templatePayload.subscriptionId === undefined
+                ) {
+                    templatePayload.subscriptionId = selectedSubscriptionId;
+                }
+                return templatePayload;
             });
 
             const payload = {
@@ -7852,6 +7979,11 @@
                 notes: notes || null
             };
 
+            const subscriptionId = getSelectedCommandSubscriptionIdForDevice(deviceUid);
+            if (subscriptionId !== null) {
+                payload.subscriptionId = subscriptionId;
+            }
+
             if (durationSeconds !== null) {
                 payload.durationSeconds = durationSeconds;
             }
@@ -7929,6 +8061,11 @@
                 scheduledAt: scheduledAt || null,
                 notes: notes || null
             };
+
+            const subscriptionId = getSelectedCommandSubscriptionIdForDevice(deviceUid);
+            if (subscriptionId !== null) {
+                payload.subscriptionId = subscriptionId;
+            }
 
             try {
                 const res = await apiFetch("/commands", {

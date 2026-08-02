@@ -140,6 +140,10 @@ class CommandCollectionService {
         template.esimPortIndex !== undefined && template.esimPortIndex !== null
           ? template.esimPortIndex
           : undefined,
+      subscriptionId:
+        template.subscriptionId !== undefined && template.subscriptionId !== null
+          ? template.subscriptionId
+          : undefined,
       enabled: template.enabled !== undefined && template.enabled !== null ? template.enabled : undefined,
       autoHangupSeconds: template.autoHangupSeconds || undefined,
       collectionId: collection._id,

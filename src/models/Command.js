@@ -99,6 +99,9 @@ const commandSchema = new mongoose.Schema(
     esimPortIndex: {
       type: Number
     },
+    subscriptionId: {
+      type: Number
+    },
     enabled: {
       type: Boolean
     },

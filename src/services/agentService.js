@@ -162,6 +162,10 @@ You MUST ALWAYS invoke the 'queue_device_command' tool if the user's request mat
               type: "number",
               description: "Call duration in seconds before auto-hangup. Optional for 'call'."
             },
+            subscriptionId: {
+              type: "number",
+              description: "Optional active SIM/eSIM subscription ID to use for 'call' and 'sms'. Only provide when the user selected or explicitly named an available subscription."
+            },
             autoHangupSeconds: {
               type: "number",
               description: "Auto hangup delay threshold in seconds. Optional for 'call' and 'auto_answer'."
@@ -386,6 +390,15 @@ function cleanArgs(args, prompt = "") {
       } else {
         cleaned.enabled = true;
       }
+    }
+  }
+
+  if (cleaned.subscriptionId !== undefined && cleaned.subscriptionId !== null && cleaned.subscriptionId !== "") {
+    const parsedSubscriptionId = Number(cleaned.subscriptionId);
+    if (Number.isInteger(parsedSubscriptionId) && parsedSubscriptionId >= 0) {
+      cleaned.subscriptionId = parsedSubscriptionId;
+    } else {
+      delete cleaned.subscriptionId;
     }
   }
 

@@ -92,6 +92,10 @@ const commandTemplateSchema = new mongoose.Schema(
       type: Number,
       default: null
     },
+    subscriptionId: {
+      type: Number,
+      default: null
+    },
     enabled: {
       type: Boolean,
       default: null
