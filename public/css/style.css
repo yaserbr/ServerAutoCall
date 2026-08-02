@@ -4502,3 +4502,31 @@
                             animation: none !important;
                         }
                     }
+
+                    /* ==========================================
+                       Active Calling Button State & Pulse Wave
+                       ========================================== */
+                    .is-calling {
+                        position: relative;
+                        animation: activeCallPulse 1.6s ease-in-out infinite !important;
+                        background: linear-gradient(135deg, #14b8a6, #06b6d4) !important;
+                        border-color: rgba(103, 232, 249, 0.5) !important;
+                        color: #ffffff !important;
+                        box-shadow: 0 0 20px rgba(6, 182, 212, 0.6), inset 0 1px 0 rgba(255, 255, 255, 0.4) !important;
+                        pointer-events: auto;
+                    }
+
+                    @keyframes activeCallPulse {
+                        0% {
+                            transform: scale(1);
+                            box-shadow: 0 0 0 0px rgba(6, 182, 212, 0.7), 0 0 0 0px rgba(20, 184, 166, 0.4);
+                        }
+                        50% {
+                            transform: scale(1.04);
+                            box-shadow: 0 0 0 10px rgba(6, 182, 212, 0), 0 0 0 20px rgba(20, 184, 166, 0);
+                        }
+                        100% {
+                            transform: scale(1);
+                            box-shadow: 0 0 0 0px rgba(6, 182, 212, 0), 0 0 0 0px rgba(20, 184, 166, 0);
+                        }
+                    }

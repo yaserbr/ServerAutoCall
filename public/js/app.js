@@ -8035,6 +8035,21 @@
                 if (!res.ok) throw new Error(data.error || "Failed to send command");
 
                 showToast("Command sent", "success");
+
+                // Trigger stunning Calling/Ringing active state animation
+                if (!scheduledAt) {
+                    const callBtn = document.getElementById("sendCallBtn");
+                    if (callBtn) {
+                        callBtn.classList.add("is-calling");
+                        if (window.activeCallTimeout) clearTimeout(window.activeCallTimeout);
+                        if (durationSeconds) {
+                            window.activeCallTimeout = setTimeout(() => {
+                                callBtn.classList.remove("is-calling");
+                            }, durationSeconds * 1000);
+                        }
+                    }
+                }
+
                 await loadCommands();
             } catch (error) {
                 showToast(error.message, "error");
@@ -8050,6 +8065,16 @@
                 deviceUid,
                 action: "end"
             };
+
+            // Safely stop calling animation instantly upon user cancellation
+            const callBtn = document.getElementById("sendCallBtn");
+            if (callBtn) {
+                callBtn.classList.remove("is-calling");
+            }
+            if (window.activeCallTimeout) {
+                clearTimeout(window.activeCallTimeout);
+                window.activeCallTimeout = null;
+            }
 
             try {
                 const res = await apiFetch("/commands", {
