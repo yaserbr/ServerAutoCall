@@ -4332,134 +4332,189 @@
                     }
 
                     /* ==========================================
-                       Premium 3D Animated Bubble Toggle Switch
+                       Premium Animated Icon Toggle Switch
                        ========================================== */
-                    .bubble-label, .bubble {
-                        display: block;
-                        -webkit-tap-highlight-color: transparent;
-                    }
-
-                    .bubble-label {
-                        animation: float74 4s ease-in-out infinite;
+                    .premium-toggle-wrapper {
+                        position: relative;
                         display: inline-flex;
                         align-items: center;
                         justify-content: center;
-                        margin: 0;
                     }
 
-                    .bubble, .bubble:before, .bubble:after {
-                        transition-duration: 0.2s;
-                    }
-
-                    .bubble, .bubble:after {
-                        border-radius: 50%;
-                    }
-
-                    .bubble {
-                        background-image: 
-                            radial-gradient(8% 8% at 22% 28%, hsl(0,0%,100%) 45%, hsla(0,0%,100%,0) 50%),
-                            radial-gradient(8% 8% at 23% 27%, hsl(0,0%,100%) 45%, hsla(0,0%,100%,0) 50%),
-                            radial-gradient(8% 8% at 24% 26%, hsl(0,0%,100%) 45%, hsla(0,0%,100%,0) 50%),
-                            radial-gradient(8% 8% at 25% 25%, hsl(0,0%,100%) 45%, hsla(0,0%,100%,0) 50%),
-                            radial-gradient(8% 8% at 26% 24%, hsl(0,0%,100%) 45%, hsla(0,0%,100%,0) 50%),
-                            radial-gradient(8% 8% at 27% 23%, hsl(0,0%,100%) 45%, hsla(0,0%,100%,0) 50%),
-                            radial-gradient(8% 8% at 28% 22%, hsl(0,0%,100%) 45%, hsla(0,0%,100%,0) 50%);
-                        box-shadow: 
-                            0 -0.06em 0.1em hsl(215,90%,100%) inset,
-                            0 -0.15em 0.4em hsl(215,40%,12%) inset,
-                            0 0.05em 0.05em hsl(215,40%,25%) inset,
-                            0.05em 0 0.1em hsl(215,30%,95%) inset,
-                            -0.05em 0 0.1em hsl(215,30%,95%) inset,
-                            0 0.1em 0.4em hsl(215,15%,45%) inset;
-                        cursor: pointer;
-                        position: relative;
-                        width: 3em;
-                        height: 3em;
-                        font-size: 14px;
-                        transform-style: preserve-3d;
-                        transition-property: box-shadow, transform, width, height;
-                        transition-timing-function: ease-in-out, ease-in-out, var(--bubbleTiming, 0.2s), var(--bubbleTiming, 0.2s);
-                        will-change: transform;
-                        -webkit-appearance: none;
-                        appearance: none;
-                        z-index: 0;
-                    }
-
-                    .bubble:before, .bubble:after {
-                        content: "";
-                        display: block;
+                    /* Visually hide original input while preserving layout capability */
+                    .premium-toggle-input {
                         position: absolute;
-                        transition-timing-function: var(--bubbleTiming, 0.2s);
+                        width: 1px;
+                        height: 1px;
+                        padding: 0;
+                        margin: -1px;
+                        overflow: hidden;
+                        clip: rect(0, 0, 0, 0);
+                        white-space: nowrap;
+                        border: 0;
+                        opacity: 0;
                     }
 
-                    .bubble:before {
-                        border-radius: 0.75em;
-                        box-shadow: 0 0 0 0.5em hsl(0,0%,100%) inset;
-                        filter: drop-shadow(0.6em 0.6em 4px hsla(0,0%,0%,0.2));
-                        top: 50%;
-                        left: 50%;
-                        width: 1.5em;
-                        height: 1.5em;
-                        transform: translate3d(-50%,-50%,-1px);
-                        z-index: -1;
+                    /* The floating Liquid Glass orb button */
+                    .premium-toggle-label {
+                        display: flex;
+                        align-items: center;
+                        justify-content: center;
+                        position: relative;
+                        width: 52px;
+                        height: 52px;
+                        border-radius: 50%;
+                        cursor: pointer;
+                        background: rgba(255, 255, 255, 0.03);
+                        border: 1.5px solid rgba(255, 255, 255, 0.1);
+                        box-shadow: 
+                            0 8px 24px rgba(0, 0, 0, 0.25),
+                            inset 0 1px 1px rgba(255, 255, 255, 0.15),
+                            inset 0 -2px 6px rgba(0, 0, 0, 0.3);
+                        backdrop-filter: blur(12px) saturate(140%);
+                        -webkit-backdrop-filter: blur(12px) saturate(140%);
+                        transition: all 0.5s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+                        overflow: visible;
                     }
 
-                    .bubble:after {
-                        background: radial-gradient(100% 100% at center, hsla(0,0%,0%,0) 35%, hsla(0,0%,0%,0.2) 48%, hsla(0,0%,0%,0) 50%);
-                        filter: blur(4px);
-                        top: 0.6em;
-                        left: 0.6em;
+                    /* Base icon styling */
+                    .premium-toggle-icon {
+                        position: absolute;
+                        display: flex;
+                        align-items: center;
+                        justify-content: center;
+                        width: 24px;
+                        height: 24px;
+                        pointer-events: none;
+                        transition: all 0.6s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+                    }
+
+                    .premium-toggle-icon svg {
                         width: 100%;
                         height: 100%;
-                        transform: translate3d(0,0,-1px);
-                        z-index: -2;
                     }
 
-                    .bubble:focus, .bubble:hover {
+                    /* State OFF: Icon Off is active, Icon On is hidden & spun away */
+                    .premium-toggle-icon.icon-off {
+                        opacity: 0.75;
+                        color: #ef4444; /* Premium crimson/soft coral */
+                        transform: scale(1) rotate(0deg);
+                        filter: drop-shadow(0 2px 4px rgba(239, 68, 68, 0.2));
+                    }
+
+                    .premium-toggle-icon.icon-on {
+                        opacity: 0;
+                        color: #06b6d4; /* Sleek cyan */
+                        transform: scale(0.3) rotate(-135deg);
+                        filter: drop-shadow(0 0 0px transparent);
+                    }
+
+                    /* Hover & Focus Interaction when Checkbox is Unchecked */
+                    .premium-toggle-label:hover {
                         transform: scale(1.1);
-                        outline: none;
-                    }
-
-                    .bubble:focus:active, .bubble:hover:active {
-                        width: 3.6em;
-                        height: 2.4em;
-                    }
-
-                    .bubble:focus:before, .bubble:hover:before {
-                        filter: drop-shadow(0.75em 0.75em 4px hsla(0,0%,0%,0.2));
-                    }
-
-                    .bubble:focus:after, .bubble:hover:after {
-                        transform: translate3d(0.15em,0.15em,-1px);
-                    }
-
-                    .bubble:checked {
+                        border-color: rgba(255, 255, 255, 0.25);
+                        background: rgba(255, 255, 255, 0.07);
                         box-shadow: 
-                            0 -0.06em 0.1em hsl(174,100%,95%) inset,
-                            0 -0.15em 0.4em hsl(174,90%,25%) inset,
-                            0 0.05em 0.05em hsl(174,90%,30%) inset,
-                            0.05em 0 0.1em hsl(174,90%,95%) inset,
-                            -0.05em 0 0.1em hsl(174,90%,95%) inset,
-                            0 0.1em 0.4em hsl(174,90%,55%) inset;
+                            0 12px 32px rgba(0, 0, 0, 0.35),
+                            inset 0 1.5px 2px rgba(255, 255, 255, 0.2),
+                            inset 0 -1px 4px rgba(0, 0, 0, 0.2);
                     }
 
-                    .bubble:checked:before {
-                        border-radius: 0.25em;
-                        width: 0.5em;
+                    .premium-toggle-label:hover .premium-toggle-icon.icon-off {
+                        opacity: 1;
+                        transform: scale(1.05) rotate(-5deg);
+                        filter: drop-shadow(0 2px 8px rgba(239, 68, 68, 0.45));
                     }
 
+                    /* Focus indicator for accessibility */
+                    .premium-toggle-input:focus-visible + .premium-toggle-label {
+                        outline: 2px solid #06b6d4;
+                        outline-offset: 4px;
+                    }
+
+                    /* ==========================================
+                       State ON (Checkbox Checked)
+                       ========================================== */
+                    .premium-toggle-input:checked + .premium-toggle-label {
+                        border-color: rgba(6, 182, 212, 0.45);
+                        background: rgba(6, 182, 212, 0.12);
+                        box-shadow: 
+                            0 10px 30px rgba(6, 182, 212, 0.35),
+                            inset 0 2px 8px rgba(6, 182, 212, 0.2),
+                            inset 0 1px 0 rgba(255, 255, 255, 0.25);
+                    }
+
+                    /* Checked transition animations */
+                    .premium-toggle-input:checked + .premium-toggle-label .premium-toggle-icon.icon-off {
+                        opacity: 0;
+                        transform: scale(0.3) rotate(135deg);
+                    }
+
+                    .premium-toggle-input:checked + .premium-toggle-label .premium-toggle-icon.icon-on {
+                        opacity: 1;
+                        color: #67e8f9; /* Glowing cyan */
+                        transform: scale(1) rotate(0deg);
+                        filter: drop-shadow(0 0 10px rgba(103, 232, 249, 0.85));
+                    }
+
+                    /* Checked Hover Interaction */
+                    .premium-toggle-input:checked + .premium-toggle-label:hover {
+                        transform: scale(1.1);
+                        border-color: rgba(6, 182, 212, 0.65);
+                        background: rgba(6, 182, 212, 0.18);
+                        box-shadow: 
+                            0 14px 36px rgba(6, 182, 212, 0.45),
+                            inset 0 2px 10px rgba(6, 182, 212, 0.3),
+                            inset 0 1px 0 rgba(255, 255, 255, 0.35);
+                    }
+
+                    .premium-toggle-input:checked + .premium-toggle-label:hover .premium-toggle-icon.icon-on {
+                        transform: scale(1.05) rotate(5deg);
+                        filter: drop-shadow(0 0 14px rgba(103, 232, 249, 1));
+                    }
+
+                    /* Active Pressed Effect */
+                    .premium-toggle-label:active {
+                        transform: scale(0.95);
+                        transition-duration: 0.1s;
+                    }
+
+                    /* Glowing wave animation for phone active waves */
+                    @keyframes wavePulse {
+                        0% {
+                            opacity: 0.2;
+                            transform: scale(0.9) translate(-1px, 1px);
+                        }
+                        50% {
+                            opacity: 0.9;
+                            transform: scale(1.05) translate(0px, 0px);
+                            stroke-width: 2.5px;
+                        }
+                        100% {
+                            opacity: 0.2;
+                            transform: scale(0.9) translate(-1px, 1px);
+                        }
+                    }
+
+                    .premium-toggle-input:checked + .premium-toggle-label .wave-1 {
+                        animation: wavePulse 1.6s ease-in-out infinite;
+                        transform-origin: bottom left;
+                    }
+
+                    .premium-toggle-input:checked + .premium-toggle-label .wave-2 {
+                        animation: wavePulse 1.6s ease-in-out infinite 0.4s;
+                        transform-origin: bottom left;
+                    }
+
+                    /* Smooth motion respect */
                     @media (prefers-reduced-motion: reduce) {
-                        .bubble-label { animation: none; }
-                        .bubble, .bubble:before, .bubble:after { transition-duration: 0s; }
-                        .bubble:focus, .bubble:hover { transform: scale(1); }
-                        .bubble:focus:active, .bubble:hover:active { width: 3em; height: 3em; }
-                        .bubble:focus:before, .bubble:hover:before { filter: drop-shadow(0.6em 0.6em 4px hsla(0,0%,0%,0.2)); }
-                        .bubble:focus:after, .bubble:hover:after { transform: translate3d(0,0,-1px); }
-                    }
-
-                    @keyframes float74 {
-                        from, to { transform: translate(0,3%); }
-                        25% { transform: translate(-3%,0); }
-                        50% { transform: translate(0,-3%); }
-                        75% { transform: translate(3%,0); }
+                        .premium-toggle-label,
+                        .premium-toggle-icon {
+                            transition-duration: 0s !important;
+                            animation: none !important;
+                        }
+                        .premium-toggle-input:checked + .premium-toggle-label .wave-1,
+                        .premium-toggle-input:checked + .premium-toggle-label .wave-2 {
+                            animation: none !important;
+                        }
                     }
