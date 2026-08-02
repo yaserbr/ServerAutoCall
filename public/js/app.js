@@ -307,16 +307,7 @@
                 const title = escapeHtml(buildEsimProfileTitle(profile));
                 const phoneNumber = toNonEmptyString(profile.phoneNumber);
                 const slot = Number(profile.simSlotIndex);
-                const metaParts = [`Subscription ${subscriptionId}`];
-                if (Number.isInteger(portIndex) && portIndex >= 0) {
-                    metaParts.push(`Port ${portIndex}`);
-                }
-                if (Number.isInteger(cardId) && cardId >= 0) {
-                    metaParts.push(`Card ${cardId}`);
-                }
-                if (Number.isInteger(slot) && slot >= 0) {
-                    metaParts.push(`Slot ${slot}`);
-                }
+                const metaParts = [];
                 if (phoneNumber) {
                     metaParts.push(phoneNumber);
                 }
