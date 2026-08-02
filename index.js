@@ -2388,7 +2388,9 @@ const devicesRouter = createDevicesRouter({
   isDeviceOwnedByUser,
   mapDeviceForResponse,
   parseRequestBodyObject,
-  DEVICE_UID_FORMAT_ERROR
+  DEVICE_UID_FORMAT_ERROR,
+  DEVICE_UID_REGEX,
+  translatePairingTokenReasonToCodeReason
 });
 app.use(devicesRouter);
 

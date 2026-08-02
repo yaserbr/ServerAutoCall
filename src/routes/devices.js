@@ -37,7 +37,9 @@ function createDevicesRouter({
   isDeviceOwnedByUser,
   mapDeviceForResponse,
   parseRequestBodyObject,
-  DEVICE_UID_FORMAT_ERROR
+  DEVICE_UID_FORMAT_ERROR,
+  DEVICE_UID_REGEX,
+  translatePairingTokenReasonToCodeReason
 }) {
   const router = express.Router();
 
