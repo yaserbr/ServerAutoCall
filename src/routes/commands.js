@@ -1,5 +1,6 @@
 const express = require("express");
 const mongoose = require("mongoose");
+const { hasPresentValue, addIfPresent, commandIdFrom, toPlainObject } = require("../utils/objects");
 
 /**
  * Creates and configures the Commands and Collections router.
@@ -1354,33 +1355,6 @@ function createCommandsRouter({
   });
 
   // Helpers internal to router
-  function hasPresentValue(value) {
-    if (value === undefined || value === null) return false;
-    if (typeof value === "string" && value.trim() === "") return false;
-    return true;
-  }
-
-  function addIfPresent(obj, key, value) {
-    if (!obj || typeof obj !== "object") return;
-    if (hasPresentValue(value)) {
-      obj[key] = value;
-    }
-  }
-
-  function commandIdFrom(commandOrObject) {
-    const source = toPlainObject(commandOrObject);
-    if (!source) return null;
-    return source._id ? String(source._id) : null;
-  }
-
-  function toPlainObject(documentOrObject) {
-    if (!documentOrObject) return documentOrObject;
-    if (typeof documentOrObject.toObject === "function") {
-      return documentOrObject.toObject();
-    }
-    return documentOrObject;
-  }
-
   return router;
 }
 

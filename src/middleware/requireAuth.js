@@ -56,8 +56,9 @@ function requireAuth(req, res, next) {
 
   const verification = verifyAccessToken(token);
   if (!verification.ok && verification.reason === "auth_disabled") {
-    return res.status(503).json({
-      error: "Authentication is disabled: JWT_SECRET is not configured"
+    console.error("[Auth] Authentication is disabled: JWT_SECRET is not configured");
+    return res.status(500).json({
+      error: "Internal server error"
     });
   }
 

@@ -44,6 +44,7 @@ const {
 const { runAgentOrchestrator } = require("./src/services/agentService");
 const CommandCollectionService = require("./src/services/commandCollectionService");
 const CollectionTemplate = require("./src/models/CollectionTemplate");
+const { hasPresentValue, addIfPresent, unsetIfPresent, toPlainObject, commandIdFrom } = require("./src/utils/objects");
 const createAuthRouter = require("./src/routes/auth");
 const createDevicesRouter = require("./src/routes/devices");
 const createCommandsRouter = require("./src/routes/commands");
@@ -897,18 +898,6 @@ function parseTouchTarget(value) {
   return ["back", "home", "recents"].includes(normalized) ? normalized : null;
 }
 
-function hasPresentValue(value) {
-  if (value === undefined || value === null) return false;
-  if (typeof value === "string" && value.trim() === "") return false;
-  return true;
-}
-
-function addIfPresent(obj, key, value) {
-  if (!obj || typeof obj !== "object") return;
-  if (hasPresentValue(value)) {
-    obj[key] = value;
-  }
-}
 
 function normalizeOptionalCommandSubscriptionId(commandLike, targetDevice) {
   if (!commandLike || typeof commandLike !== "object") {
@@ -959,15 +948,6 @@ function normalizeOptionalCommandSubscriptionId(commandLike, targetDevice) {
   return { ok: true };
 }
 
-function unsetIfPresent(document, key) {
-  if (!document || typeof document.get !== "function" || typeof document.set !== "function") {
-    return;
-  }
-
-  if (document.get(key) !== undefined) {
-    document.set(key, undefined);
-  }
-}
 
 function normalizeOpenAppAliasKey(value) {
   if (typeof value !== "string") return "";
@@ -1227,13 +1207,6 @@ function ensureDeviceName(device) {
   return normalizeDeviceName(device?.deviceName) ?? buildDefaultDeviceName(device?.deviceUid);
 }
 
-function toPlainObject(documentOrObject) {
-  if (!documentOrObject) return documentOrObject;
-  if (typeof documentOrObject.toObject === "function") {
-    return documentOrObject.toObject();
-  }
-  return documentOrObject;
-}
 
 function getActiveDeviceSocketCount(deviceUid) {
   const normalizedDeviceUid = normalizeDeviceUid(deviceUid);
@@ -1618,11 +1591,6 @@ function nowIsoTimestamp() {
   return new Date(toUtcISOString()).toISOString();
 }
 
-function commandIdFrom(commandOrObject) {
-  const source = toPlainObject(commandOrObject);
-  if (!source) return null;
-  return source._id ? String(source._id) : null;
-}
 
 function getCommandFetchCutoffDate() {
   return new Date(Date.now() - COMMAND_FETCH_WINDOW_MS);
@@ -2340,6 +2308,8 @@ app.get("/health", (req, res) => {
   return res.status(200).json({ ok: true });
 });
 
+const DUMMY_CHUNK = Buffer.alloc(DUMMY_DOWNLOAD_CHUNK_BYTES, 0x61);
+
 app.get("/dummy-download", requireAuthenticatedDevice, (req, res) => {
   const requestedMb = parseDownloadSizeMb(req.query?.mb);
   if (requestedMb === null) {
@@ -2349,7 +2319,6 @@ app.get("/dummy-download", requireAuthenticatedDevice, (req, res) => {
   }
 
   const totalBytes = requestedMb * 1024 * 1024;
-  const chunk = Buffer.alloc(DUMMY_DOWNLOAD_CHUNK_BYTES, 0x61);
   let remainingBytes = totalBytes;
 
   console.log("[DummyDownload] start", {
@@ -2367,8 +2336,8 @@ app.get("/dummy-download", requireAuthenticatedDevice, (req, res) => {
       const bytesToWrite = Math.min(DUMMY_DOWNLOAD_CHUNK_BYTES, remainingBytes);
       const payload =
         bytesToWrite === DUMMY_DOWNLOAD_CHUNK_BYTES
-          ? chunk
-          : chunk.subarray(0, bytesToWrite);
+          ? DUMMY_CHUNK
+          : DUMMY_CHUNK.subarray(0, bytesToWrite);
       const canContinue = res.write(payload);
       remainingBytes -= bytesToWrite;
 
@@ -2618,7 +2587,10 @@ app.post("/agent/chat", requireAuth, async (req, res) => {
     
     let contacts = [];
     if (uniquePotentialNames.length > 0) {
-      const regexPool = uniquePotentialNames.map(name => new RegExp(name, "i"));
+      function escapeRegExp(string) {
+        return string.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      }
+      const regexPool = uniquePotentialNames.map(name => new RegExp(escapeRegExp(name), "i"));
       contacts = await Contact.find({
         userId: currentUserId,
         name: { $in: regexPool }
@@ -2746,81 +2718,6 @@ app.post("/agent/chat", requireAuth, async (req, res) => {
 
   } catch (error) {
     return handleServerError(res, error, "POST /agent/chat");
-  }
-});
-
-// ==========================================
-// Autonomous AI Agent Confirmation Endpoint
-// ==========================================
-app.post("/agent/chat/confirm", requireAuth, async (req, res) => {
-  try {
-    const currentUserId = normalizeAuthUserId(req.user?.id);
-    if (!currentUserId) {
-      return res.status(401).json({ error: "Unauthorized" });
-    }
-
-    const { draftCommand } = req.body;
-    if (!draftCommand || typeof draftCommand !== "object") {
-      return res.status(400).json({ error: "draftCommand object is required" });
-    }
-
-    const normalizedDeviceUid = normalizeDeviceUid(draftCommand.deviceUid);
-    if (!normalizedDeviceUid) {
-      return res.status(400).json({ error: DEVICE_UID_FORMAT_ERROR });
-    }
-
-    // Verify target device ownership
-    const targetDevice = await Device.findOne({ deviceUid: normalizedDeviceUid });
-    if (!targetDevice) {
-      return res.status(404).json({ error: "Device not found" });
-    }
-
-    if (!targetDevice.ownerUserId) {
-      return res.status(403).json({ error: "Device is not claimed" });
-    }
-
-    if (!isDeviceOwnedByUser(targetDevice, currentUserId)) {
-      return res.status(403).json({ error: "Forbidden" });
-    }
-
-    // Build finalized command data
-    const finalCommandData = {
-      ...draftCommand,
-      deviceUid: targetDevice.deviceUid,
-      status: "pending",
-      createdAt: new Date(toUtcISOString())
-    };
-    const subscriptionValidation = normalizeOptionalCommandSubscriptionId(
-      finalCommandData,
-      targetDevice
-    );
-    if (!subscriptionValidation.ok) {
-      return res.status(400).json({ error: subscriptionValidation.error });
-    }
-
-    const command = await Command.create(finalCommandData);
-
-    logCommandLifecycle("created", {
-      commandId: commandIdFrom(command),
-      deviceUid: targetDevice.deviceUid,
-      oldStatus: null,
-      newStatus: "pending",
-      details: {
-        action: command.action,
-        type: command.type,
-        agentConfirmed: true
-      }
-    });
-
-    const commandResponse = emitCommandCreated(command);
-
-    return res.json({
-      success: true,
-      command: commandResponse
-    });
-
-  } catch (error) {
-    return handleServerError(res, error, "POST /agent/chat/confirm");
   }
 });
 

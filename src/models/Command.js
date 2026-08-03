@@ -186,6 +186,7 @@ commandSchema.pre("validate", function normalizeUidBeforeValidation() {
   this.deviceUid = normalizeDeviceUid(this.deviceUid);
 });
 
+commandSchema.index({ deviceUid: 1, status: 1, createdAt: -1 });
 commandSchema.index({ deviceUid: 1, status: 1 });
 commandSchema.index({ isImmediate: -1, scheduledAt: 1, createdAt: -1 });
 commandSchema.index({ deviceUid: 1, createdAt: -1 });

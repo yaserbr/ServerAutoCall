@@ -8352,67 +8352,12 @@
                 detailsHtml += `<p><strong>Scheduled At (Riyadh):</strong> ${displayDate}</p>`;
             }
 
-            // Standardize stringified JSON to bind inside onclick event safely
-            const escapedCommandJson = JSON.stringify(draftCommand).replace(/'/g, "\\'").replace(/"/g, "&quot;");
-
-            detailsHtml += `
-                <div class="actions">
-                    <button class="btn-approve" onclick="approveDraftCommand('${cardId}', ${escapedCommandJson})">Approve Action</button>
-                    <button class="btn-cancel" onclick="cancelDraftCommand('${cardId}')">Cancel</button>
-                </div>
-            `;
-
             card.innerHTML = detailsHtml;
             chatLog.appendChild(card);
             chatLog.scrollTop = chatLog.scrollHeight;
-        }
-
-        async function approveDraftCommand(cardId, draftCommand) {
-            const card = document.getElementById(cardId);
-            if (!card) return;
-
-            const buttons = card.querySelectorAll("button");
-            buttons.forEach(btn => btn.disabled = true);
-
-            try {
-                const res = await apiFetch("/agent/chat/confirm", {
-                    method: "POST",
-                    headers: {
-                        "Content-Type": "application/json"
-                    },
-                    body: JSON.stringify({ draftCommand })
-                });
-
-                const data = await res.json();
-                if (!res.ok) throw new Error(data.error || "Execution failed");
-
-                card.innerHTML = `
-                    <h4 style="color: #22c55e; margin: 0 0 4px 0;">Proposed Draft Command - Approved</h4>
-                    <p style="margin: 0; color: #84cc16; font-size: 13px;">&#10004; Approved! Command is now pending execution on device ${draftCommand.deviceUid}.</p>
-                `;
-
-                showToast("Action approved and queued", "success");
-                if (typeof loadCommands === "function") {
-                    await loadCommands();
-                }
-            } catch (error) {
-                buttons.forEach(btn => btn.disabled = false);
-                showToast(error.message, "error");
             }
-        }
 
-        function cancelDraftCommand(cardId) {
-            const card = document.getElementById(cardId);
-            if (!card) return;
-
-            card.innerHTML = `
-                <h4 style="color: #94a3b8; margin: 0 0 4px 0;">Proposed Draft Command - Declined</h4>
-                <p style="margin: 0; color: #94a3b8; font-size: 13px;">Declined by the user.</p>
-            `;
-            showToast("Draft command discarded", "info");
-        }
-
-        function toggleAiChat() {
+            function toggleAiChat() {
             const popup = document.getElementById("aiChatPopup");
             if (!popup) return;
 
