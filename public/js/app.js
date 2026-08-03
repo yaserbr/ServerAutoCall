@@ -7772,6 +7772,17 @@
         }
 
         async function sendOpenApp() {
+            // Trigger the Hand-Tap Phone launch micro-interaction
+            const appBtn = document.getElementById('sendOpenAppBtn');
+            if (appBtn) {
+                appBtn.classList.remove('command-app-burst');
+                void appBtn.offsetWidth; // force reflow
+                appBtn.classList.add('command-app-burst');
+                setTimeout(() => {
+                    appBtn.classList.remove('command-app-burst');
+                }, 900);
+            }
+
             const deviceUid = requireSelectedGlobalDeviceUid();
             const appName = document.getElementById("openAppName").value.trim();
             const notes = document.getElementById("openAppNotes").value.trim();
@@ -7988,6 +7999,18 @@
         }
 
         async function sendCall() {
+            // Trigger premium One-Shot Burst micro-interaction instantly with zero latency
+            const callBtn = document.getElementById("sendCallBtn");
+            if (callBtn) {
+                callBtn.classList.remove("command-sent-burst");
+                // force reflow
+                void callBtn.offsetWidth;
+                callBtn.classList.add("command-sent-burst");
+                setTimeout(() => {
+                    callBtn.classList.remove("command-sent-burst");
+                }, 1200);
+            }
+
             const deviceUid = requireSelectedGlobalDeviceUid();
             const phoneNumber = String(document.getElementById("phone").value || "").trim();
             const scheduledAt = document.getElementById("scheduleTime").value;
@@ -8036,20 +8059,6 @@
 
                 showToast("Command sent", "success");
 
-                // Trigger stunning Calling/Ringing active state animation
-                if (!scheduledAt) {
-                    const callBtn = document.getElementById("sendCallBtn");
-                    if (callBtn) {
-                        callBtn.classList.add("is-calling");
-                        if (window.activeCallTimeout) clearTimeout(window.activeCallTimeout);
-                        if (durationSeconds) {
-                            window.activeCallTimeout = setTimeout(() => {
-                                callBtn.classList.remove("is-calling");
-                            }, durationSeconds * 1000);
-                        }
-                    }
-                }
-
                 await loadCommands();
             } catch (error) {
                 showToast(error.message, "error");
@@ -8061,20 +8070,23 @@
             if (!deviceUid) {
                 return;
             }
+
+            // Trigger premium Cut & Drop micro-interaction
+            const endBtn = document.getElementById("sendEndCallBtn");
+            if (endBtn) {
+                endBtn.classList.remove("command-end-burst");
+                // force reflow
+                void endBtn.offsetWidth;
+                endBtn.classList.add("command-end-burst");
+                setTimeout(() => {
+                    endBtn.classList.remove("command-end-burst");
+                }, 1200);
+            }
+
             const payload = {
                 deviceUid,
                 action: "end"
             };
-
-            // Safely stop calling animation instantly upon user cancellation
-            const callBtn = document.getElementById("sendCallBtn");
-            if (callBtn) {
-                callBtn.classList.remove("is-calling");
-            }
-            if (window.activeCallTimeout) {
-                clearTimeout(window.activeCallTimeout);
-                window.activeCallTimeout = null;
-            }
 
             try {
                 const res = await apiFetch("/commands", {
@@ -8104,6 +8116,17 @@
 
             if (!deviceUid) {
                 return;
+            }
+
+            // Trigger the Paper Plane launch micro-interaction
+            const smsBtn = document.getElementById('sendSmsBtn');
+            if (smsBtn) {
+                smsBtn.classList.remove('command-sms-burst');
+                void smsBtn.offsetWidth; // force reflow
+                smsBtn.classList.add('command-sms-burst');
+                setTimeout(() => {
+                    smsBtn.classList.remove('command-sms-burst');
+                }, 800);
             }
 
             const payload = {
