@@ -69,6 +69,7 @@
         let deviceActionOverlayCloseTimerId = null;
         const COMMAND_CONFIRM_OVERLAY_ANIMATION_MS = 220;
         let commandConfirmOverlayCloseTimerId = null;
+        const RETURN_HOME_BUTTON_ANIMATION_MS = 1050;
         const deviceActionDialogState = {
             mode: "",
             resolver: null
@@ -7780,7 +7781,7 @@
                 appBtn.classList.add('command-app-burst');
                 setTimeout(() => {
                     appBtn.classList.remove('command-app-burst');
-                }, 900);
+                }, 1040);
             }
 
             const deviceUid = requireSelectedGlobalDeviceUid();
@@ -7822,7 +7823,22 @@
             }
         }
 
+        function triggerReturnToAutoCallAnimation() {
+            const returnBtn = document.getElementById("sendReturnToAutoCallBtn");
+            if (!returnBtn) return;
+
+            returnBtn.classList.remove("command-return-home-burst");
+            void returnBtn.offsetWidth;
+            returnBtn.classList.add("command-return-home-burst");
+
+            window.setTimeout(() => {
+                returnBtn.classList.remove("command-return-home-burst");
+            }, RETURN_HOME_BUTTON_ANIMATION_MS);
+        }
+
         async function sendReturnToAutoCall() {
+            triggerReturnToAutoCallAnimation();
+
             const deviceUid = requireSelectedGlobalDeviceUid();
 
             if (!deviceUid) {
