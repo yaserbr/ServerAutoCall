@@ -4685,6 +4685,42 @@
                     /* ==========================================
                        Open App Hand-Tap Animation
                        ========================================== */
+                    #sendOpenAppBtn {
+                        overflow: hidden;
+                        isolation: isolate;
+                        background: transparent;
+                        border-color: transparent;
+                        box-shadow: none;
+                    }
+
+                    #sendOpenAppBtn::before {
+                        content: "";
+                        position: absolute;
+                        inset: 0;
+                        z-index: 0;
+                        border-radius: inherit;
+                        border: 1px solid rgba(255, 255, 255, 0.25);
+                        background: linear-gradient(135deg, var(--accent), var(--accent-soft));
+                        box-shadow: 0 6px 18px rgba(46, 196, 182, 0.35);
+                        transform-origin: center;
+                        will-change: transform, opacity, border-radius;
+                    }
+
+                    #sendOpenAppBtn:hover {
+                        box-shadow: none;
+                    }
+
+                    #sendOpenAppBtn:hover::before {
+                        box-shadow: 0 10px 22px rgba(46, 196, 182, 0.45);
+                    }
+
+                    #sendOpenAppBtn .open-app-content-wrapper {
+                        position: relative;
+                        z-index: 2;
+                        transform-origin: center;
+                        will-change: transform, opacity;
+                    }
+
                     .command-app-burst {
                         background: transparent !important;
                         border-color: transparent !important;
@@ -4693,48 +4729,149 @@
                         z-index: 50;
                     }
 
+                    .command-app-burst::before {
+                        animation: openAppButtonToPhone 1.04s cubic-bezier(0.2, 0.82, 0.2, 1) forwards;
+                    }
+
                     .command-app-burst .open-app-content-wrapper {
-                        opacity: 0 !important;
+                        animation: openAppContentIntoPhone 1.04s cubic-bezier(0.2, 0.82, 0.2, 1) forwards !important;
                     }
 
                     .command-app-burst .open-app-tap-icon {
-                        opacity: 1 !important;
-                        transform: translate(-50%, -50%) scale(1.35) !important;
-                        color: #00d2ff;
-                        filter: drop-shadow(0 2px 8px rgba(0, 210, 255, 0.4));
-                        animation: fadeOutScale 0.9s ease-in-out forwards !important;
+                        opacity: 0;
+                        color: var(--accent);
+                        filter: drop-shadow(0 2px 8px rgba(46, 196, 182, 0.42));
+                        animation: openAppPhoneTapReveal 1.04s cubic-bezier(0.2, 0.82, 0.2, 1) forwards !important;
+                    }
+
+                    .command-app-burst .open-app-tap-icon rect {
+                        fill: rgba(46, 196, 182, 0.12);
                     }
 
                     .command-app-burst .tap-finger-path {
-                        animation: fingerTapMotion 0.9s ease-out !important;
+                        animation: fingerTapMotion 1.04s ease-out !important;
                     }
 
                     .command-app-burst .tap-ripple-circle {
-                        animation: rippleExpand 0.9s ease-out !important;
+                        stroke: var(--accent) !important;
+                        fill: rgba(46, 196, 182, 0.18) !important;
+                        animation: rippleExpand 1.04s ease-out !important;
+                    }
+
+                    @keyframes openAppButtonToPhone {
+                        0% {
+                            opacity: 1;
+                            border-radius: 12px;
+                            transform: scale(1, 1);
+                            box-shadow: 0 6px 18px rgba(46, 196, 182, 0.35);
+                        }
+                        20% {
+                            opacity: 1;
+                            border-radius: 10px;
+                            transform: scale(0.34, 1.02);
+                            box-shadow: 0 8px 18px rgba(46, 196, 182, 0.22);
+                        }
+                        30% {
+                            opacity: 0.72;
+                            border-radius: 8px;
+                            transform: scale(0.2, 0.82);
+                            box-shadow: 0 4px 10px rgba(46, 196, 182, 0.14);
+                        }
+                        38% {
+                            opacity: 0;
+                            border-radius: 8px;
+                            transform: scale(0.2, 0.82);
+                            box-shadow: none;
+                        }
+                        88% {
+                            opacity: 0;
+                            border-radius: 8px;
+                            transform: scale(0.2, 0.82);
+                            box-shadow: none;
+                        }
+                        100% {
+                            opacity: 1;
+                            border-radius: 12px;
+                            transform: scale(1, 1);
+                            box-shadow: 0 6px 18px rgba(46, 196, 182, 0.35);
+                        }
+                    }
+
+                    @keyframes openAppContentIntoPhone {
+                        0% {
+                            opacity: 1;
+                            transform: scale(1);
+                        }
+                        16% {
+                            opacity: 0.45;
+                            transform: scale(0.62);
+                        }
+                        28%, 90% {
+                            opacity: 0;
+                            transform: scale(0.16);
+                        }
+                        100% {
+                            opacity: 1;
+                            transform: scale(1);
+                        }
+                    }
+
+                    @keyframes openAppPhoneTapReveal {
+                        0%, 22% {
+                            opacity: 0;
+                            transform: translate(-50%, -50%) scale(0.72);
+                        }
+                        32% {
+                            opacity: 1;
+                            transform: translate(-50%, -50%) scale(1.08);
+                        }
+                        46% {
+                            opacity: 1;
+                            transform: translate(-50%, -50%) scale(1.35);
+                        }
+                        88% {
+                            opacity: 1;
+                            transform: translate(-50%, -50%) scale(1.35);
+                        }
+                        100% {
+                            opacity: 0;
+                            transform: translate(-50%, -50%) scale(0.86);
+                        }
                     }
 
                     @keyframes fingerTapMotion {
                         0% {
-                            transform: translate(3px, -4px);
+                            opacity: 0;
+                            transform: translate(4px, -5px);
                         }
-                        25% {
+                        28% {
+                            opacity: 0;
+                            transform: translate(4px, -5px);
+                        }
+                        42% {
+                            opacity: 1;
+                            transform: translate(0px, 0px);
+                        }
+                        76% {
+                            opacity: 1;
                             transform: translate(0px, 0px);
                         }
                         100% {
-                            transform: translate(3px, -4px);
+                            opacity: 1;
+                            transform: translate(4px, -5px);
                         }
                     }
 
                     @keyframes rippleExpand {
-                        0%, 20% {
+                        0%, 42% {
                             r: 1;
                             opacity: 0;
                         }
-                        25% {
+                        46% {
                             r: 1;
                             opacity: 1;
                         }
-                        70% {
+                        78% {
                             r: 4;
                             opacity: 0;
                         }
@@ -4756,5 +4893,190 @@
                         100% {
                             opacity: 0;
                             transform: translate(-50%, -50%) scale(0.85);
+                        }
+                    }
+
+                    /* ==========================================
+                       Return to AutoCall Center-Dot Home Animation
+                       ========================================== */
+                    .return-home-button {
+                        position: relative;
+                        display: inline-flex;
+                        align-items: center;
+                        justify-content: center;
+                        gap: 6px;
+                        min-width: 176px;
+                        overflow: hidden;
+                        isolation: isolate;
+                        background: transparent;
+                        border-color: transparent;
+                        box-shadow: none;
+                    }
+
+                    .return-home-button:hover {
+                        box-shadow: none;
+                    }
+
+                    .return-home-button::before {
+                        content: "";
+                        position: absolute;
+                        inset: 0;
+                        z-index: 0;
+                        border-radius: inherit;
+                        border: 1px solid rgba(255, 255, 255, 0.25);
+                        background: linear-gradient(135deg, var(--accent), var(--accent-soft));
+                        box-shadow: 0 6px 18px rgba(46, 196, 182, 0.35);
+                        transform-origin: center;
+                        will-change: transform, opacity, border-radius;
+                    }
+
+                    .return-home-content {
+                        position: relative;
+                        z-index: 2;
+                        display: inline-flex;
+                        align-items: center;
+                        justify-content: center;
+                        gap: 6px;
+                        transform-origin: center;
+                        will-change: transform, opacity;
+                    }
+
+                    .return-home-live-icon {
+                        flex: 0 0 auto;
+                    }
+
+                    .return-home-text {
+                        display: inline-block;
+                        white-space: nowrap;
+                    }
+
+                    .return-home-reveal-icon {
+                        position: absolute;
+                        top: 50%;
+                        left: 50%;
+                        z-index: 3;
+                        width: 16px;
+                        height: 16px;
+                        color: #06272f;
+                        opacity: 0;
+                        pointer-events: none;
+                        transform: translate(-50%, -50%) scale(0.2);
+                        transform-origin: center;
+                        will-change: transform, opacity;
+                    }
+
+                    .command-return-home-burst {
+                        pointer-events: none;
+                        transform: none !important;
+                        box-shadow: none !important;
+                    }
+
+                    .command-return-home-burst:hover {
+                        transform: none !important;
+                        box-shadow: none !important;
+                    }
+
+                    .command-return-home-burst::before {
+                        box-shadow: none;
+                        animation: returnHomeButtonGather 1.05s cubic-bezier(0.2, 0.82, 0.2, 1) forwards;
+                    }
+
+                    .command-return-home-burst .return-home-content {
+                        animation: returnHomeContentGather 1.05s cubic-bezier(0.2, 0.82, 0.2, 1) forwards;
+                    }
+
+                    .command-return-home-burst .return-home-reveal-icon {
+                        animation: returnHomeRevealSettle 1.05s cubic-bezier(0.2, 0.82, 0.2, 1) forwards;
+                    }
+
+                    @keyframes returnHomeButtonGather {
+                        0% {
+                            opacity: 1;
+                            border-radius: 12px;
+                            transform: scale(1, 1);
+                            box-shadow: none;
+                        }
+                        38% {
+                            opacity: 1;
+                            border-radius: 999px;
+                            transform: scale(0.08, 0.24);
+                            box-shadow: none;
+                        }
+                        52% {
+                            opacity: 0.96;
+                            border-radius: 999px;
+                            transform: scale(0.08, 0.24);
+                            box-shadow: none;
+                        }
+                        86% {
+                            opacity: 1;
+                            border-radius: 12px;
+                            transform: scale(1, 1);
+                            box-shadow: none;
+                        }
+                        100% {
+                            opacity: 1;
+                            border-radius: 12px;
+                            transform: scale(1, 1);
+                            box-shadow: none;
+                        }
+                    }
+
+                    @keyframes returnHomeContentGather {
+                        0% {
+                            opacity: 1;
+                            transform: scale(1);
+                        }
+                        28% {
+                            opacity: 0.34;
+                            transform: scale(0.45);
+                        }
+                        38%, 70% {
+                            opacity: 0;
+                            transform: scale(0.08);
+                        }
+                        86% {
+                            opacity: 0;
+                            transform: scale(0.98);
+                        }
+                        100% {
+                            opacity: 1;
+                            transform: scale(1);
+                        }
+                    }
+
+                    @keyframes returnHomeRevealSettle {
+                        0%, 34% {
+                            opacity: 0;
+                            transform: translate(-50%, -50%) scale(0.2);
+                            filter: drop-shadow(0 0 0 rgba(4, 39, 47, 0));
+                        }
+                        48% {
+                            opacity: 1;
+                            transform: translate(-50%, -50%) scale(2.35);
+                            filter: drop-shadow(0 4px 10px rgba(4, 39, 47, 0.2));
+                        }
+                        68% {
+                            opacity: 1;
+                            transform: translate(-50%, -50%) scale(2.35);
+                            filter: drop-shadow(0 4px 10px rgba(4, 39, 47, 0.18));
+                        }
+                        88% {
+                            opacity: 1;
+                            transform: translate(calc(-50% - 59px), -50%) scale(1);
+                            filter: drop-shadow(0 2px 6px rgba(4, 39, 47, 0.08));
+                        }
+                        100% {
+                            opacity: 0;
+                            transform: translate(calc(-50% - 59px), -50%) scale(1);
+                            filter: drop-shadow(0 0 0 rgba(4, 39, 47, 0));
+                        }
+                    }
+
+                    @media (prefers-reduced-motion: reduce) {
+                        .command-return-home-burst::before,
+                        .command-return-home-burst .return-home-content,
+                        .command-return-home-burst .return-home-reveal-icon {
+                            animation: none !important;
                         }
                     }
