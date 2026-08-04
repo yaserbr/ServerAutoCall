@@ -1,6 +1,6 @@
 const express = require("express");
 const mongoose = require("mongoose");
-const { hasPresentValue, addIfPresent, commandIdFrom, toPlainObject } = require("../utils/objects");
+const { hasPresentValue, addIfPresent, commandIdFrom } = require("../utils/objects");
 const { ensureDeviceOwnershipEpoch } = require("../security/deviceOwnership");
 const { safeErrorMetadata } = require("../security/safeError");
 const {

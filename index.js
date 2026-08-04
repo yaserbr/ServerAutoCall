@@ -74,7 +74,7 @@ const {
   shouldApplyCommandDuplicateGuard
 } = require("./src/services/commandDeduplicationService");
 const CollectionTemplate = require("./src/models/CollectionTemplate");
-const { hasPresentValue, addIfPresent, unsetIfPresent, toPlainObject, commandIdFrom } = require("./src/utils/objects");
+const { hasPresentValue, unsetIfPresent, toPlainObject, commandIdFrom } = require("./src/utils/objects");
 const createAuthRouter = require("./src/routes/auth");
 const createDevicesRouter = require("./src/routes/devices");
 const createCommandsRouter = require("./src/routes/commands");

@@ -374,7 +374,6 @@
                 const portIndex = Number(profile.portIndex);
                 const title = escapeHtml(buildEsimProfileTitle(profile));
                 const phoneNumber = toNonEmptyString(profile.phoneNumber);
-                const slot = Number(profile.simSlotIndex);
                 const metaParts = [];
                 if (phoneNumber) {
                     metaParts.push(phoneNumber);
@@ -1045,11 +1044,6 @@
             if (pinnedScreenMirrorDeviceUid === normalizedDeviceUid) {
                 applyPinnedScreenMirrorSizing();
             }
-        }
-
-        function isScreenMirrorRunningStatus(status) {
-            const normalizedStatus = String(status || "").trim().toLowerCase();
-            return ["live", "running", "active", "started", "starting"].includes(normalizedStatus);
         }
 
         function getScreenMirrorDeviceDisplayName(deviceUid) {
@@ -2408,21 +2402,6 @@
             }
         }
 
-        function showPinnedScreenMirrorPanel() {
-            const panel = getScreenMirrorPinnedPanel();
-            if (!panel) return;
-
-            if (screenMirrorPinnedCloseTimerId) {
-                clearTimeout(screenMirrorPinnedCloseTimerId);
-                screenMirrorPinnedCloseTimerId = null;
-            }
-
-            panel.classList.remove("panel-hidden");
-            requestAnimationFrame(() => {
-                panel.classList.add("is-visible");
-            });
-        }
-
         function hidePinnedScreenMirrorPanel(immediate = false) {
             const panel = getScreenMirrorPinnedPanel();
             if (!panel) return;
@@ -3454,28 +3433,12 @@
             }
         }
 
-        async function stopAllActiveScreenMirrors() {
-            const deviceUids = [...activeScreenMirrorDeviceUids];
-            if (deviceUids.length === 0) {
-                showToast("No active mirror sessions", "error");
-                return;
-            }
-
-            for (const deviceUid of deviceUids) {
-                await stopActiveScreenMirror(deviceUid, { removeAfterStop: true });
-            }
-        }
-
         function getScreenMirrorViewerNode() {
             return document.getElementById("screenMirrorViewerNode");
         }
 
         function getScreenMirrorViewerDockSlot() {
             return document.getElementById("screenMirrorViewerDockSlot");
-        }
-
-        function getScreenMirrorViewerFloatingSlot() {
-            return document.getElementById("screenMirrorFloatingBody");
         }
 
         function getScreenMirrorFloatingPanel() {
@@ -3604,21 +3567,6 @@
             return true;
         }
 
-        function showScreenMirrorFloatingPanel() {
-            const floatingPanel = getScreenMirrorFloatingPanel();
-            if (!floatingPanel) return;
-
-            if (screenMirrorFloatingCloseTimerId) {
-                clearTimeout(screenMirrorFloatingCloseTimerId);
-                screenMirrorFloatingCloseTimerId = null;
-            }
-
-            floatingPanel.classList.remove("panel-hidden");
-            requestAnimationFrame(() => {
-                floatingPanel.classList.add("is-visible");
-            });
-        }
-
         function hideScreenMirrorFloatingPanel(immediate = false) {
             const floatingPanel = getScreenMirrorFloatingPanel();
             if (!floatingPanel) return;
@@ -3639,31 +3587,6 @@
                 floatingPanel.classList.add("panel-hidden");
                 screenMirrorFloatingCloseTimerId = null;
             }, SCREEN_MIRROR_FLOAT_ANIMATION_MS);
-        }
-
-        function pinScreenMirror() {
-            const floatingSlot = getScreenMirrorViewerFloatingSlot();
-            const minimizeButton = document.getElementById("screenMirrorMinimizeBtn");
-            if (!floatingSlot) return;
-            if (!moveScreenMirrorViewerTo(floatingSlot)) return;
-            resetScreenMirrorViewerDockedStyle();
-
-            isScreenMirrorPinned = true;
-            isScreenMirrorFloatingHidden = false;
-            isScreenMirrorFloatingMinimized = false;
-
-            const floatingPanel = getScreenMirrorFloatingPanel();
-            if (floatingPanel) {
-                floatingPanel.classList.remove("minimized");
-            }
-            showScreenMirrorFloatingPanel();
-            if (minimizeButton) {
-                minimizeButton.textContent = "Minimize";
-            }
-
-            updateScreenMirrorFloatingTitle();
-            updateScreenMirrorPinToggleState();
-            clampScreenMirrorFloatingPanelToViewport();
         }
 
         function dockScreenMirror() {
@@ -3701,14 +3624,6 @@
 
             updateScreenMirrorPinToggleState();
             applyScreenMirrorViewerDockedSizing();
-        }
-
-        function toggleScreenMirrorFloating() {
-            if (isScreenMirrorPinned) {
-                dockScreenMirror();
-                return;
-            }
-            pinScreenMirror();
         }
 
         function closeFloatingScreenMirror() {
@@ -4225,64 +4140,6 @@
             socket.emit("dashboard:join", { deviceUid: normalizedDeviceUid });
         }
 
-        async function sendScreenMirrorCommand(action, type) {
-            const deviceUid = requireSelectedGlobalDeviceUid();
-            if (!deviceUid) {
-                return;
-            }
-
-            try {
-                joinScreenMirrorDashboardRoom(deviceUid);
-                const response = await apiFetch("/commands", {
-                    method: "POST",
-                    headers: {
-                        "Content-Type": "application/json"
-                    },
-                    body: JSON.stringify({
-                        action,
-                        type,
-                        deviceUid,
-                        isImmediate: true
-                    })
-                });
-
-                const payload = await response.json();
-                if (!response.ok) {
-                    throw new Error(parseApiErrorMessage(payload, "Failed to send screen mirror command"));
-                }
-
-                if (action === "start_screen_mirror") {
-                    applyScreenMirrorStatus({ status: "starting" });
-                    setScreenMirrorRunningState(true);
-                    showToast("START_SCREEN_MIRROR command sent", "success");
-                } else {
-                    applyScreenMirrorStatus({ status: "stopping" });
-                    setScreenMirrorRunningState(false);
-                    showToast("STOP_SCREEN_MIRROR command sent", "success");
-                }
-
-                await loadCommands();
-            } catch (error) {
-                showToast(error.message || "Failed to send screen mirror command", "error");
-            }
-        }
-
-        async function startScreenMirror() {
-            await sendScreenMirrorCommand("start_screen_mirror", "START_SCREEN_MIRROR");
-        }
-
-        async function stopScreenMirror() {
-            await sendScreenMirrorCommand("stop_screen_mirror", "STOP_SCREEN_MIRROR");
-        }
-
-        async function toggleScreenMirrorStartStop() {
-            if (isScreenMirrorRunning) {
-                await stopScreenMirror();
-                return;
-            }
-            await startScreenMirror();
-        }
-
         function getSelectedScreenMirrorDeviceUid() {
             return getSelectedGlobalDeviceUid();
         }
@@ -4555,26 +4412,6 @@
                 showToast(error.message || defaultErrorMessage, "error");
                 return false;
             }
-        }
-
-        async function sendScreenQuickAction(actionTarget) {
-            const normalizedTarget = String(actionTarget || "").trim().toLowerCase();
-            if (!["back", "home", "recents"].includes(normalizedTarget)) {
-                return;
-            }
-
-            await sendScreenRemoteCommand(
-                {
-                    action: "screen_touch",
-                    type: "SCREEN_TOUCH",
-                    touchTarget: normalizedTarget
-                },
-                {
-                    successMessage: `${normalizedTarget.toUpperCase()} command sent`,
-                    showSuccessToast: true,
-                    refreshCommands: true
-                }
-            );
         }
 
         function handleScreenMirrorPointerDown(event) {
