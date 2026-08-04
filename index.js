@@ -67,11 +67,20 @@ const CommandCollectionService = require("./src/services/commandCollectionServic
 const {
   reserveAuthorizedDummyDownload
 } = require("./src/services/downloadGuardService");
+const createOpenAppResolver = require("./src/services/openAppResolver");
+const createCommandEventService = require("./src/services/commandEventService");
+const {
+  buildCommandDuplicateSignature,
+  shouldApplyCommandDuplicateGuard
+} = require("./src/services/commandDeduplicationService");
 const CollectionTemplate = require("./src/models/CollectionTemplate");
 const { hasPresentValue, addIfPresent, unsetIfPresent, toPlainObject, commandIdFrom } = require("./src/utils/objects");
 const createAuthRouter = require("./src/routes/auth");
 const createDevicesRouter = require("./src/routes/devices");
 const createCommandsRouter = require("./src/routes/commands");
+const createCollectionsRouter = require("./src/routes/collections");
+const createContactsRouter = require("./src/routes/contacts");
+const createAgentRouter = require("./src/routes/agent");
 const {
   DEVICE_UID_REGEX,
   DEVICE_UID_FORMAT_ERROR,
@@ -168,7 +177,6 @@ const COMMAND_DUPLICATE_GUARD_WINDOW_MS = (() => {
   const normalized = Math.round(parsed);
   return Math.max(0, normalized);
 })();
-const COMMAND_DUPLICATE_EXCLUDED_ACTIONS = new Set(["screen_touch", "screen_swipe"]);
 const BCRYPT_SALT_ROUNDS = 10;
 const COMMAND_CLAIM_SORT = { isImmediate: -1, scheduledAt: 1, createdAt: 1, _id: 1 };
 const DUMMY_DOWNLOAD_MIN_MB = 10;
@@ -190,7 +198,6 @@ const PAIRING_TOKEN_GENERATION_MAX_ATTEMPTS = 10;
 const PAIRING_TOKEN_EXPIRY_CLEANUP_INTERVAL_MS = 60 * 1000;
 const SCREEN_MIRROR_SESSION_TTL_MS = 10 * 60 * 1000;
 const DEFAULT_PUBLIC_SERVER_URL = "https://autocall--serverautocall--yh4cgzrdywjc.code.run";
-const OPEN_APP_PACKAGE_REGEX = /^[a-zA-Z0-9_]+(\.[a-zA-Z0-9_]+)+$/;
 const screenMirrorSessions = new Map();
 const screenMirrorViewerDeviceBySocketId = new Map();
 const activeDeviceSocketIdsByUid = new Map();
@@ -242,6 +249,7 @@ const OPEN_APP_ALIAS_DEFINITIONS = [
     aliases: ["translate", "google translate"]
   }
 ];
+const resolveOpenAppTarget = createOpenAppResolver(OPEN_APP_ALIAS_DEFINITIONS);
 
 // Time strategy:
 // 1) Storage format: UTC timestamps in MongoDB.
@@ -285,6 +293,13 @@ function formatUtcForRiyadhDisplay(dateValue) {
     hour12: false
   });
 }
+
+const {
+  mapCommandForResponse,
+  emitCommandCreated,
+  emitCommandUpdated,
+  emitCommandsCleared
+} = createCommandEventService({ io, formatUtcForRiyadhDisplay });
 
 function normalizeDeviceName(value) {
   if (value === undefined || value === null) return null;
@@ -1007,106 +1022,6 @@ function normalizeOptionalCommandSubscriptionId(commandLike, targetDevice) {
 }
 
 
-function normalizeOpenAppAliasKey(value) {
-  if (typeof value !== "string") return "";
-  return value
-    .trim()
-    .toLowerCase()
-    .replace(/[^a-z0-9\s]/g, " ")
-    .replace(/\s+/g, " ")
-    .trim();
-}
-
-function buildOpenAppAliasCandidates(value) {
-  const normalized = normalizeOpenAppAliasKey(value);
-  if (!normalized) return [];
-
-  const withoutGenericWords = normalized
-    .replace(/\b(app|application|android|mobile)\b/g, " ")
-    .replace(/\s+/g, " ")
-    .trim();
-
-  const candidates = new Set();
-  const addCandidate = (candidateValue) => {
-    if (!candidateValue) return;
-    const compact = candidateValue.replace(/\s+/g, "");
-    if (candidateValue) candidates.add(candidateValue);
-    if (compact) candidates.add(compact);
-  };
-
-  addCandidate(normalized);
-  addCandidate(withoutGenericWords);
-
-  return [...candidates];
-}
-
-const OPEN_APP_ALIAS_RESOLVER_MAP = (() => {
-  const aliasMap = new Map();
-
-  for (const definition of OPEN_APP_ALIAS_DEFINITIONS) {
-    const packageName = String(definition.packageName || "").trim().toLowerCase();
-    if (!packageName) continue;
-
-    const aliases = Array.isArray(definition.aliases) ? definition.aliases : [];
-    for (const alias of aliases) {
-      for (const key of buildOpenAppAliasCandidates(alias)) {
-        aliasMap.set(key, { packageName, matchedAlias: alias });
-      }
-    }
-
-    aliasMap.set(packageName, { packageName, matchedAlias: packageName });
-    aliasMap.set(packageName.replace(/\./g, ""), {
-      packageName,
-      matchedAlias: packageName
-    });
-  }
-
-  return aliasMap;
-})();
-
-function resolveOpenAppTarget(value) {
-  const normalizedAppName =
-    typeof value === "string" ? value.trim().replace(/\s+/g, " ") : "";
-
-  if (!normalizedAppName) {
-    return {
-      normalizedAppName: "",
-      resolvedPackageName: null,
-      matchedAlias: null,
-      usedFallback: true
-    };
-  }
-
-  if (OPEN_APP_PACKAGE_REGEX.test(normalizedAppName)) {
-    return {
-      normalizedAppName,
-      resolvedPackageName: normalizedAppName.toLowerCase(),
-      matchedAlias: "direct_package_name",
-      usedFallback: false
-    };
-  }
-
-  const candidates = buildOpenAppAliasCandidates(normalizedAppName);
-  for (const candidate of candidates) {
-    const resolved = OPEN_APP_ALIAS_RESOLVER_MAP.get(candidate);
-    if (resolved?.packageName) {
-      return {
-        normalizedAppName,
-        resolvedPackageName: resolved.packageName,
-        matchedAlias: resolved.matchedAlias ?? null,
-        usedFallback: false
-      };
-    }
-  }
-
-  return {
-    normalizedAppName,
-    resolvedPackageName: null,
-    matchedAlias: null,
-    usedFallback: true
-  };
-}
-
 function logOpenAppResolver(payload = {}) {
   console.log("[OpenAppResolver]", {
     timestamp: nowIsoTimestamp(),
@@ -1422,174 +1337,6 @@ function mapDeviceForResponse(device, linkedAccount) {
     linkedAccount: normalizedLinkedAccount,
     esimSubscriptions: normalizeEsimSubscriptions(source.esimSubscriptions)
   };
-}
-
-function mapCommandForResponse(command) {
-  const source = toPlainObject(command);
-
-  return {
-    id: source._id ? String(source._id) : null,
-    deviceUid: source.deviceUid,
-    action: source.action,
-    type: source.type,
-    phoneNumber: source.phoneNumber ?? null,
-    message: source.message ?? null,
-    url: source.url ?? null,
-    appName: source.appName ?? null,
-    resolvedPackageName: source.resolvedPackageName ?? null,
-    notes: source.notes ?? null,
-    durationSeconds: source.durationSeconds ?? null,
-    downloadSizeMb: source.downloadSizeMb ?? null,
-    downloadDurationSeconds: source.downloadDurationSeconds ?? null,
-    activationCode: source.activationCode ?? null,
-    esimSubscriptionId: source.esimSubscriptionId ?? null,
-    esimPortIndex: source.esimPortIndex ?? null,
-    subscriptionId: source.subscriptionId ?? null,
-    enabled: source.enabled ?? null,
-    autoHangupSeconds: source.autoHangupSeconds ?? null,
-    x: source.x ?? null,
-    y: source.y ?? null,
-    screenWidth: source.screenWidth ?? null,
-    screenHeight: source.screenHeight ?? null,
-    startX: source.startX ?? null,
-    startY: source.startY ?? null,
-    endX: source.endX ?? null,
-    endY: source.endY ?? null,
-    durationMs: source.durationMs ?? null,
-    touchTarget: source.touchTarget ?? null,
-    collectionId: source.collectionId ? String(source.collectionId) : null,
-    collectionName: source.collectionName ?? null,
-    collectionStepIndex: source.collectionStepIndex ?? null,
-    collectionTotalSteps: source.collectionTotalSteps ?? null,
-    status: source.status,
-    failureReason: source.failureReason ?? null,
-    scheduledAt: formatUtcForRiyadhDisplay(source.scheduledAt),
-    scheduledAtUtc: source.scheduledAt ? new Date(source.scheduledAt).toISOString() : null,
-    isImmediate:
-      typeof source.isImmediate === "boolean"
-        ? source.isImmediate
-        : !source.scheduledAt,
-    createdAt: formatUtcForRiyadhDisplay(source.createdAt),
-    executedAt: formatUtcForRiyadhDisplay(source.executedAt)
-  };
-}
-
-function emitCommandCreated(command, options = {}) {
-  const commandResponse = mapCommandForResponse(command);
-  const deviceUid = normalizeDeviceUid(commandResponse.deviceUid);
-  if (!deviceUid) {
-    return commandResponse;
-  }
-
-  if (options.notifyDevice !== false) {
-    io.to(`device:${deviceUid}`).emit("command:new", commandResponse);
-  }
-  io.to(`dashboard:${deviceUid}`).emit("command:created", commandResponse);
-
-  return commandResponse;
-}
-
-function emitCommandUpdated(command, options = {}) {
-  const commandResponse = mapCommandForResponse(command);
-  const deviceUid = normalizeDeviceUid(commandResponse.deviceUid);
-  if (!deviceUid) {
-    return commandResponse;
-  }
-
-  if (options.notifyDevice === true) {
-    io.to(`device:${deviceUid}`).emit("command:updated", commandResponse);
-  }
-  io.to(`dashboard:${deviceUid}`).emit("command:updated", commandResponse);
-
-  return commandResponse;
-}
-
-function emitCommandsCleared(deviceUids, deletedCount = 0) {
-  const normalizedDeviceUids = [
-    ...new Set(
-      (Array.isArray(deviceUids) ? deviceUids : [])
-        .map((deviceUid) => normalizeDeviceUid(deviceUid))
-        .filter(Boolean)
-    )
-  ];
-
-  if (!normalizedDeviceUids.length) {
-    return;
-  }
-
-  const payload = {
-    deviceUids: normalizedDeviceUids,
-    deletedCount: Number(deletedCount || 0)
-  };
-
-  normalizedDeviceUids.forEach((deviceUid) => {
-    io.to(`device:${deviceUid}`).emit("commands:cleared", payload);
-    io.to(`dashboard:${deviceUid}`).emit("commands:cleared", payload);
-  });
-}
-
-function normalizeCommandComparableString(value, options = {}) {
-  if (typeof value !== "string") return null;
-  const normalized = value.trim();
-  if (!normalized) return null;
-  return options.toLowerCase ? normalized.toLowerCase() : normalized;
-}
-
-function normalizeCommandComparableNumber(value) {
-  if (!hasPresentValue(value)) return null;
-  const parsed = Number(value);
-  return Number.isFinite(parsed) ? parsed : null;
-}
-
-function normalizeCommandComparableDateToIso(value) {
-  if (!value) return null;
-  const parsedDate = value instanceof Date ? value : new Date(value);
-  if (Number.isNaN(parsedDate.getTime())) return null;
-  return parsedDate.toISOString();
-}
-
-function buildCommandDuplicateSignature(commandLike) {
-  const source = toPlainObject(commandLike) || {};
-
-  return JSON.stringify({
-    deviceUid: normalizeDeviceUid(source.deviceUid),
-    action: normalizeCommandComparableString(source.action, { toLowerCase: true }),
-    type: normalizeCommandComparableString(source.type),
-    isImmediate: source.isImmediate === false ? false : true,
-    scheduledAt: normalizeCommandComparableDateToIso(source.scheduledAt),
-    phoneNumber: normalizeCommandComparableString(source.phoneNumber),
-    message: normalizeCommandComparableString(source.message),
-    url: normalizeCommandComparableString(source.url),
-    appName: normalizeCommandComparableString(source.appName),
-    resolvedPackageName: normalizeCommandComparableString(source.resolvedPackageName),
-    notes: normalizeCommandComparableString(source.notes),
-    durationSeconds: normalizeCommandComparableNumber(source.durationSeconds),
-    downloadSizeMb: normalizeCommandComparableNumber(source.downloadSizeMb),
-    activationCode: normalizeCommandComparableString(source.activationCode),
-    esimSubscriptionId: normalizeCommandComparableNumber(source.esimSubscriptionId),
-    esimPortIndex: normalizeCommandComparableNumber(source.esimPortIndex),
-    subscriptionId: normalizeCommandComparableNumber(source.subscriptionId),
-    enabled: typeof source.enabled === "boolean" ? source.enabled : null,
-    autoHangupSeconds: normalizeCommandComparableNumber(source.autoHangupSeconds),
-    x: normalizeCommandComparableNumber(source.x),
-    y: normalizeCommandComparableNumber(source.y),
-    screenWidth: normalizeCommandComparableNumber(source.screenWidth),
-    screenHeight: normalizeCommandComparableNumber(source.screenHeight),
-    startX: normalizeCommandComparableNumber(source.startX),
-    startY: normalizeCommandComparableNumber(source.startY),
-    endX: normalizeCommandComparableNumber(source.endX),
-    endY: normalizeCommandComparableNumber(source.endY),
-    durationMs: normalizeCommandComparableNumber(source.durationMs),
-    touchTarget: normalizeCommandComparableString(source.touchTarget, { toLowerCase: true })
-  });
-}
-
-function shouldApplyCommandDuplicateGuard(action) {
-  return (
-    typeof action === "string" &&
-    action.trim() !== "" &&
-    !COMMAND_DUPLICATE_EXCLUDED_ACTIONS.has(action)
-  );
 }
 
 function parseUsername(rawUsername) {
@@ -2709,7 +2456,6 @@ app.use(devicesRouter);
 const commandsRouter = createCommandsRouter({
   Device,
   Command,
-  CollectionTemplate,
   CommandCollectionService,
   requireAuth,
   requireAuthenticatedDevice,
@@ -2734,7 +2480,6 @@ const commandsRouter = createCommandsRouter({
   logOpenAppResolver,
   logReturnToAutoCallEvent,
   emitCommandUpdated,
-  formatUtcForRiyadhDisplay,
   handleServerError,
   getCommandFetchCutoffDate,
   claimNextPendingCommandForDevice,
@@ -2748,307 +2493,51 @@ const commandsRouter = createCommandsRouter({
 });
 app.use(commandsRouter);
 
-// ==========================================
-// Address Book (Contacts) Routes
-// ==========================================
-app.get(["/contacts", "/api/contacts"], requireAuth, async (req, res) => {
-  try {
-    const currentUserId = normalizeAuthUserId(req.user?.id);
-    if (!currentUserId) {
-      return res.status(401).json({ error: "Unauthorized" });
-    }
-
-    const contacts = await Contact.find({ userId: currentUserId }).sort({ name: 1 }).lean();
-    return res.json(contacts);
-  } catch (error) {
-    return handleServerError(res, error, "GET /contacts");
-  }
+const collectionsRouter = createCollectionsRouter({
+  Device,
+  CollectionTemplate,
+  CommandCollectionService,
+  requireAuth,
+  normalizeDeviceUid,
+  normalizeAuthUserId,
+  isDeviceOwnedByUser,
+  formatUtcForRiyadhDisplay,
+  handleServerError,
+  DEVICE_UID_FORMAT_ERROR
 });
+app.use(collectionsRouter);
 
-app.post(["/contacts", "/api/contacts"], requireAuth, async (req, res) => {
-  try {
-    const currentUserId = normalizeAuthUserId(req.user?.id);
-    if (!currentUserId) {
-      return res.status(401).json({ error: "Unauthorized" });
-    }
-
-    const { name, phoneNumber } = req.body;
-    if (typeof name !== "string" || !name.trim()) {
-      return res.status(400).json({ error: "Contact name is required and must be a non-empty string" });
-    }
-    if (typeof phoneNumber !== "string" || !phoneNumber.trim()) {
-      return res.status(400).json({ error: "Phone number is required and must be a non-empty string" });
-    }
-
-    const trimmedName = name.trim();
-    const trimmedPhoneNumber = phoneNumber.trim();
-
-    const matchingContacts = await Contact.find({
-      userId: currentUserId,
-      $or: [
-        { phoneNumber: trimmedPhoneNumber },
-        { name: trimmedName }
-      ]
-    }).limit(2);
-
-    // Preserve phone-number precedence while resolving both possible matches in one query.
-    let contact = matchingContacts.find(
-      (candidate) => candidate.phoneNumber === trimmedPhoneNumber
-    );
-
-    if (contact) {
-      // If same phone number exists, overwrite/update the contact's name to the new one
-      contact.name = trimmedName;
-      await contact.save();
-    } else {
-      contact = matchingContacts.find((candidate) => candidate.name === trimmedName);
-      if (contact) {
-        // If same name exists, overwrite/update the phone number
-        contact.phoneNumber = trimmedPhoneNumber;
-        await contact.save();
-      } else {
-        // Create a new contact
-        contact = await Contact.create({
-          userId: currentUserId,
-          name: trimmedName,
-          phoneNumber: trimmedPhoneNumber
-        });
-      }
-    }
-
-    return res.status(201).json(contact);
-  } catch (error) {
-    return handleServerError(res, error, "POST /contacts");
-  }
+const contactsRouter = createContactsRouter({
+  Contact,
+  requireAuth,
+  normalizeAuthUserId,
+  handleServerError
 });
+app.use(contactsRouter);
 
-app.delete(["/contacts/:id", "/api/contacts/:id"], requireAuth, async (req, res) => {
-  try {
-    const currentUserId = normalizeAuthUserId(req.user?.id);
-    if (!currentUserId) {
-      return res.status(401).json({ error: "Unauthorized" });
-    }
-
-    const { id } = req.params;
-    if (!mongoose.Types.ObjectId.isValid(id)) {
-      return res.status(400).json({ error: "Invalid contact ID format" });
-    }
-
-    const deletedContact = await Contact.findOneAndDelete({
-      _id: id,
-      userId: currentUserId
-    });
-
-    if (!deletedContact) {
-      return res.status(404).json({ error: "Contact not found or access denied" });
-    }
-
-    return res.json({ success: true, message: "Contact deleted successfully", contact: deletedContact });
-  } catch (error) {
-    return handleServerError(res, error, "DELETE /contacts/:id");
-  }
+const agentRouter = createAgentRouter({
+  Device,
+  Contact,
+  CollectionTemplate,
+  Command,
+  CommandCollectionService,
+  requireAuth,
+  normalizeAuthUserId,
+  normalizeAgentHistory,
+  buildDefaultDeviceName,
+  isDeviceOnlineBySocket,
+  normalizeDeviceUid,
+  runAgentOrchestrator,
+  escapeRegexLiteral,
+  buildValidatedAgentCommandData,
+  logSecurityEvent,
+  logCommandLifecycle,
+  emitCommandCreated,
+  handleServerError,
+  RIYADH_TIMEZONE,
+  AGENT_MESSAGE_MAX_LENGTH
 });
-
-// ==========================================
-// Autonomous AI Agent Chat Endpoint
-// ==========================================
-app.post("/agent/chat", requireAuth, async (req, res) => {
-  try {
-    const currentUserId = normalizeAuthUserId(req.user?.id);
-    if (!currentUserId) {
-      return res.status(401).json({ error: "Unauthorized" });
-    }
-
-    const { message, history = [] } = req.body;
-    const normalizedMessage = typeof message === "string" ? message.trim() : "";
-    const normalizedHistory = normalizeAgentHistory(history);
-    if (!normalizedMessage || normalizedMessage.length > AGENT_MESSAGE_MAX_LENGTH) {
-      return res.status(400).json({ error: "Message prompt is required and must be a string" });
-    }
-    if (!normalizedHistory) {
-      return res.status(400).json({ error: "Invalid agent conversation history" });
-    }
-
-    // 1. Context Compilation - Fetch user's registered devices
-    const devices = await Device.find({ ownerUserId: currentUserId }).select("+ownershipEpoch");
-    await Promise.all(devices.map((device) => ensureDeviceOwnershipEpoch(device)));
-    const formattedDevices = devices.map(d => ({
-      deviceUid: d.deviceUid,
-      deviceName: d.deviceName || buildDefaultDeviceName(d.deviceUid),
-      platform: d.platform,
-      online: isDeviceOnlineBySocket(d.deviceUid)
-    }));
-
-    if (formattedDevices.length === 0) {
-      return res.json({
-        response: "I couldn't find any paired devices for your account. Please pair a device first to execute automation commands.",
-        status: "no_devices",
-        draftCommand: null
-      });
-    }
-
-    // 2. Context Compilation - Pre-filter matching contacts to reduce token usage & hallucinations
-    // Simple extraction of capitalized words to identify potential contact names in the message
-    const capitalizedWords = (normalizedMessage.match(/[A-Z][a-z]+/g) || []).map(w => w.trim());
-    const uniquePotentialNames = [...new Set(capitalizedWords)];
-    
-    let contacts = [];
-    if (uniquePotentialNames.length > 0) {
-      const regexPool = uniquePotentialNames.map(
-        (name) => new RegExp(escapeRegexLiteral(name), "i")
-      );
-      contacts = await Contact.find({
-        userId: currentUserId,
-        name: { $in: regexPool }
-      }).limit(5).lean();
-    } else {
-      contacts = await Contact.find({ userId: currentUserId }).sort({ name: 1 }).limit(10).lean();
-    }
-
-    // Resolve the active target device UID
-    let selectedDeviceUid = normalizeDeviceUid(req.body.deviceUid);
-    if (!selectedDeviceUid && formattedDevices.length > 0) {
-      const onlineDevice = formattedDevices.find(d => d.online);
-      selectedDeviceUid = onlineDevice ? onlineDevice.deviceUid : formattedDevices[0].deviceUid;
-    }
-
-    // 3. Hand over to LLM Orchestrator Service
-    const agentResult = await runAgentOrchestrator({
-      prompt: normalizedMessage,
-      history: normalizedHistory,
-      contacts: contacts.map(c => ({ name: c.name, phoneNumber: c.phoneNumber })),
-      devices: formattedDevices,
-      timezone: RIYADH_TIMEZONE,
-      currentTime: new Date().toISOString(),
-      activeDeviceUid: selectedDeviceUid
-    });
-
-    // 4. Implement 100% Immediate Auto-Execution for all Agent Commands
-    if (agentResult.draftCommand) {
-      // Validate that the AI resolved a real deviceUid owned by this user
-      const targetDevice = devices.find(d => d.deviceUid === agentResult.draftCommand.deviceUid);
-      if (!targetDevice) {
-        return res.status(400).json({
-          error: "Agent targeted an invalid or unauthorized deviceUid.",
-          response: "I apologize, but I couldn't target the requested device safely.",
-          draftCommand: null
-        });
-      }
-
-      // If the command is a collection execution trigger
-      if (agentResult.draftCommand.action === "execute_collection") {
-        const collectionName =
-          typeof agentResult.draftCommand.collectionName === "string"
-            ? agentResult.draftCommand.collectionName.trim()
-            : "";
-        if (!collectionName || collectionName.length > 120) {
-          return res.status(400).json({
-            error: "Agent returned an invalid collection name.",
-            response: "I couldn't safely identify that collection.",
-            draftCommand: null
-          });
-        }
-        const template = await CollectionTemplate.findOne({
-          ownerUserId: currentUserId,
-          name: { $regex: new RegExp(`^${escapeRegexLiteral(collectionName)}$`, "i") }
-        });
-
-        if (!template) {
-          return res.status(404).json({
-            error: `Template '${collectionName}' not found.`,
-            response: `I couldn't find any collection template named '${collectionName}'.`,
-            draftCommand: null
-          });
-        }
-
-        // Trigger execution via CommandCollectionService
-        const collection = await CommandCollectionService.createAndStartCollection(
-          template.name,
-          targetDevice.deviceUid,
-          template.commandTemplates,
-          currentUserId
-        );
-
-        return res.json({
-          response: `Successfully started the collection '${template.name}' on the current device.`,
-          status: "auto_executed",
-          collection: {
-            id: String(collection._id),
-            name: collection.name,
-            deviceUid: collection.deviceUid,
-            status: collection.status
-          },
-          draftCommand: null
-        });
-      }
-
-      // Auto-Execute ALL Commands Immediately
-      const finalCommandData = buildValidatedAgentCommandData(
-        agentResult.draftCommand,
-        targetDevice,
-        currentUserId
-      );
-      if (!finalCommandData) {
-        return res.status(400).json({
-          error: "Agent returned an invalid command payload.",
-          response: "I couldn't queue that command because its parameters were not safe or valid.",
-          draftCommand: null
-        });
-      }
-
-      const command = new Command(finalCommandData);
-      try {
-        await command.validate();
-        await command.save();
-      } catch (validationError) {
-        logSecurityEvent("agent_command_validation_failed", {
-          ip: req.ip,
-          path: req.originalUrl,
-          method: req.method,
-          userId: currentUserId,
-          deviceUid: targetDevice.deviceUid,
-          reason: validationError?.name || "validation_failed"
-        });
-        return res.status(400).json({
-          error: "Agent returned an invalid command payload.",
-          response: "I couldn't queue that command because its parameters were not safe or valid.",
-          draftCommand: null
-        });
-      }
-
-      logCommandLifecycle("created", {
-        commandId: commandIdFrom(command),
-        deviceUid: targetDevice.deviceUid,
-        oldStatus: null,
-        newStatus: "pending",
-        details: {
-          action: command.action,
-          type: command.type,
-          agentAutoExecuted: true
-        }
-      });
-
-      const commandResponse = emitCommandCreated(command);
-
-      return res.json({
-        response: agentResult.response,
-        status: "auto_executed",
-        command: commandResponse,
-        draftCommand: null
-      });
-    }
-
-    // Return the response for general conversational queries
-    return res.json({
-      response: agentResult.response,
-      status: "conversation",
-      draftCommand: null
-    });
-
-  } catch (error) {
-    return handleServerError(res, error, "POST /agent/chat");
-  }
-});
+app.use(agentRouter);
 
 app.use(express.static("public"));
 app.use((error, req, res, next) => {
