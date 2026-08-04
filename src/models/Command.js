@@ -1,31 +1,15 @@
 const mongoose = require("mongoose");
-
-const DEVICE_UID_LENGTH = 5;
-const DEVICE_UID_REGEX = new RegExp(`^[a-z0-9]{${DEVICE_UID_LENGTH}}$`);
-const OPEN_APP_PACKAGE_REGEX = /^[a-zA-Z0-9_]+(\.[a-zA-Z0-9_]+)+$/;
-const ACTION_TO_TYPE = {
-  call: "CALL",
-  end: "END",
-  sms: "SMS",
-  auto_answer: "AUTO_ANSWER",
-  open_url: "OPEN_URL",
-  close_webview: "CLOSE_WEBVIEW",
-  open_app: "OPEN_APP",
-  return_to_autocall: "RETURN_TO_AUTOCALL",
-  download_data: "DOWNLOAD_DATA",
-  activate_esim: "ACTIVATE_ESIM",
-  delete_esim: "DELETE_ESIM",
-  start_screen_mirror: "START_SCREEN_MIRROR",
-  stop_screen_mirror: "STOP_SCREEN_MIRROR",
-  screen_touch: "SCREEN_TOUCH",
-  screen_swipe: "SCREEN_SWIPE"
-};
-
-function normalizeDeviceUid(value) {
-  if (value === undefined || value === null) return "";
-  const normalized = String(value).trim().toLowerCase();
-  return DEVICE_UID_REGEX.test(normalized) ? normalized : "";
-}
+const {
+  DEVICE_UID_LENGTH,
+  DEVICE_UID_REGEX,
+  normalizeDeviceUid
+} = require("../domain/deviceUid");
+const {
+  COMMAND_ACTION_TO_TYPE,
+  COMMAND_ACTIONS,
+  COMMAND_TYPES
+} = require("../domain/commandTypes");
+const { isValidAndroidPackageName } = require("../domain/androidPackage");
 
 const commandSchema = new mongoose.Schema(
   {
@@ -53,44 +37,12 @@ const commandSchema = new mongoose.Schema(
     action: {
       type: String,
       required: true,
-      enum: [
-        "call",
-        "end",
-        "sms",
-        "auto_answer",
-        "open_url",
-        "close_webview",
-        "open_app",
-        "return_to_autocall",
-        "download_data",
-        "activate_esim",
-        "delete_esim",
-        "start_screen_mirror",
-        "stop_screen_mirror",
-        "screen_touch",
-        "screen_swipe"
-      ]
+      enum: COMMAND_ACTIONS
     },
     type: {
       type: String,
       required: true,
-      enum: [
-        "CALL",
-        "END",
-        "SMS",
-        "AUTO_ANSWER",
-        "OPEN_URL",
-        "CLOSE_WEBVIEW",
-        "OPEN_APP",
-        "RETURN_TO_AUTOCALL",
-        "DOWNLOAD_DATA",
-        "ACTIVATE_ESIM",
-        "DELETE_ESIM",
-        "START_SCREEN_MIRROR",
-        "STOP_SCREEN_MIRROR",
-        "SCREEN_TOUCH",
-        "SCREEN_SWIPE"
-      ]
+      enum: COMMAND_TYPES
     },
     phoneNumber: {
       type: String,
@@ -253,7 +205,7 @@ commandSchema.pre("validate", function normalizeUidBeforeValidation() {
     this.downloadLeaseId = undefined;
     this.downloadLeaseExpiresAt = undefined;
 
-    if (ACTION_TO_TYPE[this.action] !== this.type) {
+    if (COMMAND_ACTION_TO_TYPE[this.action] !== this.type) {
       this.invalidate("type", "action and type must match");
     }
 
@@ -295,7 +247,7 @@ commandSchema.pre("validate", function normalizeUidBeforeValidation() {
       if (
         typeof this.resolvedPackageName === "string" &&
         this.resolvedPackageName.trim() &&
-        !OPEN_APP_PACKAGE_REGEX.test(this.resolvedPackageName.trim())
+        !isValidAndroidPackageName(this.resolvedPackageName)
       ) {
         this.invalidate("resolvedPackageName", "resolvedPackageName must be a valid package name");
       }

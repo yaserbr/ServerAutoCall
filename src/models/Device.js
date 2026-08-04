@@ -1,15 +1,12 @@
 const mongoose = require("mongoose");
 const crypto = require("crypto");
+const {
+  DEVICE_UID_LENGTH,
+  DEVICE_UID_REGEX,
+  normalizeDeviceUid
+} = require("../domain/deviceUid");
 
 const DEVICE_NAME_MAX_LENGTH = 60;
-const DEVICE_UID_LENGTH = 5;
-const DEVICE_UID_REGEX = new RegExp(`^[a-z0-9]{${DEVICE_UID_LENGTH}}$`);
-
-function normalizeDeviceUid(value) {
-  if (value === undefined || value === null) return "";
-  const normalized = String(value).trim().toLowerCase();
-  return DEVICE_UID_REGEX.test(normalized) ? normalized : "";
-}
 
 function normalizeDeviceName(value) {
   if (typeof value !== "string") return null;

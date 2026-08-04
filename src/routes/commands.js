@@ -3,6 +3,10 @@ const mongoose = require("mongoose");
 const { hasPresentValue, addIfPresent, commandIdFrom, toPlainObject } = require("../utils/objects");
 const { ensureDeviceOwnershipEpoch } = require("../security/deviceOwnership");
 const { safeErrorMetadata } = require("../security/safeError");
+const {
+  COMMAND_ACTION_TO_TYPE,
+  COMMAND_TYPE_TO_ACTION
+} = require("../domain/commandTypes");
 
 const COMMAND_PAGE_DEFAULT_SIZE = 100;
 const COMMAND_PAGE_MAX_SIZE = 200;
@@ -138,41 +142,6 @@ function createCommandsRouter({
       }
 
       let scheduledAtDate = null;
-      const actionToType = {
-        call: "CALL",
-        end: "END",
-        sms: "SMS",
-        auto_answer: "AUTO_ANSWER",
-        open_url: "OPEN_URL",
-        close_webview: "CLOSE_WEBVIEW",
-        open_app: "OPEN_APP",
-        return_to_autocall: "RETURN_TO_AUTOCALL",
-        download_data: "DOWNLOAD_DATA",
-        activate_esim: "ACTIVATE_ESIM",
-        delete_esim: "DELETE_ESIM",
-        start_screen_mirror: "START_SCREEN_MIRROR",
-        stop_screen_mirror: "STOP_SCREEN_MIRROR",
-        screen_touch: "SCREEN_TOUCH",
-        screen_swipe: "SCREEN_SWIPE"
-      };
-      const typeToAction = {
-        CALL: "call",
-        END: "end",
-        SMS: "sms",
-        AUTO_ANSWER: "auto_answer",
-        OPEN_URL: "open_url",
-        CLOSE_WEBVIEW: "close_webview",
-        OPEN_APP: "open_app",
-        RETURN_TO_AUTOCALL: "return_to_autocall",
-        DOWNLOAD_DATA: "download_data",
-        ACTIVATE_ESIM: "activate_esim",
-        DELETE_ESIM: "delete_esim",
-        START_SCREEN_MIRROR: "start_screen_mirror",
-        STOP_SCREEN_MIRROR: "stop_screen_mirror",
-        SCREEN_TOUCH: "screen_touch",
-        SCREEN_SWIPE: "screen_swipe"
-      };
-
       const normalizedActionInput =
         typeof action === "string" && action.trim()
           ? action.trim().toLowerCase()
@@ -182,7 +151,7 @@ function createCommandsRouter({
           ? type.trim().toUpperCase()
           : null;
 
-      if (normalizedActionInput && !actionToType[normalizedActionInput]) {
+      if (normalizedActionInput && !COMMAND_ACTION_TO_TYPE[normalizedActionInput]) {
         logSecurityEvent("command_rejected_invalid_action", {
           ip: req.ip,
           path: req.originalUrl,
@@ -196,7 +165,7 @@ function createCommandsRouter({
         });
       }
 
-      if (normalizedTypeInput && !typeToAction[normalizedTypeInput]) {
+      if (normalizedTypeInput && !COMMAND_TYPE_TO_ACTION[normalizedTypeInput]) {
         logSecurityEvent("command_rejected_invalid_type", {
           ip: req.ip,
           path: req.originalUrl,
@@ -213,7 +182,7 @@ function createCommandsRouter({
       if (
         normalizedActionInput &&
         normalizedTypeInput &&
-        actionToType[normalizedActionInput] !== normalizedTypeInput
+        COMMAND_ACTION_TO_TYPE[normalizedActionInput] !== normalizedTypeInput
       ) {
         logSecurityEvent("command_rejected_action_type_mismatch", {
           ip: req.ip,
@@ -229,8 +198,8 @@ function createCommandsRouter({
       }
 
       let normalizedAction =
-        normalizedActionInput ?? typeToAction[normalizedTypeInput] ?? "call";
-      const commandType = normalizedTypeInput ?? actionToType[normalizedAction];
+        normalizedActionInput ?? COMMAND_TYPE_TO_ACTION[normalizedTypeInput] ?? "call";
+      const commandType = normalizedTypeInput ?? COMMAND_ACTION_TO_TYPE[normalizedAction];
       const isAutoAnswerCommand = normalizedAction === "auto_answer";
       const isOpenUrlCommand = normalizedAction === "open_url";
       const isOpenAppCommand = normalizedAction === "open_app";

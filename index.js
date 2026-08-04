@@ -72,6 +72,12 @@ const { hasPresentValue, addIfPresent, unsetIfPresent, toPlainObject, commandIdF
 const createAuthRouter = require("./src/routes/auth");
 const createDevicesRouter = require("./src/routes/devices");
 const createCommandsRouter = require("./src/routes/commands");
+const {
+  DEVICE_UID_REGEX,
+  DEVICE_UID_FORMAT_ERROR,
+  normalizeDeviceUid
+} = require("./src/domain/deviceUid");
+const { COMMAND_ACTION_TO_TYPE } = require("./src/domain/commandTypes");
 
 const app = express();
 const httpServer = http.createServer(app);
@@ -154,9 +160,6 @@ app.use("/agent", agentRateLimiter);
 const RIYADH_TIMEZONE = "Asia/Riyadh";
 const RIYADH_UTC_OFFSET_MINUTES = 3 * 60;
 const DEVICE_NAME_MAX_LENGTH = 60;
-const DEVICE_UID_LENGTH = 5;
-const DEVICE_UID_REGEX = new RegExp(`^[a-z0-9]{${DEVICE_UID_LENGTH}}$`);
-const DEVICE_UID_FORMAT_ERROR = `deviceUid must be exactly ${DEVICE_UID_LENGTH} lowercase letters or digits`;
 const COMMAND_FETCH_WINDOW_MS = 24 * 60 * 60 * 1000;
 const MAX_SCHEDULED_COMMAND_SYNC = 100;
 const COMMAND_DUPLICATE_GUARD_WINDOW_MS = (() => {
@@ -281,12 +284,6 @@ function formatUtcForRiyadhDisplay(dateValue) {
     timeZone: RIYADH_TIMEZONE,
     hour12: false
   });
-}
-
-function normalizeDeviceUid(value) {
-  if (value === undefined || value === null) return "";
-  const normalized = String(value).trim().toLowerCase();
-  return DEVICE_UID_REGEX.test(normalized) ? normalized : "";
 }
 
 function normalizeDeviceName(value) {
@@ -1608,23 +1605,6 @@ function parsePassword(rawPassword) {
   return rawPassword;
 }
 
-const AGENT_ACTION_TO_TYPE = {
-  call: "CALL",
-  end: "END",
-  sms: "SMS",
-  auto_answer: "AUTO_ANSWER",
-  open_url: "OPEN_URL",
-  close_webview: "CLOSE_WEBVIEW",
-  open_app: "OPEN_APP",
-  return_to_autocall: "RETURN_TO_AUTOCALL",
-  download_data: "DOWNLOAD_DATA",
-  activate_esim: "ACTIVATE_ESIM",
-  delete_esim: "DELETE_ESIM",
-  start_screen_mirror: "START_SCREEN_MIRROR",
-  stop_screen_mirror: "STOP_SCREEN_MIRROR",
-  screen_touch: "SCREEN_TOUCH",
-  screen_swipe: "SCREEN_SWIPE"
-};
 const AGENT_COMMAND_PARAMETER_FIELDS = [
   "phoneNumber",
   "message",
@@ -1672,7 +1652,7 @@ function buildValidatedAgentCommandData(draftCommand, targetDevice, currentUserI
   const action = typeof draftCommand.action === "string"
     ? draftCommand.action.trim().toLowerCase()
     : "";
-  const type = AGENT_ACTION_TO_TYPE[action];
+  const type = COMMAND_ACTION_TO_TYPE[action];
   if (!type) return null;
 
   const commandData = {

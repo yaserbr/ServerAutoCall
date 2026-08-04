@@ -8,15 +8,7 @@ const {
 } = require("../auth/accessToken");
 const { logSecurityEvent } = require("../security/auditLogger");
 const { safeErrorMetadata } = require("../security/safeError");
-
-const DEVICE_UID_LENGTH = 5;
-const DEVICE_UID_REGEX = new RegExp(`^[a-z0-9]{${DEVICE_UID_LENGTH}}$`);
-
-function normalizeDeviceUid(value) {
-  if (value === undefined || value === null) return "";
-  const normalized = String(value).trim().toLowerCase();
-  return DEVICE_UID_REGEX.test(normalized) ? normalized : "";
-}
+const { normalizeDeviceUid } = require("../domain/deviceUid");
 
 function extractSocketBearerToken(socket) {
   const authToken =

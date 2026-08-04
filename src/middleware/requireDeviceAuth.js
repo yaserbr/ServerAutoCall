@@ -2,9 +2,10 @@ const Device = require("../models/Device");
 const { isDeviceTokenMatch, normalizeDeviceToken } = require("../auth/deviceToken");
 const { logSecurityEvent } = require("../security/auditLogger");
 const { ensureDeviceOwnershipEpoch } = require("../security/deviceOwnership");
-
-const DEVICE_UID_LENGTH = 5;
-const DEVICE_UID_REGEX = new RegExp(`^[a-z0-9]{${DEVICE_UID_LENGTH}}$`);
+const {
+  DEVICE_UID_FORMAT_ERROR,
+  normalizeDeviceUid
+} = require("../domain/deviceUid");
 const UNAUTHORIZED_ERROR = "Unauthorized";
 
 function parseRequestBodyObject(body) {
@@ -36,12 +37,6 @@ function pickFirstDefinedValue(payload, keys) {
     return value;
   }
   return undefined;
-}
-
-function normalizeDeviceUid(value) {
-  if (value === undefined || value === null) return "";
-  const normalized = String(value).trim().toLowerCase();
-  return DEVICE_UID_REGEX.test(normalized) ? normalized : "";
 }
 
 function extractDeviceUidFromRequest(req, options = {}) {
@@ -103,7 +98,7 @@ function buildRequireDeviceAuth(options = {}) {
     if (!normalizedDeviceUid) {
       return res
         .status(400)
-        .json({ error: `deviceUid must be exactly ${DEVICE_UID_LENGTH} lowercase letters or digits` });
+        .json({ error: DEVICE_UID_FORMAT_ERROR });
     }
 
     const providedDeviceToken = extractDeviceTokenFromRequest(req);
