@@ -73,6 +73,12 @@ const deviceSchema = new mongoose.Schema(
       type: Date,
       default: null
     },
+    deviceSessionEpoch: {
+      type: String,
+      default: () => crypto.randomUUID(),
+      required: true,
+      select: false
+    },
     claimedAt: {
       type: Date,
       default: null

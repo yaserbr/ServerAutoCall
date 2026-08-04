@@ -9,6 +9,7 @@ const {
 const { logSecurityEvent } = require("../security/auditLogger");
 const { safeErrorMetadata } = require("../security/safeError");
 const { normalizeDeviceUid } = require("../domain/deviceUid");
+const { ensureDeviceSessionEpoch } = require("../security/deviceSession");
 
 function extractSocketBearerToken(socket) {
   const authToken =
@@ -114,7 +115,9 @@ function createSocketAuthMiddleware() {
         return next(new Error("Unauthorized"));
       }
 
-      const device = await Device.findOne({ deviceUid }).select("+deviceTokenHash");
+      const device = await Device.findOne({ deviceUid }).select(
+        "+deviceTokenHash +deviceSessionEpoch"
+      );
       if (!device) {
         logSecurityEvent("socket_device_not_found", {
           socketId: socket.id,
@@ -133,8 +136,19 @@ function createSocketAuthMiddleware() {
         return next(new Error("Unauthorized"));
       }
 
+      const deviceSessionEpoch = await ensureDeviceSessionEpoch(device);
+      if (!deviceSessionEpoch) {
+        logSecurityEvent("socket_device_session_epoch_missing", {
+          socketId: socket.id,
+          deviceUid,
+          ip: socket.handshake.address
+        });
+        return next(new Error("Unauthorized"));
+      }
+
       socket.data.authType = "device";
       socket.data.authenticatedDeviceUid = deviceUid;
+      socket.data.deviceSessionEpoch = deviceSessionEpoch;
       return next();
     } catch (error) {
       logSecurityEvent("socket_auth_internal_error", {
@@ -145,6 +159,20 @@ function createSocketAuthMiddleware() {
       return next(new Error("Unauthorized"));
     }
   };
+}
+
+async function isDeviceSocketSessionCurrent(socket) {
+  if (!isDeviceSocket(socket)) return false;
+
+  const deviceUid = getSocketAuthenticatedDeviceUid(socket);
+  const deviceSessionEpoch =
+    typeof socket?.data?.deviceSessionEpoch === "string"
+      ? socket.data.deviceSessionEpoch.trim()
+      : "";
+  if (!deviceUid || !deviceSessionEpoch) return false;
+
+  const currentDevice = await Device.exists({ deviceUid, deviceSessionEpoch });
+  return Boolean(currentDevice);
 }
 
 async function canDashboardJoinDevice(userId, deviceUid) {
@@ -171,6 +199,7 @@ module.exports = {
   createSocketAuthMiddleware,
   isDashboardSocket,
   isDeviceSocket,
+  isDeviceSocketSessionCurrent,
   normalizeDeviceUid,
   resolveAuthenticatedDeviceUidFromSocket,
   canDashboardJoinDevice

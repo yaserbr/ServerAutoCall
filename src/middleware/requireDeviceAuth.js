@@ -2,6 +2,7 @@ const Device = require("../models/Device");
 const { isDeviceTokenMatch, normalizeDeviceToken } = require("../auth/deviceToken");
 const { logSecurityEvent } = require("../security/auditLogger");
 const { ensureDeviceOwnershipEpoch } = require("../security/deviceOwnership");
+const { ensureDeviceSessionEpoch } = require("../security/deviceSession");
 const {
   DEVICE_UID_FORMAT_ERROR,
   normalizeDeviceUid
@@ -103,7 +104,7 @@ function buildRequireDeviceAuth(options = {}) {
 
     const providedDeviceToken = extractDeviceTokenFromRequest(req);
     const device = await Device.findOne({ deviceUid: normalizedDeviceUid }).select(
-      "+deviceTokenHash +ownershipEpoch"
+      "+deviceTokenHash +ownershipEpoch +deviceSessionEpoch"
     );
     if (!device) {
       return rejectUnauthorized(req, res, "device_not_found", {
@@ -134,6 +135,12 @@ function buildRequireDeviceAuth(options = {}) {
 
     if (!(await ensureDeviceOwnershipEpoch(device))) {
       return rejectUnauthorized(req, res, "device_ownership_epoch_missing", {
+        deviceUid: normalizedDeviceUid
+      });
+    }
+
+    if (!(await ensureDeviceSessionEpoch(device))) {
+      return rejectUnauthorized(req, res, "device_session_epoch_missing", {
         deviceUid: normalizedDeviceUid
       });
     }

@@ -39,7 +39,9 @@ function createDevicesRouter({
   parseRequestBodyObject,
   DEVICE_UID_FORMAT_ERROR,
   translatePairingTokenReasonToCodeReason,
-  revokeDashboardAccessForDevice
+  revokeDashboardAccessForDevice,
+  revokeDeviceSessions,
+  deviceEnrollmentRateLimiter
 }) {
   const router = express.Router();
 
@@ -65,13 +67,27 @@ function createDevicesRouter({
 
       const providedDeviceToken = extractDeviceTokenFromRequest(req);
       const now = new Date(toUtcISOString());
-      let device = await Device.findOne({ deviceUid: normalizedDeviceUid }).select(
+      const device = await Device.findOne({ deviceUid: normalizedDeviceUid }).select(
         "+deviceTokenHash +ownershipEpoch"
       );
-      const wasExisting = Boolean(device);
-      let issuedDeviceToken = null;
 
-      if (device?.deviceTokenHash) {
+      // Initial enrollment is intentionally not performed by this endpoint.
+      // A new device must consume the short-lived, single-use pairing challenge
+      // through /devices/pair before the server will mint a device credential.
+      if (!device) {
+        logSecurityEvent("anonymous_device_registration_rejected", {
+          ip: req.ip,
+          path: req.originalUrl,
+          method: req.method,
+          deviceUid: normalizedDeviceUid
+        });
+        return res.status(401).json({
+          error: "Unauthorized",
+          code: "device_enrollment_required"
+        });
+      }
+
+      if (device.deviceTokenHash) {
         const canAuthenticate = isDeviceTokenMatch(providedDeviceToken, device.deviceTokenHash);
         if (!canAuthenticate) {
           logSecurityEvent("device_register_rejected_bad_token", {
@@ -82,145 +98,48 @@ function createDevicesRouter({
           });
           return res.status(401).json({ error: "Unauthorized" });
         }
-      } else if (
-        device?.ownerUserId &&
-        String(device.ownerUserId) !== String(ownerUserId)
-      ) {
-        logSecurityEvent("device_pair_rejected_claimed_legacy_device", {
-          ip: req.ip,
-          path: req.originalUrl,
-          method: req.method,
-          deviceUid: normalizedDeviceUid
-        });
-        return res.status(401).json({ error: "Unauthorized" });
-      }
-
-      if (!device) {
-        device = new Device({
-          deviceUid: normalizedDeviceUid,
-          ownershipEpoch: crypto.randomUUID(),
-          deviceName: normalizedDeviceName ?? buildDefaultDeviceName(normalizedDeviceUid),
-          platform: normalizedPlatform,
-          ...(hasEsimSubscriptionsPayload ? { esimSubscriptions: normalizedEsimSubscriptions } : {}),
-          online: true,
-          lastSeen: now
-        });
       } else {
-        device.online = true;
-        device.lastSeen = now;
-
-        if (!normalizeDeviceName(device.deviceName)) {
-          device.deviceName =
-            normalizedDeviceName ?? buildDefaultDeviceName(normalizedDeviceUid);
-        } else if (device.deviceName === buildDefaultDeviceName(normalizedDeviceUid) && normalizedDeviceName) {
-          device.deviceName = normalizedDeviceName;
-        }
-
-        if (normalizedPlatform) {
-          device.platform = normalizedPlatform;
-        }
-        if (hasEsimSubscriptionsPayload) {
-          device.esimSubscriptions = normalizedEsimSubscriptions;
-        }
-      }
-
-      if (!device.deviceTokenHash && device.ownerUserId) {
-        logSecurityEvent("device_register_rejected_claimed_legacy_device", {
+        logSecurityEvent("device_register_rejected_missing_server_token", {
           ip: req.ip,
           path: req.originalUrl,
           method: req.method,
           deviceUid: normalizedDeviceUid
         });
-        return res.status(401).json({ error: "Unauthorized" });
+        return res.status(401).json({
+          error: "Unauthorized",
+          code: "device_enrollment_required"
+        });
       }
 
-      if (!device.deviceTokenHash) {
-        issuedDeviceToken = issueDeviceTokenForDevice(device);
+      device.online = true;
+      device.lastSeen = now;
+
+      if (!normalizeDeviceName(device.deviceName)) {
+        device.deviceName =
+          normalizedDeviceName ?? buildDefaultDeviceName(normalizedDeviceUid);
+      } else if (device.deviceName === buildDefaultDeviceName(normalizedDeviceUid) && normalizedDeviceName) {
+        device.deviceName = normalizedDeviceName;
       }
 
-      try {
-        await device.save();
-      } catch (error) {
-        // Handles rare race condition when two register requests arrive simultaneously.
-        if (error?.code === 11000) {
-          console.warn("[DeviceRegister] Duplicate deviceUid on save, retrying as update:", {
-            deviceUid: normalizedDeviceUid,
-            ...safeErrorMetadata(error)
-          });
-
-          const existingDevice = await Device.findOne({ deviceUid: normalizedDeviceUid }).select(
-            "+deviceTokenHash +ownershipEpoch"
-          );
-          if (!existingDevice) {
-            throw error;
-          }
-
-          if (existingDevice.deviceTokenHash) {
-            const canAuthenticate = isDeviceTokenMatch(
-              providedDeviceToken,
-              existingDevice.deviceTokenHash
-            );
-            if (!canAuthenticate) {
-              logSecurityEvent("device_register_rejected_bad_token_after_race", {
-                ip: req.ip,
-                path: req.originalUrl,
-                method: req.method,
-                deviceUid: normalizedDeviceUid
-              });
-              return res.status(401).json({ error: "Unauthorized" });
-            }
-          }
-
-          existingDevice.online = true;
-          existingDevice.lastSeen = now;
-          if (!normalizeDeviceName(existingDevice.deviceName)) {
-            existingDevice.deviceName =
-              normalizedDeviceName ?? buildDefaultDeviceName(normalizedDeviceUid);
-          } else if (
-            existingDevice.deviceName === buildDefaultDeviceName(normalizedDeviceUid) &&
-            normalizedDeviceName
-          ) {
-            existingDevice.deviceName = normalizedDeviceName;
-          }
-          if (normalizedPlatform) {
-            existingDevice.platform = normalizedPlatform;
-          }
-          if (hasEsimSubscriptionsPayload) {
-            existingDevice.esimSubscriptions = normalizedEsimSubscriptions;
-          }
-
-          if (!existingDevice.deviceTokenHash && existingDevice.ownerUserId) {
-            logSecurityEvent("device_register_rejected_claimed_legacy_device_after_race", {
-              ip: req.ip,
-              path: req.originalUrl,
-              method: req.method,
-              deviceUid: normalizedDeviceUid
-            });
-            return res.status(401).json({ error: "Unauthorized" });
-          }
-
-          if (!existingDevice.deviceTokenHash) {
-            issuedDeviceToken = issueDeviceTokenForDevice(existingDevice);
-          }
-
-          await existingDevice.save();
-          device = existingDevice;
-        } else {
-          throw error;
-        }
+      if (normalizedPlatform) {
+        device.platform = normalizedPlatform;
       }
+      if (hasEsimSubscriptionsPayload) {
+        device.esimSubscriptions = normalizedEsimSubscriptions;
+      }
+
+      await device.save();
 
       console.log("[DeviceRegister] Registration success:", {
         deviceUid: normalizedDeviceUid,
-        mode: wasExisting ? "updated_existing" : "created_new",
+        mode: "updated_existing",
         platform: device.platform ?? null
       });
       const mappedDevice = await mapDeviceForResponseWithLinkedAccount(device);
 
       return res.json({
         success: true,
-        device: mappedDevice,
-        ...(issuedDeviceToken ? { deviceToken: issuedDeviceToken } : {})
+        device: mappedDevice
       });
     } catch (error) {
       console.error("[DeviceRegister] Registration failed:", {
@@ -285,6 +204,29 @@ function createDevicesRouter({
     }
   });
 
+  router.post("/devices/token/rotate", requireAuthenticatedDevice, async (req, res) => {
+    try {
+      const normalizedDeviceUid = req.deviceUid;
+      const device = req.authenticatedDevice;
+      if (!normalizedDeviceUid || !device) {
+        return res.status(401).json({ error: "Unauthorized" });
+      }
+
+      // A new session epoch makes the credential generation explicit. The HTTP
+      // token is replaced first, then every socket authenticated by the previous
+      // generation is disconnected before the new token is returned.
+      device.deviceSessionEpoch = crypto.randomUUID();
+      const deviceToken = issueDeviceTokenForDevice(device);
+      await device.save();
+      await revokeDeviceSessions(normalizedDeviceUid, "device_token_rotated");
+
+      res.set("Cache-Control", "no-store");
+      return res.json({ success: true, deviceToken });
+    } catch (error) {
+      return handleServerError(res, error, "POST /devices/token/rotate");
+    }
+  });
+
   router.get("/devices", requireAuth, async (req, res) => {
     try {
       const currentUserId = normalizeAuthUserId(req.user?.id);
@@ -315,7 +257,7 @@ function createDevicesRouter({
     }
   });
 
-  router.post("/devices/pair", async (req, res) => {
+  router.post("/devices/pair", deviceEnrollmentRateLimiter, async (req, res) => {
     try {
       const payload = parseRequestBodyObject(req.body);
       const normalizedPairingToken = normalizePairingToken(payload?.pairingToken);
@@ -380,6 +322,8 @@ function createDevicesRouter({
         }
       }
 
+      // Atomic consumption happens before token issuance, so replayed or
+      // concurrent uses of the same challenge cannot mint another credential.
       const consumeResult = await consumePairingTokenByHash(
         pairingInspection.tokenHash,
         normalizedDeviceUid
@@ -443,6 +387,7 @@ function createDevicesRouter({
       if (ownershipChanged) {
         await revokeDashboardAccessForDevice(normalizedDeviceUid, ownerUserId);
       }
+
       const mappedDevice = await mapDeviceForResponseWithLinkedAccount(device);
 
       return res.json({
@@ -520,6 +465,7 @@ function createDevicesRouter({
       }
 
       await device.deleteOne();
+      await revokeDeviceSessions(normalizedDeviceUid, "device_deleted");
       await revokeDashboardAccessForDevice(normalizedDeviceUid, null);
 
       return res.json({

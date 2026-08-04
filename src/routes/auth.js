@@ -156,6 +156,9 @@ function createAuthRouter({
 
   router.get("/pairing/qr", requireAuth, async (req, res) => {
     try {
+      // Pairing challenges are short-lived enrollment credentials and must not
+      // be retained by browsers or intermediary caches.
+      res.set("Cache-Control", "no-store, private");
       const currentUserId = normalizeAuthUserId(req.user?.id);
       if (!currentUserId) {
         return res.status(401).json({ error: "Unauthorized" });
@@ -183,6 +186,9 @@ function createAuthRouter({
         expiresInSeconds: Math.floor(PAIRING_TOKEN_TTL_MS / 1000)
       });
     } catch (error) {
+      if (error?.statusCode === 503) {
+        return res.status(503).json({ error: "Device enrollment temporarily unavailable" });
+      }
       return handleServerError(res, error, "GET /pairing/qr");
     }
   });

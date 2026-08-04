@@ -60,6 +60,21 @@ const commandCollectionSchema = new mongoose.Schema(
       type: Number,
       default: 0
     },
+    nextExecutionAt: {
+      type: Date,
+      default: null
+    },
+    workflowRevision: {
+      type: Number,
+      default: 0,
+      min: 0,
+      select: false
+    },
+    workflowUpdatedAt: {
+      type: Date,
+      default: Date.now,
+      select: false
+    },
     createdAt: {
       type: Date,
       default: Date.now
@@ -87,6 +102,11 @@ commandCollectionSchema.index(
     activeCommandIds: 1
   },
   { name: "active_collection_command_lookup" }
+);
+
+commandCollectionSchema.index(
+  { status: 1, _id: 1 },
+  { name: "collection_workflow_recovery" }
 );
 
 module.exports = mongoose.model("CommandCollection", commandCollectionSchema);

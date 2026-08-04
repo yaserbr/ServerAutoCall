@@ -165,6 +165,16 @@ const commandSchema = new mongoose.Schema(
     collectionTotalSteps: {
       type: Number
     },
+    idempotencyKey: {
+      type: String,
+      default: null,
+      select: false
+    },
+    workflowNotifiedAt: {
+      type: Date,
+      default: null,
+      select: false
+    },
     status: {
       type: String,
       enum: ["pending", "executing", "executed", "failed", "cancelled"],
@@ -311,5 +321,13 @@ commandSchema.index(
   { name: "owner_command_dashboard" }
 );
 commandSchema.index({ deviceUid: 1, createdAt: -1 });
+commandSchema.index(
+  { idempotencyKey: 1 },
+  {
+    unique: true,
+    partialFilterExpression: { idempotencyKey: { $type: "string" } },
+    name: "collection_step_idempotency"
+  }
+);
 
 module.exports = mongoose.model("Command", commandSchema);

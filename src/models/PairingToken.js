@@ -52,6 +52,8 @@ const pairingTokenSchema = new mongoose.Schema(
   }
 );
 
+// Unused (abandoned) challenges and consumed challenge records are both
+// removed automatically after the five-minute enrollment window.
 pairingTokenSchema.index({ expiresAt: 1 }, { expireAfterSeconds: 0 });
 pairingTokenSchema.index({ userId: 1, createdAt: -1 });
 pairingTokenSchema.index(

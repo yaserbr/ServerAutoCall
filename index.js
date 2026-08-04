@@ -14,6 +14,7 @@ const { connectToDatabase } = require("./src/config/db");
 const Device = require("./src/models/Device");
 const Command = require("./src/models/Command");
 const PairingToken = require("./src/models/PairingToken");
+const EnrollmentRateLimit = require("./src/models/EnrollmentRateLimit");
 const User = require("./src/models/User");
 const Contact = require("./src/models/Contact");
 const { requireAuth } = require("./src/middleware/requireAuth");
@@ -21,6 +22,9 @@ const {
   buildRequireDeviceAuth,
   extractDeviceTokenFromRequest
 } = require("./src/middleware/requireDeviceAuth");
+const {
+  createDeviceEnrollmentRateLimiter
+} = require("./src/middleware/deviceEnrollmentRateLimit");
 const {
   issueDeviceTokenForDevice,
   isDeviceTokenMatch,
@@ -59,6 +63,7 @@ const {
   createSocketAuthMiddleware,
   isDashboardSocket,
   isDeviceSocket,
+  isDeviceSocketSessionCurrent,
   resolveAuthenticatedDeviceUidFromSocket,
   canDashboardJoinDevice
 } = require("./src/socket/auth");
@@ -69,6 +74,7 @@ const {
 } = require("./src/services/downloadGuardService");
 const createOpenAppResolver = require("./src/services/openAppResolver");
 const createCommandEventService = require("./src/services/commandEventService");
+const { createDeviceSessionRevoker } = require("./src/services/deviceSessionService");
 const {
   buildCommandDuplicateSignature,
   shouldApplyCommandDuplicateGuard
@@ -195,14 +201,13 @@ const PAIRING_TOKEN_TYPE = "AUTOCALL_PAIRING";
 const MANUAL_PAIRING_CODE_LENGTH = 6;
 const MANUAL_PAIRING_CODE_REGEX = new RegExp(`^\\d{${MANUAL_PAIRING_CODE_LENGTH}}$`);
 const PAIRING_TOKEN_GENERATION_MAX_ATTEMPTS = 10;
-const PAIRING_TOKEN_EXPIRY_CLEANUP_INTERVAL_MS = 60 * 1000;
+const RUNTIME_CLEANUP_INTERVAL_MS = 60 * 1000;
 const SCREEN_MIRROR_SESSION_TTL_MS = 10 * 60 * 1000;
 const DEFAULT_PUBLIC_SERVER_URL = "https://autocall--serverautocall--yh4cgzrdywjc.code.run";
 const screenMirrorSessions = new Map();
 const screenMirrorViewerDeviceBySocketId = new Map();
 const activeDeviceSocketIdsByUid = new Map();
 const deviceUidBySocketId = new Map();
-const pairingTokenMemoryStore = new Map();
 const requireAuthenticatedDevice = buildRequireDeviceAuth();
 const OPEN_APP_ALIAS_DEFINITIONS = [
   {
@@ -401,21 +406,6 @@ function buildPairingTokenExpiryDate() {
   return new Date(Date.now() + PAIRING_TOKEN_TTL_MS);
 }
 
-function cleanupExpiredPairingTokensInMemory(nowMs = Date.now()) {
-  for (const [tokenHash, record] of pairingTokenMemoryStore.entries()) {
-    if (!record || typeof record !== "object") {
-      pairingTokenMemoryStore.delete(tokenHash);
-      continue;
-    }
-
-    const expiresAtMs = Number(record.expiresAtMs || 0);
-    const isUsed = record.used === true;
-    if (!expiresAtMs || expiresAtMs <= nowMs || isUsed) {
-      pairingTokenMemoryStore.delete(tokenHash);
-    }
-  }
-}
-
 function translatePairingTokenReasonToCodeReason(reason) {
   if (reason === "missing_pairing_token") return "missing_pairing_code";
   if (reason === "invalid_pairing_token") return "invalid_pairing_code";
@@ -434,6 +424,7 @@ function getPairingCredentialFailureHttpStatus(reason) {
   if (reason === "pairing_code_used") return 409;
   if (reason === "pairing_token_expired") return 410;
   if (reason === "pairing_code_expired") return 410;
+  if (reason === "pairing_service_unavailable") return 503;
   return 400;
 }
 
@@ -447,6 +438,7 @@ function getPairingCredentialFailureMessage(reason) {
   if (reason === "pairing_code_used") return "Pairing code already used";
   if (reason === "pairing_token_expired") return "Pairing token expired";
   if (reason === "pairing_code_expired") return "Pairing code expired";
+  if (reason === "pairing_service_unavailable") return "Device enrollment temporarily unavailable";
   return "Invalid pairing token";
 }
 
@@ -458,61 +450,30 @@ function getPairingCredentialFailureMessageForType(reason, credentialType = "tok
 }
 
 async function createPairingTokenForUser(userId) {
+  // Pairing challenges authorize first-time device enrollment. They must never
+  // fall back to process-local memory because single-use consumption has to be
+  // atomic and consistent across every production server instance.
+  if (mongoose.connection.readyState !== 1) {
+    const error = new Error("Device enrollment temporarily unavailable");
+    error.statusCode = 503;
+    throw error;
+  }
+
   const expiresAt = buildPairingTokenExpiryDate();
-  const now = new Date(toUtcISOString());
+  for (let attempt = 0; attempt < PAIRING_TOKEN_GENERATION_MAX_ATTEMPTS; attempt += 1) {
+    const pairingToken = generatePairingToken();
+    const tokenHash = hashPairingToken(pairingToken);
+    const manualPairingCode = generateManualPairingCode();
+    const manualCodeHash = hashManualPairingCode(manualPairingCode);
 
-  if (mongoose.connection.readyState === 1) {
-    for (let attempt = 0; attempt < PAIRING_TOKEN_GENERATION_MAX_ATTEMPTS; attempt += 1) {
-      const pairingToken = generatePairingToken();
-      const tokenHash = hashPairingToken(pairingToken);
-      const manualPairingCode = generateManualPairingCode();
-      const manualCodeHash = hashManualPairingCode(manualPairingCode);
-
-      try {
-        await PairingToken.create({
-          tokenHash,
-          manualCodeHash,
-          userId,
-          expiresAt,
-          used: false,
-          usedAt: null,
-          usedByDeviceUid: null
-        });
-
-        return {
-          pairingToken,
-          manualPairingCode,
-          expiresAt
-        };
-      } catch (error) {
-        if (error?.code === 11000 && attempt < PAIRING_TOKEN_GENERATION_MAX_ATTEMPTS - 1) {
-          continue;
-        }
-        throw error;
-      }
-    }
-  } else {
-    cleanupExpiredPairingTokensInMemory(now.getTime());
-
-    for (let attempt = 0; attempt < PAIRING_TOKEN_GENERATION_MAX_ATTEMPTS; attempt += 1) {
-      const pairingToken = generatePairingToken();
-      const tokenHash = hashPairingToken(pairingToken);
-      const manualPairingCode = generateManualPairingCode();
-      const manualCodeHash = hashManualPairingCode(manualPairingCode);
-      const hasManualCodeCollision = Array.from(pairingTokenMemoryStore.values()).some(
-        (record) => record?.manualCodeHash === manualCodeHash
-      );
-
-      if (pairingTokenMemoryStore.has(tokenHash) || hasManualCodeCollision) {
-        continue;
-      }
-
-      pairingTokenMemoryStore.set(tokenHash, {
-        userId: String(userId),
-        expiresAtMs: expiresAt.getTime(),
+    try {
+      await PairingToken.create({
+        tokenHash,
         manualCodeHash,
+        userId,
+        expiresAt,
         used: false,
-        usedAtMs: null,
+        usedAt: null,
         usedByDeviceUid: null
       });
 
@@ -521,6 +482,11 @@ async function createPairingTokenForUser(userId) {
         manualPairingCode,
         expiresAt
       };
+    } catch (error) {
+      if (error?.code === 11000 && attempt < PAIRING_TOKEN_GENERATION_MAX_ATTEMPTS - 1) {
+        continue;
+      }
+      throw error;
     }
   }
 
@@ -550,50 +516,17 @@ async function inspectPairingToken(pairingTokenValue) {
 
   const now = new Date(toUtcISOString());
 
-  if (mongoose.connection.readyState === 1) {
-    const record = await PairingToken.findOne({ tokenHash }).select(
-      "_id userId expiresAt used"
-    );
-    if (!record) {
-      return {
-        ok: false,
-        reason: "invalid_pairing_token",
-        tokenHash,
-        userId: ""
-      };
-    }
-
-    if (record.used) {
-      return {
-        ok: false,
-        reason: "pairing_token_used",
-        tokenHash,
-        userId: String(record.userId || "")
-      };
-    }
-
-    const expiresAtMs = Number(new Date(record.expiresAt).getTime());
-    if (!expiresAtMs || expiresAtMs <= now.getTime()) {
-      return {
-        ok: false,
-        reason: "pairing_token_expired",
-        tokenHash,
-        userId: String(record.userId || "")
-      };
-    }
-
+  if (mongoose.connection.readyState !== 1) {
     return {
-      ok: true,
-      reason: "ok",
+      ok: false,
+      reason: "pairing_service_unavailable",
       tokenHash,
-      userId: String(record.userId || ""),
-      expiresAt: new Date(expiresAtMs)
+      userId: ""
     };
   }
 
-  cleanupExpiredPairingTokensInMemory(now.getTime());
-  const memoryRecord = pairingTokenMemoryStore.get(tokenHash);
-  if (!memoryRecord) {
+  const record = await PairingToken.findOne({ tokenHash }).select("_id userId expiresAt used");
+  if (!record) {
     return {
       ok: false,
       reason: "invalid_pairing_token",
@@ -602,24 +535,22 @@ async function inspectPairingToken(pairingTokenValue) {
     };
   }
 
-  if (memoryRecord.used === true) {
-    pairingTokenMemoryStore.delete(tokenHash);
+  if (record.used) {
     return {
       ok: false,
       reason: "pairing_token_used",
       tokenHash,
-      userId: String(memoryRecord.userId || "")
+      userId: String(record.userId || "")
     };
   }
 
-  const expiresAtMs = Number(memoryRecord.expiresAtMs || 0);
+  const expiresAtMs = Number(new Date(record.expiresAt).getTime());
   if (!expiresAtMs || expiresAtMs <= now.getTime()) {
-    pairingTokenMemoryStore.delete(tokenHash);
     return {
       ok: false,
       reason: "pairing_token_expired",
       tokenHash,
-      userId: String(memoryRecord.userId || "")
+      userId: String(record.userId || "")
     };
   }
 
@@ -627,7 +558,7 @@ async function inspectPairingToken(pairingTokenValue) {
     ok: true,
     reason: "ok",
     tokenHash,
-    userId: String(memoryRecord.userId || ""),
+    userId: String(record.userId || ""),
     expiresAt: new Date(expiresAtMs)
   };
 }
@@ -655,71 +586,21 @@ async function inspectPairingCode(pairingCodeValue) {
 
   const now = new Date(toUtcISOString());
 
-  if (mongoose.connection.readyState === 1) {
-    const records = await PairingToken.find({ manualCodeHash })
-      .select("_id tokenHash userId expiresAt used createdAt")
-      .sort({ createdAt: -1 })
-      .limit(2);
-
-    if (!records || records.length === 0) {
-      return {
-        ok: false,
-        reason: "invalid_pairing_code",
-        tokenHash: "",
-        userId: ""
-      };
-    }
-
-    if (records.length > 1) {
-      return {
-        ok: false,
-        reason: "invalid_pairing_code",
-        tokenHash: "",
-        userId: ""
-      };
-    }
-
-    const record = records[0];
-    if (record.used) {
-      return {
-        ok: false,
-        reason: "pairing_code_used",
-        tokenHash: String(record.tokenHash || ""),
-        userId: String(record.userId || "")
-      };
-    }
-
-    const expiresAtMs = Number(new Date(record.expiresAt).getTime());
-    if (!expiresAtMs || expiresAtMs <= now.getTime()) {
-      return {
-        ok: false,
-        reason: "pairing_code_expired",
-        tokenHash: String(record.tokenHash || ""),
-        userId: String(record.userId || "")
-      };
-    }
-
+  if (mongoose.connection.readyState !== 1) {
     return {
-      ok: true,
-      reason: "ok",
-      tokenHash: String(record.tokenHash || ""),
-      userId: String(record.userId || ""),
-      expiresAt: new Date(expiresAtMs)
+      ok: false,
+      reason: "pairing_service_unavailable",
+      tokenHash: "",
+      userId: ""
     };
   }
 
-  cleanupExpiredPairingTokensInMemory(now.getTime());
-  const matches = [];
-  for (const [tokenHash, record] of pairingTokenMemoryStore.entries()) {
-    if (record?.manualCodeHash === manualCodeHash) {
-      matches.push({ tokenHash, record });
-      if (matches.length > 1) {
-        break;
-      }
-    }
-  }
+  const records = await PairingToken.find({ manualCodeHash })
+    .select("_id tokenHash userId expiresAt used createdAt")
+    .sort({ createdAt: -1 })
+    .limit(2);
 
-  if (matches.length !== 1) {
+  if (!records || records.length !== 1) {
     return {
       ok: false,
       reason: "invalid_pairing_code",
@@ -728,34 +609,31 @@ async function inspectPairingCode(pairingCodeValue) {
     };
   }
 
-  const match = matches[0];
-  const memoryRecord = match.record;
-  if (memoryRecord.used === true) {
-    pairingTokenMemoryStore.delete(match.tokenHash);
+  const record = records[0];
+  if (record.used) {
     return {
       ok: false,
       reason: "pairing_code_used",
-      tokenHash: match.tokenHash,
-      userId: String(memoryRecord.userId || "")
+      tokenHash: String(record.tokenHash || ""),
+      userId: String(record.userId || "")
     };
   }
 
-  const expiresAtMs = Number(memoryRecord.expiresAtMs || 0);
+  const expiresAtMs = Number(new Date(record.expiresAt).getTime());
   if (!expiresAtMs || expiresAtMs <= now.getTime()) {
-    pairingTokenMemoryStore.delete(match.tokenHash);
     return {
       ok: false,
       reason: "pairing_code_expired",
-      tokenHash: match.tokenHash,
-      userId: String(memoryRecord.userId || "")
+      tokenHash: String(record.tokenHash || ""),
+      userId: String(record.userId || "")
     };
   }
 
   return {
     ok: true,
     reason: "ok",
-    tokenHash: match.tokenHash,
-    userId: String(memoryRecord.userId || ""),
+    tokenHash: String(record.tokenHash || ""),
+    userId: String(record.userId || ""),
     expiresAt: new Date(expiresAtMs)
   };
 }
@@ -800,98 +678,66 @@ async function consumePairingTokenByHash(tokenHash, usedByDeviceUid) {
   const normalizedUsedByDeviceUid = normalizeDeviceUid(usedByDeviceUid);
   const now = new Date(toUtcISOString());
 
-  if (mongoose.connection.readyState === 1) {
-    const usedRecord = await PairingToken.findOneAndUpdate(
-      {
-        tokenHash: normalizedTokenHash,
-        used: false,
-        expiresAt: { $gt: now }
-      },
-      {
-        $set: {
-          used: true,
-          usedAt: now,
-          usedByDeviceUid: normalizedUsedByDeviceUid || null
-        }
-      },
-      {
-        new: true
-      }
-    ).select("_id userId");
+  if (mongoose.connection.readyState !== 1) {
+    return {
+      ok: false,
+      reason: "pairing_service_unavailable"
+    };
+  }
 
-    if (!usedRecord) {
-      const inspected = await PairingToken.findOne({ tokenHash: normalizedTokenHash }).select(
-        "used expiresAt userId"
-      );
-      if (!inspected) {
-        return {
-          ok: false,
-          reason: "invalid_pairing_token"
-        };
+  const usedRecord = await PairingToken.findOneAndUpdate(
+    {
+      tokenHash: normalizedTokenHash,
+      used: false,
+      expiresAt: { $gt: now }
+    },
+    {
+      $set: {
+        used: true,
+        usedAt: now,
+        usedByDeviceUid: normalizedUsedByDeviceUid || null
       }
-      if (inspected.used) {
-        return {
-          ok: false,
-          reason: "pairing_token_used"
-        };
-      }
+    },
+    {
+      new: true
+    }
+  ).select("_id userId");
 
-      const expiresAtMs = Number(new Date(inspected.expiresAt).getTime());
-      if (!expiresAtMs || expiresAtMs <= now.getTime()) {
-        return {
-          ok: false,
-          reason: "pairing_token_expired"
-        };
-      }
-
+  if (!usedRecord) {
+    const inspected = await PairingToken.findOne({ tokenHash: normalizedTokenHash }).select(
+      "used expiresAt userId"
+    );
+    if (!inspected) {
       return {
         ok: false,
         reason: "invalid_pairing_token"
       };
     }
+    if (inspected.used) {
+      return {
+        ok: false,
+        reason: "pairing_token_used"
+      };
+    }
 
-    return {
-      ok: true,
-      reason: "ok",
-      userId: String(usedRecord.userId || "")
-    };
-  }
+    const expiresAtMs = Number(new Date(inspected.expiresAt).getTime());
+    if (!expiresAtMs || expiresAtMs <= now.getTime()) {
+      return {
+        ok: false,
+        reason: "pairing_token_expired"
+      };
+    }
 
-  cleanupExpiredPairingTokensInMemory(now.getTime());
-  const memoryRecord = pairingTokenMemoryStore.get(normalizedTokenHash);
-  if (!memoryRecord) {
     return {
       ok: false,
       reason: "invalid_pairing_token"
     };
   }
 
-  const expiresAtMs = Number(memoryRecord.expiresAtMs || 0);
-  if (!expiresAtMs || expiresAtMs <= now.getTime()) {
-    pairingTokenMemoryStore.delete(normalizedTokenHash);
-    return {
-      ok: false,
-      reason: "pairing_token_expired"
-    };
-  }
-
-  if (memoryRecord.used === true) {
-    pairingTokenMemoryStore.delete(normalizedTokenHash);
-    return {
-      ok: false,
-      reason: "pairing_token_used"
-    };
-  }
-
-  memoryRecord.used = true;
-  memoryRecord.usedAtMs = now.getTime();
-  memoryRecord.usedByDeviceUid = normalizedUsedByDeviceUid || null;
-  pairingTokenMemoryStore.set(normalizedTokenHash, memoryRecord);
-
   return {
     ok: true,
     reason: "ok",
-    userId: String(memoryRecord.userId || "")
+    userId: String(usedRecord.userId || "")
   };
 }
 
@@ -1800,6 +1646,13 @@ async function revokeDashboardAccessForDevice(deviceUid, allowedOwnerUserId = nu
   emitScreenMirrorStatus(normalizedDeviceUid);
 }
 
+const revokeDeviceSessions = createDeviceSessionRevoker({
+  io,
+  unregisterDeviceSocketConnection,
+  emitDevicePresenceStatus,
+  logSecurityEvent
+});
+
 function buildWebRtcSessionDescription(payload = {}) {
   const descriptionSources = [
     payload,
@@ -1889,7 +1742,50 @@ function updateScreenMirrorViewerCount(deviceUid) {
 io.use(createSocketAuthMiddleware());
 
 io.on("connection", (socket) => {
-  const requireDeviceSocket = (eventName, payload = {}) => {
+  let deviceSessionValidationPromise = Promise.resolve(true);
+  if (isDeviceSocket(socket)) {
+    const authenticatedDeviceUid = resolveAuthenticatedDeviceUidFromSocket(socket);
+    const pendingRoomName = `device-pending:${authenticatedDeviceUid}`;
+    socket.join(pendingRoomName);
+
+    deviceSessionValidationPromise = (async () => {
+      try {
+        // Keep the socket outside the command room until its persisted session
+        // generation is re-checked. The pending room lets deletion/rotation
+        // disconnect it even while this distributed race check is in flight.
+        if (!(await isDeviceSocketSessionCurrent(socket))) {
+          socket.emit("security:error", {
+            event: "device:session-revoked",
+            reason: "stale_device_session"
+          });
+          socket.disconnect(true);
+          return false;
+        }
+
+        if (!socket.connected) return false;
+        await socket.leave(pendingRoomName);
+        await socket.join(`device:${authenticatedDeviceUid}`);
+        socket.data.screenMirrorDeviceUid = authenticatedDeviceUid;
+        registerDeviceSocketConnection(socket, authenticatedDeviceUid);
+        emitDevicePresenceStatus(authenticatedDeviceUid);
+        return true;
+      } catch (error) {
+        logSecurityEvent("socket_device_session_recheck_failed", {
+          socketId: socket.id,
+          deviceUid: authenticatedDeviceUid,
+          ...safeErrorMetadata(error)
+        });
+        socket.emit("security:error", {
+          event: "device:session-revoked",
+          reason: "session_validation_failed"
+        });
+        socket.disconnect(true);
+        return false;
+      }
+    })();
+  }
+
+  const requireDeviceSocket = async (eventName, payload = {}) => {
     if (!isDeviceSocket(socket)) {
       logSecurityEvent("socket_event_rejected", {
         socketId: socket.id,
@@ -1899,6 +1795,8 @@ io.on("connection", (socket) => {
       socket.emit("security:error", { event: eventName, reason: "unauthorized" });
       return null;
     }
+
+    if (!(await deviceSessionValidationPromise)) return null;
 
     const deviceUid = resolveScreenMirrorDeviceUid(socket, payload);
     if (!deviceUid) {
@@ -1914,8 +1812,8 @@ io.on("connection", (socket) => {
     return deviceUid;
   };
 
-  socket.on("device:join", (payload = {}) => {
-    const deviceUid = requireDeviceSocket("device:join", payload);
+  socket.on("device:join", async (payload = {}) => {
+    const deviceUid = await requireDeviceSocket("device:join", payload);
     if (!deviceUid) return;
 
     socket.data.screenMirrorDeviceUid = deviceUid;
@@ -1945,7 +1843,7 @@ io.on("connection", (socket) => {
   };
 
   socket.on("command:claim", async (payload = {}, ack) => {
-    const deviceUid = requireDeviceSocket("command:claim", payload);
+    const deviceUid = await requireDeviceSocket("command:claim", payload);
     if (!deviceUid) {
       acknowledgeCommandClaim(ack, payload, { success: false, error: "unauthorized" });
       return;
@@ -2031,8 +1929,8 @@ io.on("connection", (socket) => {
     }
   });
 
-  socket.on("screen:started", (payload = {}) => {
-    const deviceUid = requireDeviceSocket("screen:started", payload);
+  socket.on("screen:started", async (payload = {}) => {
+    const deviceUid = await requireDeviceSocket("screen:started", payload);
     if (!deviceUid) return;
 
     const session = ensureScreenMirrorSession(deviceUid);
@@ -2057,8 +1955,8 @@ io.on("connection", (socket) => {
     emitScreenMirrorStatus(deviceUid);
   });
 
-  socket.on("screen:stopped", (payload = {}) => {
-    const deviceUid = requireDeviceSocket("screen:stopped", payload);
+  socket.on("screen:stopped", async (payload = {}) => {
+    const deviceUid = await requireDeviceSocket("screen:stopped", payload);
     if (!deviceUid) return;
 
     const session = ensureScreenMirrorSession(deviceUid);
@@ -2078,8 +1976,8 @@ io.on("connection", (socket) => {
     });
   });
 
-  socket.on("screen:error", (payload = {}) => {
-    const deviceUid = requireDeviceSocket("screen:error", payload);
+  socket.on("screen:error", async (payload = {}) => {
+    const deviceUid = await requireDeviceSocket("screen:error", payload);
     if (!deviceUid) return;
 
     const session = ensureScreenMirrorSession(deviceUid);
@@ -2153,8 +2051,8 @@ io.on("connection", (socket) => {
     }
   });
 
-  socket.on("screen:webrtc-answer", (payload = {}) => {
-    const deviceUid = requireDeviceSocket("screen:webrtc-answer", payload);
+  socket.on("screen:webrtc-answer", async (payload = {}) => {
+    const deviceUid = await requireDeviceSocket("screen:webrtc-answer", payload);
     if (!deviceUid) return;
 
     const viewerId = typeof payload?.viewerId === "string" ? payload.viewerId.trim() : "";
@@ -2207,7 +2105,7 @@ io.on("connection", (socket) => {
       }
 
       if (isDeviceSocket(socket)) {
-        const deviceUid = requireDeviceSocket("screen:webrtc-ice-candidate", payload);
+        const deviceUid = await requireDeviceSocket("screen:webrtc-ice-candidate", payload);
         if (!deviceUid) return;
 
         const viewerId = typeof payload?.viewerId === "string" ? payload.viewerId.trim() : "";
@@ -2449,7 +2347,14 @@ const devicesRouter = createDevicesRouter({
   parseRequestBodyObject,
   DEVICE_UID_FORMAT_ERROR,
   translatePairingTokenReasonToCodeReason,
-  revokeDashboardAccessForDevice
+  revokeDashboardAccessForDevice,
+  revokeDeviceSessions,
+  deviceEnrollmentRateLimiter: createDeviceEnrollmentRateLimiter({
+    EnrollmentRateLimit,
+    isStoreReady: () => mongoose.connection.readyState === 1,
+    resolveDeviceUid: (req) => extractDeviceRegistrationInput(req.body).normalizedDeviceUid,
+    logSecurityEvent
+  })
 });
 app.use(devicesRouter);
 
@@ -2555,7 +2460,7 @@ app.use((error, req, res, next) => {
 });
 
 const PORT = Number(process.env.PORT) || 4000;
-let pairingTokenCleanupIntervalId = null;
+let runtimeCleanupIntervalId = null;
 
 function warnIfJwtSecretMissing() {
   const jwtIssue = getJwtSecretConfigurationIssue();
@@ -2573,20 +2478,18 @@ function warnIfJwtSecretMissing() {
   }
 }
 
-function startPairingTokenMemoryCleanupLoop() {
-  if (pairingTokenCleanupIntervalId) {
-    clearInterval(pairingTokenCleanupIntervalId);
-    pairingTokenCleanupIntervalId = null;
+function startRuntimeCleanupLoop() {
+  if (runtimeCleanupIntervalId) {
+    clearInterval(runtimeCleanupIntervalId);
+    runtimeCleanupIntervalId = null;
   }
 
-  pairingTokenCleanupIntervalId = setInterval(() => {
-    const nowMs = Date.now();
-    cleanupExpiredPairingTokensInMemory(nowMs);
-    cleanupInactiveScreenMirrorSessions(nowMs);
-  }, PAIRING_TOKEN_EXPIRY_CLEANUP_INTERVAL_MS);
+  runtimeCleanupIntervalId = setInterval(() => {
+    cleanupInactiveScreenMirrorSessions(Date.now());
+  }, RUNTIME_CLEANUP_INTERVAL_MS);
 
-  if (typeof pairingTokenCleanupIntervalId.unref === "function") {
-    pairingTokenCleanupIntervalId.unref();
+  if (typeof runtimeCleanupIntervalId.unref === "function") {
+    runtimeCleanupIntervalId.unref();
   }
 }
 
@@ -2601,13 +2504,13 @@ function isExpiresAtAscendingSingleFieldIndex(indexInfo) {
   return fieldName === "expiresAt" && Number(direction) === 1;
 }
 
-async function ensurePairingTokenExpiryTtlIndex() {
+async function ensureExpiryTtlIndex(model, label) {
   if (mongoose.connection.readyState !== 1) {
     return;
   }
 
   try {
-    const collection = PairingToken.collection;
+    const collection = model.collection;
     let indexes = [];
     try {
       indexes = await collection.indexes();
@@ -2644,10 +2547,15 @@ async function ensurePairingTokenExpiryTtlIndex() {
       }
     );
 
-    console.log("[PairingToken] TTL index ensured for expiresAt");
+    console.log(`[${label}] TTL index ensured for expiresAt`);
   } catch (error) {
-    console.error("[PairingToken] Failed to ensure TTL index:", safeErrorMetadata(error));
+    console.error(`[${label}] Failed to ensure TTL index:`, safeErrorMetadata(error));
   }
+}
+
+async function ensureEnrollmentExpiryTtlIndexes() {
+  await ensureExpiryTtlIndex(PairingToken, "PairingToken");
+  await ensureExpiryTtlIndex(EnrollmentRateLimit, "EnrollmentRateLimit");
 }
 
 async function cleanupLegacyDeviceUidData() {
@@ -2673,18 +2581,19 @@ async function cleanupLegacyDeviceUidData() {
 
 async function startServer() {
   warnIfJwtSecretMissing();
-  startPairingTokenMemoryCleanupLoop();
+  startRuntimeCleanupLoop();
 
   // Initialize Sequential Command Collection Service with Socket.io and Mapper
   CommandCollectionService.initialize(io, mapCommandForResponse);
 
+  await connectToDatabase();
+  await ensureEnrollmentExpiryTtlIndexes();
+  await cleanupLegacyDeviceUidData();
+  await CommandCollectionService.startScheduler();
+
   httpServer.listen(PORT, "0.0.0.0", () => {
     console.log(`Server running on port ${PORT}`);
   });
-
-  await connectToDatabase();
-  await ensurePairingTokenExpiryTtlIndex();
-  await cleanupLegacyDeviceUidData();
 }
 
 startServer();
