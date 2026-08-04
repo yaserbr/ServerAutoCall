@@ -7,8 +7,7 @@ const mongoose = require("mongoose");
 const path = require("path");
 const http = require("http");
 const crypto = require("crypto");
-const bcrypt = require("bcrypt");
-const jwt = require("jsonwebtoken");
+const QRCode = require("qrcode");
 const { Server: SocketIOServer } = require("socket.io");
 
 const { connectToDatabase } = require("./src/config/db");
@@ -27,13 +26,35 @@ const {
   isDeviceTokenMatch,
   hashDeviceToken
 } = require("./src/auth/deviceToken");
+const {
+  ADMIN_SETUP_KEY_MIN_BYTES,
+  JWT_SECRET_MIN_BYTES,
+  clearAccessTokenCookie,
+  getAdminSetupKey,
+  getAdminSetupKeyConfigurationIssue,
+  getJwtSecret,
+  getJwtSecretConfigurationIssue,
+  isSecretEqual,
+  setAccessTokenCookie,
+  signAccessToken
+} = require("./src/auth/accessToken");
 const { sanitizeRequestBody } = require("./src/security/requestSanitizer");
 const {
+  agentRateLimiter,
   authRateLimiter,
   commandRateLimiter,
-  deviceRateLimiter
+  deviceRateLimiter,
+  dummyDownloadRateLimiter
 } = require("./src/security/rateLimits");
-const { logSecurityEvent } = require("./src/security/auditLogger");
+const { getSafeRequestPath, logSecurityEvent } = require("./src/security/auditLogger");
+const {
+  buildSocketCorsOptions,
+  createExpressCorsMiddleware,
+  getConfiguredAllowedOrigins,
+  isRequestOriginAllowed
+} = require("./src/security/corsPolicy");
+const { ensureDeviceOwnershipEpoch } = require("./src/security/deviceOwnership");
+const { safeErrorMetadata } = require("./src/security/safeError");
 const {
   createSocketAuthMiddleware,
   isDashboardSocket,
@@ -43,6 +64,9 @@ const {
 } = require("./src/socket/auth");
 const { runAgentOrchestrator } = require("./src/services/agentService");
 const CommandCollectionService = require("./src/services/commandCollectionService");
+const {
+  reserveAuthorizedDummyDownload
+} = require("./src/services/downloadGuardService");
 const CollectionTemplate = require("./src/models/CollectionTemplate");
 const { hasPresentValue, addIfPresent, unsetIfPresent, toPlainObject, commandIdFrom } = require("./src/utils/objects");
 const createAuthRouter = require("./src/routes/auth");
@@ -52,31 +76,59 @@ const createCommandsRouter = require("./src/routes/commands");
 const app = express();
 const httpServer = http.createServer(app);
 const io = new SocketIOServer(httpServer, {
-  cors: {
-    origin: true,
-    methods: ["GET", "POST"]
+  cors: buildSocketCorsOptions(),
+  allowRequest: (req, callback) => {
+    const allowed = isRequestOriginAllowed(
+      req.headers?.origin,
+      req,
+      getConfiguredAllowedOrigins()
+    );
+    if (!allowed) {
+      logSecurityEvent("socket_origin_rejected", {
+        ip: req.socket?.remoteAddress,
+        path: req.url
+      });
+    }
+    callback(null, allowed);
   }
 });
 
 app.set("trust proxy", 1);
 
 process.on("uncaughtException", (error) => {
-  console.error("[uncaughtException]", error);
+  console.error("[uncaughtException]", safeErrorMetadata(error));
 });
 
 process.on("unhandledRejection", (reason) => {
-  console.error("[unhandledRejection]", reason);
+  console.error("[unhandledRejection]", safeErrorMetadata(reason));
 });
 
 app.use((req, res, next) => {
-  console.log(`[REQ] ${req.method} ${req.url}`);
+  console.log(`[REQ] ${req.method} ${getSafeRequestPath(req.url)}`);
   next();
 });
 
-app.use(cors());
+app.use(createExpressCorsMiddleware(cors, logSecurityEvent));
 app.use(
   helmet({
-    contentSecurityPolicy: false,
+    contentSecurityPolicy: {
+      directives: {
+        defaultSrc: ["'self'"],
+        baseUri: ["'self'"],
+        connectSrc: ["'self'", "http://localhost:4000", "ws://localhost:4000"],
+        fontSrc: ["'self'", "data:"],
+        formAction: ["'self'"],
+        frameAncestors: ["'none'"],
+        imgSrc: ["'self'", "data:", "blob:"],
+        mediaSrc: ["'self'", "blob:"],
+        objectSrc: ["'none'"],
+        scriptSrc: ["'self'"],
+        scriptSrcAttr: ["'unsafe-inline'"],
+        scriptSrcElem: ["'self'"],
+        styleSrc: ["'self'", "'unsafe-inline'"],
+        upgradeInsecureRequests: process.env.NODE_ENV === "production" ? [] : null
+      }
+    },
     crossOriginEmbedderPolicy: false
   })
 );
@@ -87,7 +139,9 @@ app.use((req, res, next) => {
   const start = Date.now();
   res.on("finish", () => {
     const durationMs = Date.now() - start;
-    console.log(`[HTTP] ${req.method} ${req.originalUrl} -> ${res.statusCode} (${durationMs}ms)`);
+    console.log(
+      `[HTTP] ${req.method} ${getSafeRequestPath(req.originalUrl)} -> ${res.statusCode} (${durationMs}ms)`
+    );
   });
   next();
 });
@@ -95,6 +149,7 @@ app.use((req, res, next) => {
 app.use("/auth", authRateLimiter);
 app.use("/commands", commandRateLimiter);
 app.use("/devices", deviceRateLimiter);
+app.use("/agent", agentRateLimiter);
 
 const RIYADH_TIMEZONE = "Asia/Riyadh";
 const RIYADH_UTC_OFFSET_MINUTES = 3 * 60;
@@ -112,12 +167,14 @@ const COMMAND_DUPLICATE_GUARD_WINDOW_MS = (() => {
 })();
 const COMMAND_DUPLICATE_EXCLUDED_ACTIONS = new Set(["screen_touch", "screen_swipe"]);
 const BCRYPT_SALT_ROUNDS = 10;
-const JWT_ACCESS_EXPIRES_IN = process.env.JWT_ACCESS_EXPIRES_IN || "7d";
 const COMMAND_CLAIM_SORT = { isImmediate: -1, scheduledAt: 1, createdAt: 1, _id: 1 };
 const DUMMY_DOWNLOAD_MIN_MB = 10;
 const DUMMY_DOWNLOAD_MAX_MB = 1000;
 const DUMMY_DOWNLOAD_CHUNK_BYTES = 64 * 1024;
 const ESIM_ACTIVATION_CODE_MAX_LENGTH = 512;
+const AGENT_MESSAGE_MAX_LENGTH = 2000;
+const AGENT_HISTORY_MAX_ITEMS = 20;
+const AGENT_HISTORY_ITEM_MAX_LENGTH = 2000;
 const REMOTE_TOUCH_MAX_COORDINATE = 20000;
 const REMOTE_TOUCH_MAX_DURATION_MS = 10000;
 const REMOTE_TOUCH_MIN_DURATION_MS = 50;
@@ -130,20 +187,12 @@ const PAIRING_TOKEN_GENERATION_MAX_ATTEMPTS = 10;
 const PAIRING_TOKEN_EXPIRY_CLEANUP_INTERVAL_MS = 60 * 1000;
 const DEFAULT_PUBLIC_SERVER_URL = "https://autocall--serverautocall--yh4cgzrdywjc.code.run";
 const OPEN_APP_PACKAGE_REGEX = /^[a-zA-Z0-9_]+(\.[a-zA-Z0-9_]+)+$/;
-const DEVICE_AUTH_ALLOW_LEGACY_FALLBACK =
-  String(process.env.DEVICE_AUTH_ALLOW_LEGACY_FALLBACK || "").trim().toLowerCase() === "true";
 const screenMirrorSessions = new Map();
 const screenMirrorViewerDeviceBySocketId = new Map();
 const activeDeviceSocketIdsByUid = new Map();
 const deviceUidBySocketId = new Map();
 const pairingTokenMemoryStore = new Map();
-const requireAuthenticatedDevice = buildRequireDeviceAuth({
-  allowLegacyFallback: DEVICE_AUTH_ALLOW_LEGACY_FALLBACK
-});
-const requireAuthenticatedDeviceAllowBootstrap = buildRequireDeviceAuth({
-  allowMissingTokenHash: true,
-  allowLegacyFallback: DEVICE_AUTH_ALLOW_LEGACY_FALLBACK
-});
+const requireAuthenticatedDevice = buildRequireDeviceAuth();
 const OPEN_APP_ALIAS_DEFINITIONS = [
   { packageName: "com.whatsapp", aliases: ["whatsapp", "whats app", "wa"] },
   { packageName: "org.telegram.messenger", aliases: ["telegram", "telegram app", "tg"] },
@@ -1069,7 +1118,7 @@ function logReturnToAutoCallEvent(payload = {}) {
     commandId: payload.commandId ?? null,
     deviceUid: payload.deviceUid ?? null,
     status: payload.status ?? null,
-    failureReason: payload.failureReason ?? null
+    hasFailureReason: Boolean(payload.hasFailureReason ?? payload.failureReason)
   });
 }
 
@@ -1534,23 +1583,6 @@ function shouldApplyCommandDuplicateGuard(action) {
   );
 }
 
-function redactSensitivePayload(value, depth = 0) {
-  if (depth > 6) return value;
-  if (value === null || value === undefined) return value;
-  if (Array.isArray(value)) {
-    return value.map((item) => redactSensitivePayload(item, depth + 1));
-  }
-  if (typeof value !== "object") return value;
-
-  const output = {};
-  for (const [key, nestedValue] of Object.entries(value)) {
-    const normalizedKey = String(key).toLowerCase();
-    const isSensitiveKey = normalizedKey.includes("token") || normalizedKey.includes("password");
-    output[key] = isSensitiveKey ? "[REDACTED]" : redactSensitivePayload(nestedValue, depth + 1);
-  }
-  return output;
-}
-
 function parseUsername(rawUsername) {
   const normalized = normalizeUsername(rawUsername);
   if (!normalized) return "";
@@ -1560,9 +1592,147 @@ function parseUsername(rawUsername) {
 
 function parsePassword(rawPassword) {
   if (typeof rawPassword !== "string") return "";
-  const normalized = rawPassword.trim();
-  if (normalized.length < 1 || normalized.length > 200) return "";
+  if (rawPassword.length < 1 || rawPassword.length > 200) return "";
+  return rawPassword;
+}
+
+const AGENT_ACTION_TO_TYPE = {
+  call: "CALL",
+  end: "END",
+  sms: "SMS",
+  auto_answer: "AUTO_ANSWER",
+  open_url: "OPEN_URL",
+  close_webview: "CLOSE_WEBVIEW",
+  open_app: "OPEN_APP",
+  return_to_autocall: "RETURN_TO_AUTOCALL",
+  download_data: "DOWNLOAD_DATA",
+  activate_esim: "ACTIVATE_ESIM",
+  delete_esim: "DELETE_ESIM",
+  start_screen_mirror: "START_SCREEN_MIRROR",
+  stop_screen_mirror: "STOP_SCREEN_MIRROR",
+  screen_touch: "SCREEN_TOUCH",
+  screen_swipe: "SCREEN_SWIPE"
+};
+const AGENT_COMMAND_PARAMETER_FIELDS = [
+  "phoneNumber",
+  "message",
+  "url",
+  "appName",
+  "notes",
+  "scheduledAt",
+  "durationSeconds",
+  "downloadSizeMb",
+  "activationCode",
+  "esimSubscriptionId",
+  "esimPortIndex",
+  "subscriptionId",
+  "enabled",
+  "autoHangupSeconds",
+  "x",
+  "y",
+  "screenWidth",
+  "screenHeight",
+  "startX",
+  "startY",
+  "endX",
+  "endY",
+  "durationMs",
+  "touchTarget"
+];
+
+function normalizeAgentHistory(value) {
+  if (!Array.isArray(value) || value.length > AGENT_HISTORY_MAX_ITEMS) return null;
+
+  const normalized = [];
+  for (const item of value) {
+    if (!item || typeof item !== "object") return null;
+    const role = typeof item.role === "string" ? item.role.trim().toLowerCase() : "";
+    const content = typeof item.content === "string" ? item.content.trim() : "";
+    if (!new Set(["user", "assistant", "model"]).has(role)) return null;
+    if (!content || content.length > AGENT_HISTORY_ITEM_MAX_LENGTH) return null;
+    normalized.push({ role, content });
+  }
   return normalized;
+}
+
+function buildValidatedAgentCommandData(draftCommand, targetDevice, currentUserId) {
+  if (!draftCommand || typeof draftCommand !== "object") return null;
+  const action = typeof draftCommand.action === "string"
+    ? draftCommand.action.trim().toLowerCase()
+    : "";
+  const type = AGENT_ACTION_TO_TYPE[action];
+  if (!type) return null;
+
+  const commandData = {
+    deviceUid: targetDevice.deviceUid,
+    ownerUserId: currentUserId,
+    deviceOwnershipEpoch: targetDevice.ownershipEpoch,
+    action,
+    type,
+    status: "pending",
+    isImmediate: true,
+    createdAt: new Date(toUtcISOString())
+  };
+  for (const fieldName of AGENT_COMMAND_PARAMETER_FIELDS) {
+    if (draftCommand[fieldName] !== undefined && draftCommand[fieldName] !== null) {
+      commandData[fieldName] = draftCommand[fieldName];
+    }
+  }
+
+  if (commandData.scheduledAt) {
+    const scheduledDate = new Date(commandData.scheduledAt);
+    if (Number.isNaN(scheduledDate.getTime()) || scheduledDate.getTime() < Date.now() - 60_000) {
+      return null;
+    }
+    commandData.scheduledAt = scheduledDate;
+    commandData.isImmediate = false;
+  } else {
+    delete commandData.scheduledAt;
+  }
+
+  if (action === "open_url") {
+    const normalizedUrl = normalizeHttpUrl(commandData.url);
+    if (!normalizedUrl || normalizedUrl.length > 2048) return null;
+    commandData.url = normalizedUrl;
+  }
+  if (action === "open_app") {
+    const appResolution = resolveOpenAppTarget(commandData.appName);
+    if (!appResolution?.normalizedAppName || !appResolution.resolvedPackageName) return null;
+    commandData.appName = appResolution.normalizedAppName;
+    commandData.resolvedPackageName = appResolution.resolvedPackageName;
+  }
+  if (action === "download_data") {
+    const parsedDownloadSizeMb = parseDownloadSizeMb(commandData.downloadSizeMb);
+    if (parsedDownloadSizeMb === null) return null;
+    commandData.downloadSizeMb = parsedDownloadSizeMb;
+  }
+
+  const subscriptionValidation = normalizeOptionalCommandSubscriptionId(
+    commandData,
+    targetDevice
+  );
+  return subscriptionValidation.ok ? commandData : null;
+}
+
+function escapeRegexLiteral(value) {
+  return String(value).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+function createPairingQrDataUrl(payload) {
+  return QRCode.toDataURL(JSON.stringify(payload), {
+    width: 210,
+    margin: 1,
+    color: {
+      dark: "#052453",
+      light: "#ffffff"
+    }
+  });
+}
+
+function parseRegistrationPassword(rawPassword) {
+  if (typeof rawPassword !== "string") return "";
+  if (rawPassword.length < 12 || rawPassword.length > 128) return "";
+  return rawPassword;
 }
 
 function normalizeAuthUserId(value) {
@@ -1596,16 +1766,22 @@ function getCommandFetchCutoffDate() {
   return new Date(Date.now() - COMMAND_FETCH_WINDOW_MS);
 }
 
-function buildDuePendingCommandFilter(deviceUid) {
+function buildDuePendingCommandFilter(deviceUid, ownerUserId, deviceOwnershipEpoch) {
   return {
     deviceUid,
+    ownerUserId,
+    deviceOwnershipEpoch,
     status: "pending",
     createdAt: { $gte: getCommandFetchCutoffDate() },
     $or: [{ scheduledAt: null }, { scheduledAt: { $lte: new Date(toUtcISOString()) } }]
   };
 }
 
-async function listFutureScheduledCommandsForDevice(deviceUid) {
+async function listFutureScheduledCommandsForDevice(
+  deviceUid,
+  ownerUserId,
+  deviceOwnershipEpoch
+) {
   const normalizedDeviceUid = normalizeDeviceUid(deviceUid);
   if (!normalizedDeviceUid) {
     return { commands: [], complete: true };
@@ -1613,6 +1789,8 @@ async function listFutureScheduledCommandsForDevice(deviceUid) {
 
   const futureScheduledCommands = await Command.find({
     deviceUid: normalizedDeviceUid,
+    ownerUserId,
+    deviceOwnershipEpoch,
     status: "pending",
     createdAt: { $gte: getCommandFetchCutoffDate() },
     scheduledAt: { $gt: new Date(toUtcISOString()) }
@@ -1636,7 +1814,28 @@ async function claimNextPendingCommandForDevice(deviceUid, options = {}) {
   }
 
   const transport = typeof options.transport === "string" ? options.transport : "unknown";
-  const claimFilter = buildDuePendingCommandFilter(normalizedDeviceUid);
+  const currentDevice = await Device.findOne({ deviceUid: normalizedDeviceUid }).select(
+    "+ownershipEpoch"
+  );
+  if (!currentDevice?.ownerUserId) {
+    return {
+      success: true,
+      command: null,
+      scheduledCommands: [],
+      scheduledCommandsComplete: true
+    };
+  }
+  if (!(await ensureDeviceOwnershipEpoch(currentDevice))) {
+    throw new Error("Device ownership state could not be initialized");
+  }
+
+  const ownerUserId = currentDevice.ownerUserId;
+  const deviceOwnershipEpoch = currentDevice.ownershipEpoch;
+  const claimFilter = buildDuePendingCommandFilter(
+    normalizedDeviceUid,
+    ownerUserId,
+    deviceOwnershipEpoch
+  );
   const claimedCommand = await Command.findOneAndUpdate(
     claimFilter,
     {
@@ -1656,7 +1855,11 @@ async function claimNextPendingCommandForDevice(deviceUid, options = {}) {
   );
 
   if (!claimedCommand) {
-    const scheduledCommandSync = await listFutureScheduledCommandsForDevice(normalizedDeviceUid);
+    const scheduledCommandSync = await listFutureScheduledCommandsForDevice(
+      normalizedDeviceUid,
+      ownerUserId,
+      deviceOwnershipEpoch
+    );
     logCommandLifecycle("claim_none", {
       deviceUid: normalizedDeviceUid,
       oldStatus: "pending",
@@ -1695,7 +1898,11 @@ async function claimNextPendingCommandForDevice(deviceUid, options = {}) {
     });
   }
 
-  const scheduledCommandSync = await listFutureScheduledCommandsForDevice(normalizedDeviceUid);
+  const scheduledCommandSync = await listFutureScheduledCommandsForDevice(
+    normalizedDeviceUid,
+    ownerUserId,
+    deviceOwnershipEpoch
+  );
   return {
     success: true,
     command: emitCommandUpdated(claimedCommand),
@@ -1719,24 +1926,12 @@ function logCommandLifecycle(eventName, payload = {}) {
 }
 
 function handleServerError(res, error, contextLabel) {
-  console.error(`[${contextLabel}]`, error);
+  console.error(`[${contextLabel}]`, safeErrorMetadata(error));
   return res.status(500).json({ error: "Internal server error" });
-}
-
-function getJwtSecret() {
-  return typeof process.env.JWT_SECRET === "string"
-    ? process.env.JWT_SECRET.trim()
-    : "";
 }
 
 function isAuthEnabled() {
   return Boolean(getJwtSecret());
-}
-
-function getAdminSetupKey() {
-  return typeof process.env.ADMIN_SETUP_KEY === "string"
-    ? process.env.ADMIN_SETUP_KEY.trim()
-    : "";
 }
 
 function normalizeUsername(value) {
@@ -1751,20 +1946,6 @@ function mapUserForResponse(user) {
     username: source?.username ?? null,
     createdAt: source?.createdAt ?? null
   };
-}
-
-function signAccessToken(user) {
-  const jwtSecret = getJwtSecret();
-  if (!jwtSecret) return "";
-
-  return jwt.sign(
-    {
-      sub: String(user._id),
-      username: user.username
-    },
-    jwtSecret,
-    { expiresIn: JWT_ACCESS_EXPIRES_IN }
-  );
 }
 
 function respondAuthDisabled(res) {
@@ -1830,6 +2011,36 @@ function emitScreenMirrorStatus(deviceUid) {
   if (!statusPayload) return;
 
   io.to(`dashboard:${normalizedDeviceUid}`).emit("screen:status", statusPayload);
+}
+
+async function revokeDashboardAccessForDevice(deviceUid, allowedOwnerUserId = null) {
+  const normalizedDeviceUid = normalizeDeviceUid(deviceUid);
+  if (!normalizedDeviceUid) return;
+
+  const roomName = `dashboard:${normalizedDeviceUid}`;
+  const roomSockets = await io.in(roomName).fetchSockets();
+  for (const dashboardSocket of roomSockets) {
+    if (!isDashboardSocket(dashboardSocket)) continue;
+    const remainsAuthorized =
+      allowedOwnerUserId &&
+      String(dashboardSocket.data.userId || "") === String(allowedOwnerUserId);
+    if (remainsAuthorized) continue;
+
+    dashboardSocket.leave(roomName);
+    if (screenMirrorViewerDeviceBySocketId.get(dashboardSocket.id) === normalizedDeviceUid) {
+      screenMirrorViewerDeviceBySocketId.delete(dashboardSocket.id);
+    }
+    if (dashboardSocket.data.screenMirrorDashboardDeviceUid === normalizedDeviceUid) {
+      dashboardSocket.data.screenMirrorDashboardDeviceUid = null;
+    }
+    dashboardSocket.emit("security:error", {
+      event: "device:ownership-changed",
+      reason: "forbidden"
+    });
+  }
+
+  updateScreenMirrorViewerCount(normalizedDeviceUid);
+  emitScreenMirrorStatus(normalizedDeviceUid);
 }
 
 function buildWebRtcSessionDescription(payload = {}) {
@@ -2002,7 +2213,7 @@ io.on("connection", (socket) => {
       console.error("[SocketCommandClaim] failed", {
         socketId: socket.id,
         deviceUid,
-        error: error?.message || "unknown"
+        ...safeErrorMetadata(error)
       });
       acknowledgeCommandClaim(ack, payload, {
         success: false,
@@ -2053,7 +2264,7 @@ io.on("connection", (socket) => {
         socketId: socket.id,
         event: "dashboard:join",
         userId: socket.data.userId ?? null,
-        reason: error?.message || "unknown"
+        ...safeErrorMetadata(error)
       });
       socket.emit("security:error", {
         event: "dashboard:join",
@@ -2119,7 +2330,7 @@ io.on("connection", (socket) => {
 
     console.log("[SCREEN_MIRROR] error", {
       deviceUid,
-      reason: payload?.reason ?? null
+      hasReason: typeof payload?.reason === "string" && payload.reason.trim() !== ""
     });
     io.to(`dashboard:${deviceUid}`).emit("screen:status", {
       ...buildScreenMirrorStatus(deviceUid),
@@ -2172,7 +2383,7 @@ io.on("connection", (socket) => {
         socketId: socket.id,
         event: "screen:webrtc-offer",
         userId: socket.data.userId ?? null,
-        reason: error?.message || "unknown"
+        ...safeErrorMetadata(error)
       });
       socket.emit("security:error", {
         event: "screen:webrtc-offer",
@@ -2253,7 +2464,7 @@ io.on("connection", (socket) => {
         socketId: socket.id,
         event: "screen:webrtc-ice-candidate",
         userId: socket.data.userId ?? null,
-        reason: error?.message || "unknown"
+        ...safeErrorMetadata(error)
       });
     }
   });
@@ -2310,7 +2521,7 @@ app.get("/health", (req, res) => {
 
 const DUMMY_CHUNK = Buffer.alloc(DUMMY_DOWNLOAD_CHUNK_BYTES, 0x61);
 
-app.get("/dummy-download", requireAuthenticatedDevice, (req, res) => {
+app.get("/dummy-download", dummyDownloadRateLimiter, requireAuthenticatedDevice, async (req, res) => {
   const requestedMb = parseDownloadSizeMb(req.query?.mb);
   if (requestedMb === null) {
     return res.status(400).json({
@@ -2320,9 +2531,34 @@ app.get("/dummy-download", requireAuthenticatedDevice, (req, res) => {
 
   const totalBytes = requestedMb * 1024 * 1024;
   let remainingBytes = totalBytes;
+  let bytesSent = 0;
+  let streamSettled = false;
+  let streamStopped = false;
+  let reservation;
+
+  try {
+    reservation = await reserveAuthorizedDummyDownload({
+      device: req.authenticatedDevice,
+      deviceUid: req.deviceUid,
+      requestedMb,
+      ip: req.ip
+    });
+  } catch (error) {
+    const statusCode = Number(error?.statusCode) || 500;
+    if (statusCode === 403 || statusCode === 429) {
+      logSecurityEvent("dummy_download_rejected", {
+        ip: req.ip,
+        deviceUid: req.deviceUid ?? null,
+        reason: error?.code || "download_rejected"
+      });
+      return res.status(statusCode).json({ error: error.message });
+    }
+    return handleServerError(res, error, "GET /dummy-download authorization");
+  }
 
   console.log("[DummyDownload] start", {
     deviceUid: req.deviceUid ?? null,
+    commandId: reservation.commandId,
     mb: requestedMb
   });
 
@@ -2331,24 +2567,63 @@ app.get("/dummy-download", requireAuthenticatedDevice, (req, res) => {
   res.setHeader("Content-Length", String(totalBytes));
   res.setHeader("Cache-Control", "no-store");
 
-  const streamChunks = () => {
-    while (remainingBytes > 0) {
-      const bytesToWrite = Math.min(DUMMY_DOWNLOAD_CHUNK_BYTES, remainingBytes);
-      const payload =
-        bytesToWrite === DUMMY_DOWNLOAD_CHUNK_BYTES
-          ? DUMMY_CHUNK
-          : DUMMY_CHUNK.subarray(0, bytesToWrite);
-      const canContinue = res.write(payload);
-      remainingBytes -= bytesToWrite;
+  const finalizeStream = (completed) => {
+    if (streamSettled) return;
+    streamSettled = true;
+    streamStopped = true;
+    res.removeListener("drain", streamChunks);
 
-      if (!canContinue) {
-        res.once("drain", streamChunks);
-        return;
-      }
+    void reservation
+      .finalize({ completed, bytesSent })
+      .catch((error) => {
+        console.error("[DummyDownload] Failed to finalize reservation", {
+          deviceUid: req.deviceUid ?? null,
+          commandId: reservation.commandId,
+          completed,
+          bytesSent,
+          ...safeErrorMetadata(error)
+        });
+      });
+  };
+
+  const streamChunks = () => {
+    if (streamStopped || res.destroyed) {
+      finalizeStream(false);
+      return;
     }
 
-    res.end();
+    try {
+      while (remainingBytes > 0 && !streamStopped) {
+        const bytesToWrite = Math.min(DUMMY_DOWNLOAD_CHUNK_BYTES, remainingBytes);
+        const payload =
+          bytesToWrite === DUMMY_DOWNLOAD_CHUNK_BYTES
+            ? DUMMY_CHUNK
+            : DUMMY_CHUNK.subarray(0, bytesToWrite);
+        const canContinue = res.write(payload);
+        remainingBytes -= bytesToWrite;
+        bytesSent += bytesToWrite;
+
+        if (!canContinue) {
+          res.once("drain", streamChunks);
+          return;
+        }
+      }
+
+      if (!streamStopped) {
+        res.end();
+      }
+    } catch (error) {
+      finalizeStream(false);
+      res.destroy(error);
+    }
   };
+
+  res.once("finish", () => finalizeStream(remainingBytes === 0));
+  res.once("close", () => {
+    if (!res.writableFinished) {
+      finalizeStream(false);
+    }
+  });
 
   return streamChunks();
 });
@@ -2362,6 +2637,7 @@ const authRouter = createAuthRouter({
   parseRequestBodyObject,
   parseUsername,
   parsePassword,
+  parseRegistrationPassword,
   logSecurityEvent,
   BCRYPT_SALT_ROUNDS,
   signAccessToken,
@@ -2371,7 +2647,11 @@ const authRouter = createAuthRouter({
   createPairingTokenForUser,
   resolvePublicServerUrl,
   PAIRING_TOKEN_TYPE,
-  PAIRING_TOKEN_TTL_MS
+  PAIRING_TOKEN_TTL_MS,
+  setAccessTokenCookie,
+  clearAccessTokenCookie,
+  isSecretEqual,
+  createPairingQrDataUrl
 });
 app.use(authRouter);
 
@@ -2380,10 +2660,8 @@ const devicesRouter = createDevicesRouter({
   User,
   requireAuth,
   requireAuthenticatedDevice,
-  requireAuthenticatedDeviceAllowBootstrap,
   extractDeviceRegistrationInput,
   normalizeEsimSubscriptions,
-  redactSensitivePayload,
   normalizeDeviceUid,
   extractDeviceTokenFromRequest,
   toUtcISOString,
@@ -2410,7 +2688,8 @@ const devicesRouter = createDevicesRouter({
   parseRequestBodyObject,
   DEVICE_UID_FORMAT_ERROR,
   DEVICE_UID_REGEX,
-  translatePairingTokenReasonToCodeReason
+  translatePairingTokenReasonToCodeReason,
+  revokeDashboardAccessForDevice
 });
 app.use(devicesRouter);
 
@@ -2438,6 +2717,7 @@ const commandsRouter = createCommandsRouter({
   mapCommandForResponse,
   emitCommandCreated,
   logCommandLifecycle,
+  logSecurityEvent,
   logOpenAppResolver,
   logReturnToAutoCallEvent,
   emitCommandUpdated,
@@ -2559,12 +2839,18 @@ app.post("/agent/chat", requireAuth, async (req, res) => {
     }
 
     const { message, history = [] } = req.body;
-    if (typeof message !== "string" || !message.trim()) {
+    const normalizedMessage = typeof message === "string" ? message.trim() : "";
+    const normalizedHistory = normalizeAgentHistory(history);
+    if (!normalizedMessage || normalizedMessage.length > AGENT_MESSAGE_MAX_LENGTH) {
       return res.status(400).json({ error: "Message prompt is required and must be a string" });
+    }
+    if (!normalizedHistory) {
+      return res.status(400).json({ error: "Invalid agent conversation history" });
     }
 
     // 1. Context Compilation - Fetch user's registered devices
-    const devices = await Device.find({ ownerUserId: currentUserId });
+    const devices = await Device.find({ ownerUserId: currentUserId }).select("+ownershipEpoch");
+    await Promise.all(devices.map((device) => ensureDeviceOwnershipEpoch(device)));
     const formattedDevices = devices.map(d => ({
       deviceUid: d.deviceUid,
       deviceName: d.deviceName || buildDefaultDeviceName(d.deviceUid),
@@ -2582,15 +2868,14 @@ app.post("/agent/chat", requireAuth, async (req, res) => {
 
     // 2. Context Compilation - Pre-filter matching contacts to reduce token usage & hallucinations
     // Simple extraction of capitalized words to identify potential contact names in the message
-    const capitalizedWords = (message.match(/[A-Z][a-z]+/g) || []).map(w => w.trim());
+    const capitalizedWords = (normalizedMessage.match(/[A-Z][a-z]+/g) || []).map(w => w.trim());
     const uniquePotentialNames = [...new Set(capitalizedWords)];
     
     let contacts = [];
     if (uniquePotentialNames.length > 0) {
-      function escapeRegExp(string) {
-        return string.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-      }
-      const regexPool = uniquePotentialNames.map(name => new RegExp(escapeRegExp(name), "i"));
+      const regexPool = uniquePotentialNames.map(
+        (name) => new RegExp(escapeRegexLiteral(name), "i")
+      );
       contacts = await Contact.find({
         userId: currentUserId,
         name: { $in: regexPool }
@@ -2608,8 +2893,8 @@ app.post("/agent/chat", requireAuth, async (req, res) => {
 
     // 3. Hand over to LLM Orchestrator Service
     const agentResult = await runAgentOrchestrator({
-      prompt: message.trim(),
-      history: Array.isArray(history) ? history : [],
+      prompt: normalizedMessage,
+      history: normalizedHistory,
       contacts: contacts.map(c => ({ name: c.name, phoneNumber: c.phoneNumber })),
       devices: formattedDevices,
       timezone: RIYADH_TIMEZONE,
@@ -2631,15 +2916,26 @@ app.post("/agent/chat", requireAuth, async (req, res) => {
 
       // If the command is a collection execution trigger
       if (agentResult.draftCommand.action === "execute_collection") {
+        const collectionName =
+          typeof agentResult.draftCommand.collectionName === "string"
+            ? agentResult.draftCommand.collectionName.trim()
+            : "";
+        if (!collectionName || collectionName.length > 120) {
+          return res.status(400).json({
+            error: "Agent returned an invalid collection name.",
+            response: "I couldn't safely identify that collection.",
+            draftCommand: null
+          });
+        }
         const template = await CollectionTemplate.findOne({
           ownerUserId: currentUserId,
-          name: { $regex: new RegExp(`^${agentResult.draftCommand.collectionName.trim()}$`, "i") }
+          name: { $regex: new RegExp(`^${escapeRegexLiteral(collectionName)}$`, "i") }
         });
 
         if (!template) {
           return res.status(404).json({
-            error: `Template '${agentResult.draftCommand.collectionName}' not found.`,
-            response: `I couldn't find any collection template named '${agentResult.draftCommand.collectionName}'.`,
+            error: `Template '${collectionName}' not found.`,
+            response: `I couldn't find any collection template named '${collectionName}'.`,
             draftCommand: null
           });
         }
@@ -2666,26 +2962,38 @@ app.post("/agent/chat", requireAuth, async (req, res) => {
       }
 
       // Auto-Execute ALL Commands Immediately
-      const finalCommandData = {
-        ...agentResult.draftCommand,
-        deviceUid: targetDevice.deviceUid,
-        status: "pending",
-        isImmediate: agentResult.draftCommand.isImmediate !== false,
-        createdAt: new Date(toUtcISOString())
-      };
-      const subscriptionValidation = normalizeOptionalCommandSubscriptionId(
-        finalCommandData,
-        targetDevice
+      const finalCommandData = buildValidatedAgentCommandData(
+        agentResult.draftCommand,
+        targetDevice,
+        currentUserId
       );
-      if (!subscriptionValidation.ok) {
+      if (!finalCommandData) {
         return res.status(400).json({
-          error: subscriptionValidation.error,
-          response: "I couldn't queue that command because the selected SIM/eSIM is not valid for this device.",
+          error: "Agent returned an invalid command payload.",
+          response: "I couldn't queue that command because its parameters were not safe or valid.",
           draftCommand: null
         });
       }
 
-      const command = await Command.create(finalCommandData);
+      const command = new Command(finalCommandData);
+      try {
+        await command.validate();
+        await command.save();
+      } catch (validationError) {
+        logSecurityEvent("agent_command_validation_failed", {
+          ip: req.ip,
+          path: req.originalUrl,
+          method: req.method,
+          userId: currentUserId,
+          deviceUid: targetDevice.deviceUid,
+          reason: validationError?.name || "validation_failed"
+        });
+        return res.status(400).json({
+          error: "Agent returned an invalid command payload.",
+          response: "I couldn't queue that command because its parameters were not safe or valid.",
+          draftCommand: null
+        });
+      }
 
       logCommandLifecycle("created", {
         commandId: commandIdFrom(command),
@@ -2723,7 +3031,7 @@ app.post("/agent/chat", requireAuth, async (req, res) => {
 
 app.use(express.static("public"));
 app.use((error, req, res, next) => {
-  console.error("[ExpressError]", error);
+  console.error("[ExpressError]", safeErrorMetadata(error));
   if (res.headersSent) {
     return next(error);
   }
@@ -2740,23 +3048,19 @@ const PORT = Number(process.env.PORT) || 4000;
 let pairingTokenCleanupIntervalId = null;
 
 function warnIfJwtSecretMissing() {
-  if (isAuthEnabled()) {
-    return;
+  const jwtIssue = getJwtSecretConfigurationIssue();
+  if (jwtIssue) {
+    console.error(
+      `[Auth] JWT_SECRET is ${jwtIssue === "missing" ? "missing" : `shorter than ${JWT_SECRET_MIN_BYTES} bytes`}. Authentication is disabled until a strong secret is configured.`
+    );
   }
 
-  console.warn(
-    "[Auth] JWT_SECRET is missing. Web auth routes (/auth/*) and protected web endpoints are disabled and will return a clear error until JWT_SECRET is configured."
-  );
-}
-
-function warnIfLegacyDeviceAuthFallbackEnabled() {
-  if (!DEVICE_AUTH_ALLOW_LEGACY_FALLBACK) {
-    return;
+  const adminKeyIssue = getAdminSetupKeyConfigurationIssue();
+  if (adminKeyIssue) {
+    console.error(
+      `[Auth] ADMIN_SETUP_KEY is ${adminKeyIssue === "missing" ? "missing" : `shorter than ${ADMIN_SETUP_KEY_MIN_BYTES} bytes`}. User registration is disabled until a strong setup key is configured.`
+    );
   }
-
-  console.warn(
-    "[DeviceAuth] DEVICE_AUTH_ALLOW_LEGACY_FALLBACK=true. Legacy untokened device requests are temporarily allowed on protected device endpoints."
-  );
 }
 
 function startPairingTokenMemoryCleanupLoop() {
@@ -2830,7 +3134,7 @@ async function ensurePairingTokenExpiryTtlIndex() {
 
     console.log("[PairingToken] TTL index ensured for expiresAt");
   } catch (error) {
-    console.error("[PairingToken] Failed to ensure TTL index:", error?.message || error);
+    console.error("[PairingToken] Failed to ensure TTL index:", safeErrorMetadata(error));
   }
 }
 
@@ -2857,7 +3161,6 @@ async function cleanupLegacyDeviceUidData() {
 
 async function startServer() {
   warnIfJwtSecretMissing();
-  warnIfLegacyDeviceAuthFallbackEnabled();
   startPairingTokenMemoryCleanupLoop();
 
   // Initialize Sequential Command Collection Service with Socket.io and Mapper

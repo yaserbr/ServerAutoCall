@@ -1,10 +1,13 @@
 const Device = require("../models/Device");
 const { isDeviceTokenMatch, normalizeDeviceToken } = require("../auth/deviceToken");
 const {
+  ACCESS_TOKEN_COOKIE_NAME,
+  extractCookieValue,
   verifyAccessToken,
   extractBearerTokenFromHeader
-} = require("../middleware/requireAuth");
+} = require("../auth/accessToken");
 const { logSecurityEvent } = require("../security/auditLogger");
+const { safeErrorMetadata } = require("../security/safeError");
 
 const DEVICE_UID_LENGTH = 5;
 const DEVICE_UID_REGEX = new RegExp(`^[a-z0-9]{${DEVICE_UID_LENGTH}}$`);
@@ -27,21 +30,25 @@ function extractSocketBearerToken(socket) {
   if (normalizedAuthToken) return normalizedAuthToken;
 
   const headerToken = extractBearerTokenFromHeader(socket?.handshake?.headers?.authorization);
-  return headerToken;
+  if (headerToken) return headerToken;
+
+  return extractCookieValue(
+    socket?.handshake?.headers?.cookie,
+    ACCESS_TOKEN_COOKIE_NAME
+  );
 }
 
 function extractSocketDeviceCredentials(socket) {
   const fromAuth = socket?.handshake?.auth || {};
   const deviceUid = normalizeDeviceUid(
     fromAuth.deviceUid ??
-      socket?.handshake?.query?.deviceUid ??
       socket?.handshake?.headers?.["x-device-uid"] ??
+      socket?.handshake?.query?.deviceUid ??
       ""
   );
 
   const deviceToken = normalizeDeviceToken(
     fromAuth.deviceToken ??
-      socket?.handshake?.query?.deviceToken ??
       socket?.handshake?.headers?.["x-device-token"] ??
       ""
   );
@@ -88,6 +95,13 @@ function createSocketAuthMiddleware() {
           socket.data.authType = "dashboard";
           socket.data.userId = verification.userId;
           socket.data.username = verification.username ?? null;
+          const expiresAtSeconds = Number(verification.payload?.exp);
+          if (Number.isFinite(expiresAtSeconds)) {
+            const delayMs = Math.max(0, expiresAtSeconds * 1000 - Date.now());
+            const expiryTimer = setTimeout(() => socket.disconnect(true), delayMs);
+            if (typeof expiryTimer.unref === "function") expiryTimer.unref();
+            socket.once("disconnect", () => clearTimeout(expiryTimer));
+          }
           return next();
         }
 
@@ -134,7 +148,7 @@ function createSocketAuthMiddleware() {
       logSecurityEvent("socket_auth_internal_error", {
         socketId: socket.id,
         ip: socket.handshake.address,
-        reason: error?.message || "unknown"
+        ...safeErrorMetadata(error)
       });
       return next(new Error("Unauthorized"));
     }

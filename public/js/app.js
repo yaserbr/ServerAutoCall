@@ -31,22 +31,18 @@
             window.location.protocol === "file:"
                 ? "http://localhost:4000"
                 : window.location.origin;
-        const AUTH_TOKEN_STORAGE_KEY = "autocall.accessToken";
         let activeTab = "call";
-        let authToken = "";
         let authenticatedUser = null;
         let refreshDevicesIntervalId = null;
         let pairingQrRefreshInProgress = false;
         let pairingQrCountdownIntervalId = null;
         let pairingQrExpiresAtMs = 0;
-        let pairingQrLibraryLoadPromise = null;
         let isQrDomReady =
             document.readyState === "interactive" || document.readyState === "complete";
         const PAIRING_QR_EXPECTED_TYPE = "AUTOCALL_PAIRING";
         const PAIRING_QR_DEFAULT_SECONDS = 5 * 60;
         const MANUAL_PAIRING_CODE_REGEX = /^\d{6}$/;
         const MANUAL_PAIRING_CODE_PLACEHOLDER = "------";
-        const PAIRING_QR_LIBRARY_CDN_URL = "https://cdn.jsdelivr.net/npm/qrcode/build/qrcode.min.js";
         const COMMANDS_AUTO_REFRESH_INTERVAL_MS = 2000;
         let screenMirrorSocket = null;
         let commandDashboardJoinedDeviceUids = new Set();
@@ -452,16 +448,14 @@
         }
 
         function joinCommandDashboardRooms() {
-            if (!authToken || commandDashboardJoinedDeviceUids.size === 0) {
+            if (!authenticatedUser || commandDashboardJoinedDeviceUids.size === 0) {
                 return;
             }
 
             const socket = ensureScreenMirrorSocket();
             if (!socket) return;
 
-            socket.auth = {
-                accessToken: authToken
-            };
+            socket.auth = {};
 
             if (!socket.connected) {
                 socket.connect();
@@ -547,7 +541,7 @@
         }
 
         async function refreshCommandsSilently() {
-            if (!authToken || commandsAutoRefreshInFlight) {
+            if (!authenticatedUser || commandsAutoRefreshInFlight) {
                 return;
             }
 
@@ -578,7 +572,7 @@
 
         function startCommandsAutoRefresh() {
             stopCommandsAutoRefresh();
-            if (!authToken) {
+            if (!authenticatedUser) {
                 return;
             }
             commandsAutoRefreshIntervalId = setInterval(() => {
@@ -4124,18 +4118,14 @@
             }
 
             if (screenMirrorSocket) {
-                screenMirrorSocket.auth = {
-                    accessToken: authToken
-                };
+                screenMirrorSocket.auth = {};
                 return screenMirrorSocket;
             }
 
             screenMirrorSocket = io(SERVER, {
                 transports: ["websocket"],
                 reconnection: true,
-                auth: {
-                    accessToken: authToken
-                }
+                auth: {}
             });
 
             screenMirrorSocket.on("connect", () => {
@@ -4218,9 +4208,7 @@
             screenMirrorJoinedDeviceUid = normalizedDeviceUid;
             const socket = ensureScreenMirrorSocket();
             if (!socket) return;
-            socket.auth = {
-                accessToken: authToken
-            };
+            socket.auth = {};
 
             socket.emit("dashboard:join", { deviceUid: normalizedDeviceUid });
         }
@@ -4777,62 +4765,6 @@
             });
         }
 
-        function hasLoadedQrLibrary() {
-            const hasQRCode = Boolean(window.QRCode && typeof window.QRCode.toCanvas === "function");
-            const hasQRCodeStyling = Boolean(window.QRCodeStyling);
-            return hasQRCode || hasQRCodeStyling;
-        }
-
-        function attachQrLibraryLoadHandlers(scriptElement, onReady, onFailure) {
-            const handleLoad = () => {
-                scriptElement.dataset.autocallQrLoaded = "true";
-                if (!window.QRCode && !window.QRCodeStyling) {
-                    const loadError = new Error("QR library loaded but API is unavailable");
-                    console.error("[AutoCall][QR] CDN loaded but QR API is unavailable", loadError);
-                    onFailure(loadError);
-                    return;
-                }
-                onReady();
-            };
-
-            const handleError = () => {
-                const loadError = new Error("Failed to load QR library from CDN");
-                console.error("[AutoCall][QR] Failed to load QR library from CDN", loadError);
-                onFailure(loadError);
-            };
-
-            scriptElement.addEventListener("load", handleLoad, { once: true });
-            scriptElement.addEventListener("error", handleError, { once: true });
-        }
-
-        async function ensurePairingQrLibraryLoaded() {
-            await waitForQrDomReady();
-
-            if (hasLoadedQrLibrary()) {
-                return;
-            }
-
-            if (!window.QRCode && !window.QRCodeStyling) {
-                console.warn("[AutoCall][QR] QR library missing, retrying CDN load");
-            }
-
-            if (!pairingQrLibraryLoadPromise) {
-                pairingQrLibraryLoadPromise = new Promise((resolve, reject) => {
-                    const scriptElement = document.createElement("script");
-                    scriptElement.src = PAIRING_QR_LIBRARY_CDN_URL;
-                    scriptElement.async = true;
-                    scriptElement.dataset.autocallQrLib = "true";
-                    attachQrLibraryLoadHandlers(scriptElement, resolve, reject);
-                    document.head.appendChild(scriptElement);
-                }).catch((error) => {
-                    pairingQrLibraryLoadPromise = null;
-                    throw error;
-                });
-            }
-
-            await pairingQrLibraryLoadPromise;
-        }
-
         function clearPairingQrCountdown() {
             if (pairingQrCountdownIntervalId) {
                 clearInterval(pairingQrCountdownIntervalId);
@@ -4919,33 +4851,29 @@
             }, 1000);
         }
 
-        async function renderPairingQrCode(payload) {
-            await ensurePairingQrLibraryLoaded();
-
-            if (!window.QRCode && !window.QRCodeStyling) {
-                const qrMissingError = new Error("QR library not loaded");
-                console.error("[AutoCall][QR] QR library not loaded", qrMissingError);
-                throw qrMissingError;
-            }
-
+        async function renderPairingQrCode(qrDataUrl) {
             const canvas = document.getElementById("pairingQrCanvas");
             if (!(canvas instanceof HTMLCanvasElement)) {
                 throw new Error("QR canvas not available");
             }
-
-            if (!window.QRCode || typeof window.QRCode.toCanvas !== "function") {
-                const qrApiError = new Error("QRCode.toCanvas is not available");
-                console.error("[AutoCall][QR] QRCode.toCanvas is not available", qrApiError);
-                throw qrApiError;
+            if (typeof qrDataUrl !== "string" || !qrDataUrl.startsWith("data:image/png;base64,")) {
+                throw new Error("Invalid pairing QR image");
             }
 
-            await window.QRCode.toCanvas(canvas, JSON.stringify(payload), {
-                width: 210,
-                margin: 1,
-                color: {
-                    dark: "#052453",
-                    light: "#ffffff"
-                }
+            await new Promise((resolve, reject) => {
+                const image = new Image();
+                image.onload = () => {
+                    const context = canvas.getContext("2d");
+                    if (!context) {
+                        reject(new Error("QR canvas context not available"));
+                        return;
+                    }
+                    context.clearRect(0, 0, canvas.width, canvas.height);
+                    context.drawImage(image, 0, 0, canvas.width, canvas.height);
+                    resolve();
+                };
+                image.onerror = () => reject(new Error("Failed to load pairing QR image"));
+                image.src = qrDataUrl;
             });
         }
 
@@ -4978,20 +4906,11 @@
                     typeof payload?.manualPairingCode === "string"
                         ? payload.manualPairingCode.trim()
                         : "";
-                const normalizedServerUrl =
-                    typeof payload?.serverUrl === "string" && payload.serverUrl.trim()
-                        ? payload.serverUrl.trim()
-                        : SERVER;
-
                 if (normalizedType !== PAIRING_QR_EXPECTED_TYPE || !normalizedPairingToken) {
                     throw new Error("Invalid pairing QR payload");
                 }
 
-                await renderPairingQrCode({
-                    type: normalizedType,
-                    pairingToken: normalizedPairingToken,
-                    serverUrl: normalizedServerUrl
-                });
+                await renderPairingQrCode(payload?.qrDataUrl);
 
                 setManualPairingCodeValue(normalizedManualPairingCode);
                 startPairingQrCountdown(payload?.expiresAt);
@@ -5474,13 +5393,8 @@
             return fallbackMessage;
         }
 
-        function setAuthenticatedUser(accessToken, user, persistToken = true) {
-            authToken = typeof accessToken === "string" ? accessToken.trim() : "";
+        function setAuthenticatedUser(_accessToken, user, _persistToken = true) {
             authenticatedUser = user && typeof user === "object" ? user : null;
-
-            if (persistToken && authToken) {
-                localStorage.setItem(AUTH_TOKEN_STORAGE_KEY, authToken);
-            }
 
             const authSection = document.getElementById("authSection");
             const appSection = document.getElementById("appSection");
@@ -5514,7 +5428,6 @@
         }
 
         function clearAuthenticatedUser(removeStoredToken = true) {
-            authToken = "";
             authenticatedUser = null;
             deviceNameByUid.clear();
             selectedCommandSubscriptionIdByDeviceUid.clear();
@@ -5582,9 +5495,7 @@
             // Clear address book autocomplete datalist
             clearContactsDatalist();
 
-            if (removeStoredToken) {
-                localStorage.removeItem(AUTH_TOKEN_STORAGE_KEY);
-            }
+            void removeStoredToken;
         }
 
         function stopDevicesSelectRefresh() {
@@ -5608,14 +5519,14 @@
             };
 
             if (!isAuthRoute) {
-                if (!authToken) {
+                if (!authenticatedUser) {
                     throw new Error("Please login first");
                 }
-                headers.Authorization = `Bearer ${authToken}`;
             }
 
             const response = await fetch(SERVER + path, {
                 ...options,
+                credentials: "include",
                 headers
             });
 
@@ -5627,11 +5538,9 @@
             return response;
         }
 
-        async function fetchCurrentUserProfile(token) {
+        async function fetchCurrentUserProfile() {
             const response = await fetch(SERVER + "/auth/me", {
-                headers: {
-                    Authorization: `Bearer ${token}`
-                }
+                credentials: "include"
             });
 
             if (!response.ok) {
@@ -5643,20 +5552,14 @@
         }
 
         async function initializeSession() {
-            const storedToken = localStorage.getItem(AUTH_TOKEN_STORAGE_KEY);
-            if (!storedToken) {
-                clearAuthenticatedUser(false);
-                return;
-            }
-
             try {
-                const user = await fetchCurrentUserProfile(storedToken);
+                const user = await fetchCurrentUserProfile();
                 if (!user) {
-                    clearAuthenticatedUser(true);
+                    clearAuthenticatedUser(false);
                     return;
                 }
 
-                setAuthenticatedUser(storedToken, user, false);
+                setAuthenticatedUser("", user, false);
                 await loadDevicesToSelect();
                 await loadDevices();
                 await loadCommands();
@@ -5688,12 +5591,7 @@
                     throw new Error(parseApiErrorMessage(payload, "Login failed"));
                 }
 
-                const token = typeof payload.accessToken === "string" ? payload.accessToken : "";
-                if (!token) {
-                    throw new Error("Login failed: missing access token");
-                }
-
-                setAuthenticatedUser(token, payload.user ?? null, true);
+                setAuthenticatedUser("", payload.user ?? null, false);
                 await loadDevicesToSelect();
                 await loadDevices();
                 await loadCommands();
@@ -5704,9 +5602,16 @@
             }
         }
 
-        function logout() {
-            clearAuthenticatedUser(true);
-            showToast("Logged out", "info");
+        async function logout() {
+            try {
+                await fetch(SERVER + "/auth/logout", {
+                    method: "POST",
+                    credentials: "include"
+                });
+            } finally {
+                clearAuthenticatedUser(false);
+                showToast("Logged out", "info");
+            }
         }
 
         let activeInstructionsPage = 1;

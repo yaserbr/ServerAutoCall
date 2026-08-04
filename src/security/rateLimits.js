@@ -47,8 +47,24 @@ const deviceRateLimiter = buildLimiter({
   message: "Too many device requests. Please slow down."
 });
 
+const agentRateLimiter = buildLimiter({
+  name: "agent",
+  windowMs: 15 * 60 * 1000,
+  max: 20,
+  message: "Too many agent requests. Please try again later."
+});
+
+const dummyDownloadRateLimiter = buildLimiter({
+  name: "dummy_download",
+  windowMs: 15 * 60 * 1000,
+  max: 30,
+  message: "Too many download requests. Please try again later."
+});
+
 module.exports = {
+  agentRateLimiter,
   authRateLimiter,
   commandRateLimiter,
-  deviceRateLimiter
+  deviceRateLimiter,
+  dummyDownloadRateLimiter
 };

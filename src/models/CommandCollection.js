@@ -187,8 +187,13 @@ const commandCollectionSchema = new mongoose.Schema(
     ownerUserId: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "User",
-      default: null,
+      required: true,
       index: true
+    },
+    deviceOwnershipEpoch: {
+      type: String,
+      required: true,
+      select: false
     },
     commandTemplates: {
       type: [commandTemplateSchema],

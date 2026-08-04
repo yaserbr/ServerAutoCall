@@ -14,6 +14,7 @@ function createAuthRouter({
   parseRequestBodyObject,
   parseUsername,
   parsePassword,
+  parseRegistrationPassword,
   logSecurityEvent,
   BCRYPT_SALT_ROUNDS,
   signAccessToken,
@@ -23,7 +24,11 @@ function createAuthRouter({
   createPairingTokenForUser,
   resolvePublicServerUrl,
   PAIRING_TOKEN_TYPE,
-  PAIRING_TOKEN_TTL_MS
+  PAIRING_TOKEN_TTL_MS,
+  setAccessTokenCookie,
+  clearAccessTokenCookie,
+  isSecretEqual,
+  createPairingQrDataUrl
 }) {
   const router = express.Router();
 
@@ -35,7 +40,7 @@ function createAuthRouter({
           ? req.headers["x-admin-setup-key"].trim()
           : "";
 
-      if (!adminSetupKey || !providedSetupKey || providedSetupKey !== adminSetupKey) {
+      if (!adminSetupKey || !isSecretEqual(providedSetupKey, adminSetupKey)) {
         return res.status(403).json({ error: "Registration is disabled" });
       }
 
@@ -45,7 +50,7 @@ function createAuthRouter({
 
       const payload = parseRequestBodyObject(req.body);
       const username = parseUsername(payload.username);
-      const password = parsePassword(payload.password);
+      const password = parseRegistrationPassword(payload.password);
 
       if (!username || !password) {
         logSecurityEvent("auth_register_validation_failed", {
@@ -53,7 +58,9 @@ function createAuthRouter({
           path: req.originalUrl,
           method: req.method
         });
-        return res.status(400).json({ error: "username and password are required" });
+        return res.status(400).json({
+          error: "username and a password of at least 12 characters are required"
+        });
       }
 
       const existingUser = await User.findOne({ username });
@@ -71,6 +78,7 @@ function createAuthRouter({
       if (!accessToken) {
         return respondAuthDisabled(res);
       }
+      setAccessTokenCookie(req, res, accessToken);
 
       return res.status(201).json({
         accessToken,
@@ -117,6 +125,7 @@ function createAuthRouter({
       if (!accessToken) {
         return respondAuthDisabled(res);
       }
+      setAccessTokenCookie(req, res, accessToken);
 
       return res.json({
         accessToken,
@@ -140,6 +149,11 @@ function createAuthRouter({
     }
   });
 
+  router.post("/auth/logout", (_req, res) => {
+    clearAccessTokenCookie(_req, res);
+    return res.status(204).end();
+  });
+
   router.get("/pairing/qr", requireAuth, async (req, res) => {
     try {
       const currentUserId = normalizeAuthUserId(req.user?.id);
@@ -154,12 +168,17 @@ function createAuthRouter({
 
       const createdToken = await createPairingTokenForUser(currentUserId);
       const serverUrl = resolvePublicServerUrl(req);
-
-      return res.json({
+      const qrPayload = {
         type: PAIRING_TOKEN_TYPE,
         pairingToken: createdToken.pairingToken,
+        serverUrl
+      };
+      const qrDataUrl = await createPairingQrDataUrl(qrPayload);
+
+      return res.json({
+        ...qrPayload,
         manualPairingCode: createdToken.manualPairingCode,
-        serverUrl,
+        qrDataUrl,
         expiresAt: createdToken.expiresAt.toISOString(),
         expiresInSeconds: Math.floor(PAIRING_TOKEN_TTL_MS / 1000)
       });

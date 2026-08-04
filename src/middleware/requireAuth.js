@@ -1,50 +1,14 @@
-const jwt = require("jsonwebtoken");
 const { logSecurityEvent } = require("../security/auditLogger");
-
-function getJwtSecret() {
-  return typeof process.env.JWT_SECRET === "string"
-    ? process.env.JWT_SECRET.trim()
-    : "";
-}
-
-function extractBearerTokenFromHeader(authHeader) {
-  if (typeof authHeader !== "string") return "";
-  if (!authHeader.startsWith("Bearer ")) return "";
-  return authHeader.slice("Bearer ".length).trim();
-}
-
-function verifyAccessToken(token) {
-  const normalizedToken = typeof token === "string" ? token.trim() : "";
-  if (!normalizedToken) {
-    return { ok: false, reason: "missing_token" };
-  }
-
-  const jwtSecret = getJwtSecret();
-  if (!jwtSecret) {
-    return { ok: false, reason: "auth_disabled" };
-  }
-
-  try {
-    const payload = jwt.verify(normalizedToken, jwtSecret);
-    const userId = typeof payload?.sub === "string" ? payload.sub : "";
-    if (!userId) {
-      return { ok: false, reason: "invalid_payload" };
-    }
-
-    return {
-      ok: true,
-      reason: "ok",
-      userId,
-      username: typeof payload.username === "string" ? payload.username : null,
-      payload
-    };
-  } catch (_error) {
-    return { ok: false, reason: "invalid_or_expired_token" };
-  }
-}
+const {
+  extractAccessTokenFromRequest,
+  extractBearerTokenFromHeader,
+  getJwtSecret,
+  verifyAccessToken
+} = require("../auth/accessToken");
+const { safeErrorMetadata } = require("../security/safeError");
 
 function requireAuth(req, res, next) {
-  const token = extractBearerTokenFromHeader(req.headers?.authorization);
+  const { token, source } = extractAccessTokenFromRequest(req);
   if (!token) {
     logSecurityEvent("user_auth_missing_bearer", {
       ip: req.ip,
@@ -75,7 +39,8 @@ function requireAuth(req, res, next) {
   try {
     req.user = {
       id: verification.userId,
-      username: verification.username
+      username: verification.username,
+      tokenSource: source
     };
     return next();
   } catch (error) {
@@ -83,7 +48,7 @@ function requireAuth(req, res, next) {
       ip: req.ip,
       path: req.originalUrl,
       method: req.method,
-      reason: error?.message || "unknown"
+      ...safeErrorMetadata(error)
     });
     return res.status(500).json({ error: "Internal server error" });
   }

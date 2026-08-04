@@ -1,4 +1,5 @@
 const mongoose = require("mongoose");
+const { safeErrorMetadata } = require("../security/safeError");
 
 async function connectToDatabase(uri = process.env.MONGODB_URI) {
   if (!uri) {
@@ -15,7 +16,7 @@ async function connectToDatabase(uri = process.env.MONGODB_URI) {
     console.log(`[MongoDB] Connected successfully to database: ${mongoose.connection.name}`);
     return mongoose.connection;
   } catch (error) {
-    console.error("[MongoDB] FATAL: Connection failed:", error.message);
+    console.error("[MongoDB] FATAL: Connection failed:", safeErrorMetadata(error));
     process.exit(1);
   }
 }

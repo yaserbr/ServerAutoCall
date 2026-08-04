@@ -9,6 +9,8 @@
 
 
 // DeepSeek Global Configuration
+const { safeErrorMetadata } = require("../security/safeError");
+
 const DEEPSEEK_ENDPOINT = "https://api.deepseek.com/chat/completions";
 const DEEPSEEK_API_KEY = process.env.DEEPSEEK_API_KEY;
 const DEFAULT_MODEL = process.env.DEEPSEEK_MODEL || "deepseek-v4-flash"; // Highly recommended V4 standard model
@@ -303,8 +305,7 @@ You MUST ALWAYS invoke the 'queue_device_command' tool if the user's request mat
   });
 
   if (!response.ok) {
-    const errorText = await response.text();
-    throw new Error(`DeepSeek API request failed (${response.status}): ${errorText}`);
+    throw new Error(`DeepSeek API request failed with status ${response.status}`);
   }
 
   const responseJson = await response.json();
@@ -333,7 +334,10 @@ function parseDeepSeekResponse(resultJson, prompt, activeDeviceUid) {
         };
         responseText = responseText || `Perfect! I've triggered the collection '${args.collectionName}' for execution.`;
       } catch (err) {
-        console.error("[DeepSeek] Tool call arguments parse error for execute_device_collection:", err);
+        console.error(
+          "[DeepSeek] Tool call arguments parse error for execute_device_collection:",
+          safeErrorMetadata(err)
+        );
       }
     } else if (toolCall.function?.name === "queue_device_command") {
       try {
@@ -341,7 +345,7 @@ function parseDeepSeekResponse(resultJson, prompt, activeDeviceUid) {
         draftCommand = cleanArgs(args, prompt);
         responseText = responseText || `Perfect! I've executed a ${draftCommand.action} action as requested.`;
       } catch (err) {
-        console.error("[DeepSeek] Tool call arguments parse error:", err);
+        console.error("[DeepSeek] Tool call arguments parse error:", safeErrorMetadata(err));
       }
     }
   }

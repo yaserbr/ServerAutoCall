@@ -1,6 +1,8 @@
 const Command = require("../models/Command");
 const Device = require("../models/Device");
 const CommandCollection = require("../models/CommandCollection");
+const { ensureDeviceOwnershipEpoch } = require("../security/deviceOwnership");
+const { safeErrorMetadata } = require("../security/safeError");
 
 const sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms));
 const MAX_DELAY_AFTER_SECONDS = 3600;
@@ -9,6 +11,16 @@ function createValidationError(message) {
   const error = new Error(message);
   error.statusCode = 400;
   return error;
+}
+
+function createAuthorizationError(message) {
+  const error = new Error(message);
+  error.statusCode = 403;
+  return error;
+}
+
+function isSameOwner(left, right) {
+  return Boolean(left) && Boolean(right) && String(left) === String(right);
 }
 
 class CommandCollectionService {
@@ -59,9 +71,17 @@ class CommandCollectionService {
     const normalizedDeviceUid = deviceUid.trim().toLowerCase();
 
     // Verify the target device exists
-    const device = await Device.findOne({ deviceUid: normalizedDeviceUid });
+    const device = await Device.findOne({ deviceUid: normalizedDeviceUid }).select(
+      "+ownershipEpoch"
+    );
     if (!device) {
       throw new Error(`Device with UID '${normalizedDeviceUid}' was not found.`);
+    }
+    if (!isSameOwner(device.ownerUserId, ownerUserId)) {
+      throw createAuthorizationError("Device ownership changed before collection execution.");
+    }
+    if (!(await ensureDeviceOwnershipEpoch(device))) {
+      throw new Error("Device ownership state could not be initialized.");
     }
 
     if (!Array.isArray(templates) || templates.length === 0) {
@@ -88,6 +108,7 @@ class CommandCollectionService {
       name: name.trim(),
       deviceUid: normalizedDeviceUid,
       ownerUserId,
+      deviceOwnershipEpoch: device.ownershipEpoch,
       commandTemplates: processedTemplates,
       activeCommandIds: new Array(processedTemplates.length).fill(null),
       status: "pending",
@@ -115,11 +136,30 @@ class CommandCollectionService {
       throw new Error(`Index ${idx} is out of bounds for collection length ${collection.commandTemplates.length}`);
     }
 
+    const currentDevice = await Device.findOne({ deviceUid: collection.deviceUid }).select(
+      "+ownershipEpoch"
+    );
+    if (currentDevice) {
+      await ensureDeviceOwnershipEpoch(currentDevice);
+    }
+    const ownershipMatches =
+      currentDevice &&
+      isSameOwner(currentDevice.ownerUserId, collection.ownerUserId) &&
+      currentDevice.ownershipEpoch === collection.deviceOwnershipEpoch;
+    if (!ownershipMatches) {
+      collection.status = "cancelled";
+      collection.completedAt = new Date();
+      await collection.save();
+      throw createAuthorizationError("Device ownership changed during collection execution.");
+    }
+
     const template = collection.commandTemplates[idx];
 
     // Create a separate, distinct physical Command document in the database
     const command = new Command({
       deviceUid: collection.deviceUid,
+      ownerUserId: collection.ownerUserId,
+      deviceOwnershipEpoch: collection.deviceOwnershipEpoch,
       action: template.action,
       type: template.type,
       phoneNumber: template.phoneNumber || undefined,
@@ -146,6 +186,25 @@ class CommandCollectionService {
           : undefined,
       enabled: template.enabled !== undefined && template.enabled !== null ? template.enabled : undefined,
       autoHangupSeconds: template.autoHangupSeconds || undefined,
+      x: template.x !== undefined && template.x !== null ? template.x : undefined,
+      y: template.y !== undefined && template.y !== null ? template.y : undefined,
+      screenWidth:
+        template.screenWidth !== undefined && template.screenWidth !== null
+          ? template.screenWidth
+          : undefined,
+      screenHeight:
+        template.screenHeight !== undefined && template.screenHeight !== null
+          ? template.screenHeight
+          : undefined,
+      startX: template.startX !== undefined && template.startX !== null ? template.startX : undefined,
+      startY: template.startY !== undefined && template.startY !== null ? template.startY : undefined,
+      endX: template.endX !== undefined && template.endX !== null ? template.endX : undefined,
+      endY: template.endY !== undefined && template.endY !== null ? template.endY : undefined,
+      durationMs:
+        template.durationMs !== undefined && template.durationMs !== null
+          ? template.durationMs
+          : undefined,
+      touchTarget: template.touchTarget || undefined,
       collectionId: collection._id,
       collectionName: collection.name,
       collectionStepIndex: idx,
@@ -175,7 +234,10 @@ class CommandCollectionService {
         this.io.to(`dashboard:${collection.deviceUid}`).emit("command:created", formattedCommand);
         console.log(`[CommandCollection Service] WebSockets Emitted: Sent 'command:new' and 'command:created' to rooms 'device:${collection.deviceUid}' & 'dashboard:${collection.deviceUid}'`);
       } catch (socketError) {
-        console.error(`[CommandCollection Service] ERROR broadcasting socket events:`, socketError);
+        console.error(
+          `[CommandCollection Service] ERROR broadcasting socket events:`,
+          safeErrorMetadata(socketError)
+        );
       }
     } else {
       console.warn(`[CommandCollection Service] WebSockets omitted: Sockets or Mapper not initialized.`);
@@ -189,7 +251,7 @@ class CommandCollectionService {
     console.log(`\n[CommandCollection Service] === handleCommandStatusChange TRIGGERED ===`);
     console.log(`[CommandCollection Service] - Incoming Command ID: ${commandId}`);
     console.log(`[CommandCollection Service] - Reported Status: ${newStatus}`);
-    console.log(`[CommandCollection Service] - Failure Reason (if any): ${failureReason || "N/A"}`);
+    console.log(`[CommandCollection Service] - Has Failure Reason: ${Boolean(failureReason)}`);
 
     if (!commandId) {
       console.error(`[CommandCollection Service] ERROR: Missing commandId in status change hook.`);
@@ -207,7 +269,7 @@ class CommandCollectionService {
 
     try {
       // Find the physical Command document first to retrieve its deviceUid reliably
-      const command = await Command.findById(commandId);
+      const command = await Command.findById(commandId).select("+deviceOwnershipEpoch");
       if (!command) {
         console.log(`[CommandCollection Service] Result: Command with ID ${commandId} not found in DB. Skip.`);
         return;
@@ -219,8 +281,10 @@ class CommandCollectionService {
       // Query by indexed fields: deviceUid and status
       const collections = await CommandCollection.find({
         deviceUid: command.deviceUid,
+        ownerUserId: command.ownerUserId,
+        deviceOwnershipEpoch: command.deviceOwnershipEpoch,
         status: "executing"
-      });
+      }).select("+deviceOwnershipEpoch");
 
       if (!collections || collections.length === 0) {
         console.warn(`[CommandCollection Service] Potentially stuck status callback: no executing collections found for deviceUid: ${command.deviceUid}`, {
@@ -298,13 +362,18 @@ class CommandCollectionService {
           });
         }
       } else if (normalizedStatus === "failed" || normalizedStatus === "cancelled") {
-        console.error(`[CommandCollection Service] HALTING SEQUENCE: Step ${idx + 1} reported ${normalizedStatus}. Reason: ${failureReason || "N/A"}`);
+        console.error(
+          `[CommandCollection Service] HALTING SEQUENCE: Step ${idx + 1} reported ${normalizedStatus}.`
+        );
         collection.status = normalizedStatus === "cancelled" ? "cancelled" : "failed";
         await collection.save();
         console.log(`[CommandCollection Service] Collection '${collection.name}' halted successfully.`);
       }
     } catch (err) {
-      console.error(`[CommandCollection Service] CRITICAL EXCEPTION inside handleCommandStatusChange:`, err);
+      console.error(
+        `[CommandCollection Service] CRITICAL EXCEPTION inside handleCommandStatusChange:`,
+        safeErrorMetadata(err)
+      );
     }
   }
 }

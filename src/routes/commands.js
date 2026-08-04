@@ -1,6 +1,17 @@
 const express = require("express");
 const mongoose = require("mongoose");
 const { hasPresentValue, addIfPresent, commandIdFrom, toPlainObject } = require("../utils/objects");
+const { ensureDeviceOwnershipEpoch } = require("../security/deviceOwnership");
+const { safeErrorMetadata } = require("../security/safeError");
+
+function commandMatchesDeviceOwnership(command, device, expectedUserId = null) {
+  if (!command?.ownerUserId || !command?.deviceOwnershipEpoch || !device?.ownerUserId) {
+    return false;
+  }
+  if (String(command.ownerUserId) !== String(device.ownerUserId)) return false;
+  if (expectedUserId && String(command.ownerUserId) !== String(expectedUserId)) return false;
+  return command.deviceOwnershipEpoch === device.ownershipEpoch;
+}
 
 /**
  * Creates and configures the Commands and Collections router.
@@ -30,6 +41,7 @@ function createCommandsRouter({
   mapCommandForResponse,
   emitCommandCreated,
   logCommandLifecycle,
+  logSecurityEvent,
   logOpenAppResolver,
   logReturnToAutoCallEvent,
   emitCommandUpdated,
@@ -90,7 +102,9 @@ function createCommandsRouter({
         return res.status(401).json({ error: "Unauthorized" });
       }
 
-      const targetDevice = await Device.findOne({ deviceUid: normalizedDeviceUid });
+      const targetDevice = await Device.findOne({ deviceUid: normalizedDeviceUid }).select(
+        "+ownershipEpoch"
+      );
       if (!targetDevice) {
         return res.status(404).json({ error: "Device not found" });
       }
@@ -101,6 +115,9 @@ function createCommandsRouter({
 
       if (!isDeviceOwnedByUser(targetDevice, currentUserId)) {
         return res.status(403).json({ error: "Forbidden" });
+      }
+      if (!(await ensureDeviceOwnershipEpoch(targetDevice))) {
+        return res.status(500).json({ error: "Internal server error" });
       }
 
       let scheduledAtDate = null;
@@ -211,6 +228,9 @@ function createCommandsRouter({
 
       const receivedPhoneNumberRaw = typeof phoneNumber === "string" ? phoneNumber : "";
       const normalizedPhoneNumber = receivedPhoneNumberRaw.trim();
+      if (normalizedPhoneNumber.length > 40) {
+        return res.status(400).json({ error: "phoneNumber must not exceed 40 characters" });
+      }
       const requiresPhoneNumber = normalizedAction === "call" || normalizedAction === "sms";
       if (requiresPhoneNumber && !normalizedPhoneNumber) {
         return res.status(400).json({
@@ -225,6 +245,9 @@ function createCommandsRouter({
       }
 
       const normalizedMessage = typeof message === "string" ? message.trim() : "";
+      if (normalizedMessage.length > 4000) {
+        return res.status(400).json({ error: "message must not exceed 4000 characters" });
+      }
       if (normalizedAction === "sms" && !normalizedMessage) {
         return res.status(400).json({
           error: "message is required for SMS commands"
@@ -238,6 +261,9 @@ function createCommandsRouter({
       }
 
       const normalizedUrlRaw = typeof url === "string" ? url.trim() : "";
+      if (normalizedUrlRaw.length > 2048) {
+        return res.status(400).json({ error: "url must not exceed 2048 characters" });
+      }
       const normalizedUrl = normalizedUrlRaw ? normalizeHttpUrl(normalizedUrlRaw) : null;
       if (isOpenUrlCommand) {
         if (!normalizedUrlRaw) {
@@ -260,6 +286,9 @@ function createCommandsRouter({
       }
 
       const normalizedAppNameRaw = typeof appName === "string" ? appName.trim() : "";
+      if (normalizedAppNameRaw.length > 200) {
+        return res.status(400).json({ error: "appName must not exceed 200 characters" });
+      }
       let normalizedAppName = normalizedAppNameRaw
         ? normalizedAppNameRaw.replace(/\s+/g, " ")
         : "";
@@ -282,6 +311,9 @@ function createCommandsRouter({
       }
 
       const normalizedNotes = typeof notes === "string" ? notes.trim() : "";
+      if (normalizedNotes.length > 1000) {
+        return res.status(400).json({ error: "notes must not exceed 1000 characters" });
+      }
 
       let normalizedDurationSeconds;
       if (
@@ -634,6 +666,8 @@ function createCommandsRouter({
 
       const commandData = {
         deviceUid: normalizedDeviceUid,
+        ownerUserId: currentUserId,
+        deviceOwnershipEpoch: targetDevice.ownershipEpoch,
         action: normalizedAction,
         type: commandType,
         status: "pending",
@@ -692,8 +726,12 @@ function createCommandsRouter({
         const dedupeWindowStart = new Date(Date.now() - COMMAND_DUPLICATE_GUARD_WINDOW_MS);
         const latestRecentCommand = await Command.findOne({
           deviceUid: normalizedDeviceUid,
+          ownerUserId: currentUserId,
+          deviceOwnershipEpoch: targetDevice.ownershipEpoch,
           createdAt: { $gte: dedupeWindowStart }
-        }).sort({ createdAt: -1, _id: -1 });
+        })
+          .select("+deviceOwnershipEpoch")
+          .sort({ createdAt: -1, _id: -1 });
 
         if (latestRecentCommand) {
           const incomingCommandSignature = buildCommandDuplicateSignature(commandData);
@@ -734,7 +772,7 @@ function createCommandsRouter({
         details: {
           action: normalizedAction,
           type: commandType,
-          url: isOpenUrlCommand ? normalizedUrl : null,
+          url: isOpenUrlCommand ? normalizedUrl?.split(/[?#]/, 1)[0] ?? null : null,
           appName: isOpenAppCommand ? normalizedAppName : null,
           resolvedPackageName: isOpenAppCommand ? normalizedResolvedPackageName : null,
           downloadSizeMb: isDownloadDataCommand ? normalizedDownloadSizeMb : null,
@@ -803,7 +841,9 @@ function createCommandsRouter({
         return res.status(401).json({ error: "Unauthorized" });
       }
 
-      const targetDevice = await Device.findOne({ deviceUid: normalizedDeviceUid });
+      const targetDevice = await Device.findOne({ deviceUid: normalizedDeviceUid }).select(
+        "+ownershipEpoch"
+      );
       if (!targetDevice) {
         return res.status(404).json({ error: "Device not found" });
       }
@@ -814,6 +854,9 @@ function createCommandsRouter({
 
       if (!isDeviceOwnedByUser(targetDevice, currentUserId)) {
         return res.status(403).json({ error: "Forbidden" });
+      }
+      if (!(await ensureDeviceOwnershipEpoch(targetDevice))) {
+        return res.status(500).json({ error: "Internal server error" });
       }
 
       if (!name || typeof name !== "string" || !name.trim()) {
@@ -984,7 +1027,9 @@ function createCommandsRouter({
           return res.status(400).json({ error: DEVICE_UID_FORMAT_ERROR });
         }
 
-        const targetDevice = await Device.findOne({ deviceUid: normalizedDeviceUid });
+        const targetDevice = await Device.findOne({ deviceUid: normalizedDeviceUid }).select(
+          "+ownershipEpoch"
+        );
         if (!targetDevice) {
           return res.status(404).json({ error: "Device not found" });
         }
@@ -996,19 +1041,29 @@ function createCommandsRouter({
         if (!isDeviceOwnedByUser(targetDevice, currentUserId)) {
           return res.status(403).json({ error: "Forbidden" });
         }
-
-        filter.deviceUid = normalizedDeviceUid;
-      } else {
-        const ownedDeviceUids = await Device.find({
-          ownerUserId: currentUserId,
-          deviceUid: { $regex: DEVICE_UID_REGEX }
-        }).distinct("deviceUid");
-
-        if (!ownedDeviceUids.length) {
-          return res.json([]);
+        if (!(await ensureDeviceOwnershipEpoch(targetDevice))) {
+          return res.status(500).json({ error: "Internal server error" });
         }
 
-        filter.deviceUid = { $in: ownedDeviceUids };
+        filter.deviceUid = normalizedDeviceUid;
+        filter.ownerUserId = currentUserId;
+        filter.deviceOwnershipEpoch = targetDevice.ownershipEpoch;
+      } else {
+        const ownedDevices = await Device.find({
+          ownerUserId: currentUserId,
+          deviceUid: { $regex: DEVICE_UID_REGEX }
+        }).select("deviceUid +ownershipEpoch");
+
+        if (!ownedDevices.length) {
+          return res.json([]);
+        }
+        await Promise.all(ownedDevices.map((device) => ensureDeviceOwnershipEpoch(device)));
+
+        filter.ownerUserId = currentUserId;
+        filter.$or = ownedDevices.map((device) => ({
+          deviceUid: device.deviceUid,
+          deviceOwnershipEpoch: device.ownershipEpoch
+        }));
       }
 
       if (status) {
@@ -1056,7 +1111,7 @@ function createCommandsRouter({
         return res.status(400).json({ error: "Invalid command id" });
       }
 
-      const existingCommand = await Command.findById(id);
+      const existingCommand = await Command.findById(id).select("+deviceOwnershipEpoch");
       if (!existingCommand) {
         logCommandLifecycle("cancel_pending_missing_command", {
           commandId: id,
@@ -1066,7 +1121,9 @@ function createCommandsRouter({
         return res.status(404).json({ error: "Command not found" });
       }
 
-      const targetDevice = await Device.findOne({ deviceUid: existingCommand.deviceUid });
+      const targetDevice = await Device.findOne({ deviceUid: existingCommand.deviceUid }).select(
+        "+ownershipEpoch"
+      );
       if (!targetDevice) {
         return res.status(404).json({ error: "Device not found" });
       }
@@ -1078,10 +1135,21 @@ function createCommandsRouter({
       if (!isDeviceOwnedByUser(targetDevice, currentUserId)) {
         return res.status(403).json({ error: "Forbidden" });
       }
+      if (!(await ensureDeviceOwnershipEpoch(targetDevice))) {
+        return res.status(500).json({ error: "Internal server error" });
+      }
+      if (!commandMatchesDeviceOwnership(existingCommand, targetDevice, currentUserId)) {
+        return res.status(403).json({ error: "Forbidden" });
+      }
 
       const cancelledFailureReason = "Cancelled by user before execution";
       const cancelledCommand = await Command.findOneAndUpdate(
-        { _id: existingCommand._id, status: "pending" },
+        {
+          _id: existingCommand._id,
+          ownerUserId: currentUserId,
+          deviceOwnershipEpoch: targetDevice.ownershipEpoch,
+          status: "pending"
+        },
         {
           $set: {
             status: "cancelled",
@@ -1109,7 +1177,7 @@ function createCommandsRouter({
         oldStatus: "pending",
         newStatus: "cancelled",
         details: {
-          failureReason: cancelledFailureReason
+          hasFailureReason: true
         }
       });
 
@@ -1122,6 +1190,8 @@ function createCommandsRouter({
         const cancelledCommandId = commandIdFrom(cancelledCommand) || id;
         endCommand = await Command.create({
           deviceUid: cancelledCommand.deviceUid,
+          ownerUserId: currentUserId,
+          deviceOwnershipEpoch: targetDevice.ownershipEpoch,
           action: "end",
           type: "END",
           status: "pending",
@@ -1163,12 +1233,12 @@ function createCommandsRouter({
         return res.status(401).json({ error: "Unauthorized" });
       }
 
-      const ownedDeviceUids = await Device.find({
+      const ownedDevices = await Device.find({
         ownerUserId: currentUserId,
         deviceUid: { $regex: DEVICE_UID_REGEX }
-      }).distinct("deviceUid");
+      }).select("deviceUid +ownershipEpoch");
 
-      if (!ownedDeviceUids.length) {
+      if (!ownedDevices.length) {
         return res.json({
           success: true,
           message: "All your commands cleared",
@@ -1176,7 +1246,15 @@ function createCommandsRouter({
         });
       }
 
-      const deletionResult = await Command.deleteMany({ deviceUid: { $in: ownedDeviceUids } });
+      await Promise.all(ownedDevices.map((device) => ensureDeviceOwnershipEpoch(device)));
+      const ownedDeviceUids = ownedDevices.map((device) => device.deviceUid);
+      const deletionResult = await Command.deleteMany({
+        ownerUserId: currentUserId,
+        $or: ownedDevices.map((device) => ({
+          deviceUid: device.deviceUid,
+          deviceOwnershipEpoch: device.ownershipEpoch
+        }))
+      });
       const deletedCount = Number(deletionResult?.deletedCount || 0);
       emitCommandsCleared(ownedDeviceUids, deletedCount);
 
@@ -1197,20 +1275,29 @@ function createCommandsRouter({
       console.log("[CommandStatus] Callback received", {
         commandId: id,
         deviceUid: req.deviceUid ?? null,
-        status: typeof status === "string" ? status.trim().toLowerCase() : status ?? null,
+        status:
+          typeof status === "string"
+            ? status.trim().toLowerCase().slice(0, 32)
+            : status === undefined || status === null
+              ? null
+              : typeof status,
         hasFailureReason: typeof failureReason === "string" && failureReason.trim() !== "",
-        downloadDurationSeconds: downloadDurationSeconds ?? null
+        downloadDurationSeconds: Number.isFinite(Number(downloadDurationSeconds))
+          ? Number(downloadDurationSeconds)
+          : downloadDurationSeconds === undefined || downloadDurationSeconds === null
+            ? null
+            : typeof downloadDurationSeconds
       });
 
       const command = mongoose.isValidObjectId(id)
-        ? await Command.findById(id)
+        ? await Command.findById(id).select("+deviceOwnershipEpoch")
         : null;
 
       if (!command) {
         logCommandLifecycle("status_update_missing_command", {
           commandId: id,
           oldStatus: null,
-          newStatus: status ?? null
+          newStatus: typeof status === "string" ? status.trim().toLowerCase().slice(0, 32) : null
         });
         return res.status(404).json({ error: "Command not found" });
       }
@@ -1227,6 +1314,16 @@ function createCommandsRouter({
         });
         return res.status(403).json({ error: "Forbidden" });
       }
+      if (!commandMatchesDeviceOwnership(command, req.authenticatedDevice)) {
+        logSecurityEvent("command_status_update_forbidden_stale_ownership", {
+          ip: req.ip,
+          path: req.originalUrl,
+          method: req.method,
+          commandId: id,
+          deviceUid: authenticatedDeviceUid
+        });
+        return res.status(403).json({ error: "Forbidden" });
+      }
 
       const normalizedStatus =
         typeof status === "string" ? status.trim().toLowerCase() : "";
@@ -1236,7 +1333,7 @@ function createCommandsRouter({
         console.warn("[CommandStatus] Invalid status callback rejected", {
           commandId: id,
           deviceUid: req.deviceUid ?? null,
-          status
+          status: normalizedStatus || typeof status
         });
         return res.status(400).json({
           error: "Invalid status. Only 'pending', 'executing', 'executed', 'failed', and 'cancelled' are supported."
@@ -1288,6 +1385,11 @@ function createCommandsRouter({
       } else if (normalizedStatus === "failed" || normalizedStatus === "cancelled") {
         const normalizedFailureReason =
           typeof failureReason === "string" ? failureReason.trim() : "";
+        if (normalizedFailureReason.length > 1000) {
+          return res.status(400).json({
+            error: "failureReason must not exceed 1000 characters"
+          });
+        }
         if (normalizedFailureReason) {
           command.failureReason = normalizedFailureReason;
         } else {
@@ -1313,8 +1415,7 @@ function createCommandsRouter({
           console.error("[CommandStatus] Collection status hook failed after command save", {
             commandId: commandIdFrom(command),
             status: normalizedStatus,
-            error: collectionError?.message,
-            stack: collectionError?.stack
+            ...safeErrorMetadata(collectionError)
           });
         }
       }
@@ -1325,10 +1426,9 @@ function createCommandsRouter({
         oldStatus: previousStatus,
         newStatus: normalizedStatus,
         details: {
-          failureReason:
-            normalizedStatus === "failed" || normalizedStatus === "cancelled"
-              ? command.failureReason ?? null
-              : null,
+          hasFailureReason:
+            (normalizedStatus === "failed" || normalizedStatus === "cancelled") &&
+            Boolean(command.failureReason),
           downloadDurationSeconds:
             normalizedStatus === "executed" && isDownloadDataCommand
               ? command.downloadDurationSeconds ?? null
@@ -1341,10 +1441,9 @@ function createCommandsRouter({
           commandId: commandIdFrom(command),
           deviceUid: command.deviceUid,
           status: normalizedStatus,
-          failureReason:
-            normalizedStatus === "failed" || normalizedStatus === "cancelled"
-              ? command.failureReason ?? null
-              : null
+          hasFailureReason:
+            (normalizedStatus === "failed" || normalizedStatus === "cancelled") &&
+            Boolean(command.failureReason)
         });
       }
 

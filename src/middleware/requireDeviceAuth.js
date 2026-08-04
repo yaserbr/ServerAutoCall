@@ -1,6 +1,7 @@
 const Device = require("../models/Device");
 const { isDeviceTokenMatch, normalizeDeviceToken } = require("../auth/deviceToken");
 const { logSecurityEvent } = require("../security/auditLogger");
+const { ensureDeviceOwnershipEpoch } = require("../security/deviceOwnership");
 
 const DEVICE_UID_LENGTH = 5;
 const DEVICE_UID_REGEX = new RegExp(`^[a-z0-9]{${DEVICE_UID_LENGTH}}$`);
@@ -73,11 +74,10 @@ function extractDeviceTokenFromRequest(req) {
     "authToken"
   ]);
 
-  const rawFromQuery = pickFirstDefinedValue(req.query, ["deviceToken", "token"]);
   const rawFromHeader =
     typeof req.headers?.["x-device-token"] === "string" ? req.headers["x-device-token"] : "";
 
-  return normalizeDeviceToken(rawFromBody ?? rawFromQuery ?? rawFromHeader ?? "");
+  return normalizeDeviceToken(rawFromHeader || rawFromBody || "");
 }
 
 function rejectUnauthorized(req, res, reason, extra = {}) {
@@ -98,9 +98,6 @@ function rejectUnauthorized(req, res, reason, extra = {}) {
 }
 
 function buildRequireDeviceAuth(options = {}) {
-  const allowMissingTokenHash = options.allowMissingTokenHash === true;
-  const allowLegacyFallback = options.allowLegacyFallback === true;
-
   return async function requireDeviceAuth(req, res, next) {
     const normalizedDeviceUid = extractDeviceUidFromRequest(req, options);
     if (!normalizedDeviceUid) {
@@ -110,7 +107,9 @@ function buildRequireDeviceAuth(options = {}) {
     }
 
     const providedDeviceToken = extractDeviceTokenFromRequest(req);
-    const device = await Device.findOne({ deviceUid: normalizedDeviceUid }).select("+deviceTokenHash");
+    const device = await Device.findOne({ deviceUid: normalizedDeviceUid }).select(
+      "+deviceTokenHash +ownershipEpoch"
+    );
     if (!device) {
       return rejectUnauthorized(req, res, "device_not_found", {
         deviceUid: normalizedDeviceUid
@@ -121,65 +120,25 @@ function buildRequireDeviceAuth(options = {}) {
       typeof device.deviceTokenHash === "string" && device.deviceTokenHash.trim() !== "";
 
     if (!hasTokenHash) {
-      if (allowMissingTokenHash) {
-        req.authenticatedDevice = device;
-        req.deviceUid = normalizedDeviceUid;
-        req.deviceAuthNeedsProvision = true;
-        return next();
-      }
-
-      if (allowLegacyFallback) {
-        logSecurityEvent("legacy_device_auth_fallback", {
-          ip: req.ip,
-          path: req.originalUrl,
-          method: req.method,
-          deviceUid: normalizedDeviceUid
-        });
-        req.authenticatedDevice = device;
-        req.deviceUid = normalizedDeviceUid;
-        req.deviceAuthUsedLegacyFallback = true;
-        return next();
-      }
-
       return rejectUnauthorized(req, res, "device_token_missing_on_server", {
         deviceUid: normalizedDeviceUid
       });
     }
 
     if (!providedDeviceToken) {
-      if (allowLegacyFallback) {
-        logSecurityEvent("legacy_device_auth_missing_token_fallback", {
-          ip: req.ip,
-          path: req.originalUrl,
-          method: req.method,
-          deviceUid: normalizedDeviceUid
-        });
-        req.authenticatedDevice = device;
-        req.deviceUid = normalizedDeviceUid;
-        req.deviceAuthUsedLegacyFallback = true;
-        return next();
-      }
-
       return rejectUnauthorized(req, res, "device_token_missing", {
         deviceUid: normalizedDeviceUid
       });
     }
 
     if (!isDeviceTokenMatch(providedDeviceToken, device.deviceTokenHash)) {
-      if (allowLegacyFallback) {
-        logSecurityEvent("legacy_device_auth_bad_token_fallback", {
-          ip: req.ip,
-          path: req.originalUrl,
-          method: req.method,
-          deviceUid: normalizedDeviceUid
-        });
-        req.authenticatedDevice = device;
-        req.deviceUid = normalizedDeviceUid;
-        req.deviceAuthUsedLegacyFallback = true;
-        return next();
-      }
-
       return rejectUnauthorized(req, res, "device_token_mismatch", {
+        deviceUid: normalizedDeviceUid
+      });
+    }
+
+    if (!(await ensureDeviceOwnershipEpoch(device))) {
+      return rejectUnauthorized(req, res, "device_ownership_epoch_missing", {
         deviceUid: normalizedDeviceUid
       });
     }

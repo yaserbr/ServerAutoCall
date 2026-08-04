@@ -1,4 +1,6 @@
 const express = require("express");
+const crypto = require("crypto");
+const { safeErrorMetadata } = require("../security/safeError");
 
 /**
  * Creates and configures the Devices router.
@@ -9,10 +11,8 @@ function createDevicesRouter({
   User,
   requireAuth,
   requireAuthenticatedDevice,
-  requireAuthenticatedDeviceAllowBootstrap,
   extractDeviceRegistrationInput,
   normalizeEsimSubscriptions,
-  redactSensitivePayload,
   normalizeDeviceUid,
   extractDeviceTokenFromRequest,
   toUtcISOString,
@@ -39,7 +39,8 @@ function createDevicesRouter({
   parseRequestBodyObject,
   DEVICE_UID_FORMAT_ERROR,
   DEVICE_UID_REGEX,
-  translatePairingTokenReasonToCodeReason
+  translatePairingTokenReasonToCodeReason,
+  revokeDashboardAccessForDevice
 }) {
   const router = express.Router();
 
@@ -54,8 +55,7 @@ function createDevicesRouter({
       const requestInfo = {
         contentType: req.headers["content-type"] ?? null,
         userAgent: req.headers["user-agent"] ?? null,
-        keys: Object.keys(payload || {}),
-        body: redactSensitivePayload(payload)
+        keys: Object.keys(payload || {})
       };
       console.log("[DeviceRegister] Incoming request:", requestInfo);
 
@@ -66,7 +66,9 @@ function createDevicesRouter({
 
       const providedDeviceToken = extractDeviceTokenFromRequest(req);
       const now = new Date(toUtcISOString());
-      let device = await Device.findOne({ deviceUid: normalizedDeviceUid }).select("+deviceTokenHash");
+      let device = await Device.findOne({ deviceUid: normalizedDeviceUid }).select(
+        "+deviceTokenHash +ownershipEpoch"
+      );
       const wasExisting = Boolean(device);
       let issuedDeviceToken = null;
 
@@ -81,11 +83,23 @@ function createDevicesRouter({
           });
           return res.status(401).json({ error: "Unauthorized" });
         }
+      } else if (
+        device?.ownerUserId &&
+        String(device.ownerUserId) !== String(ownerUserId)
+      ) {
+        logSecurityEvent("device_pair_rejected_claimed_legacy_device", {
+          ip: req.ip,
+          path: req.originalUrl,
+          method: req.method,
+          deviceUid: normalizedDeviceUid
+        });
+        return res.status(401).json({ error: "Unauthorized" });
       }
 
       if (!device) {
         device = new Device({
           deviceUid: normalizedDeviceUid,
+          ownershipEpoch: crypto.randomUUID(),
           deviceName: normalizedDeviceName ?? buildDefaultDeviceName(normalizedDeviceUid),
           platform: normalizedPlatform,
           ...(hasEsimSubscriptionsPayload ? { esimSubscriptions: normalizedEsimSubscriptions } : {}),
@@ -111,6 +125,16 @@ function createDevicesRouter({
         }
       }
 
+      if (!device.deviceTokenHash && device.ownerUserId) {
+        logSecurityEvent("device_register_rejected_claimed_legacy_device", {
+          ip: req.ip,
+          path: req.originalUrl,
+          method: req.method,
+          deviceUid: normalizedDeviceUid
+        });
+        return res.status(401).json({ error: "Unauthorized" });
+      }
+
       if (!device.deviceTokenHash) {
         issuedDeviceToken = issueDeviceTokenForDevice(device);
       }
@@ -122,11 +146,11 @@ function createDevicesRouter({
         if (error?.code === 11000) {
           console.warn("[DeviceRegister] Duplicate deviceUid on save, retrying as update:", {
             deviceUid: normalizedDeviceUid,
-            error: error.message
+            ...safeErrorMetadata(error)
           });
 
           const existingDevice = await Device.findOne({ deviceUid: normalizedDeviceUid }).select(
-            "+deviceTokenHash"
+            "+deviceTokenHash +ownershipEpoch"
           );
           if (!existingDevice) {
             throw error;
@@ -166,6 +190,16 @@ function createDevicesRouter({
             existingDevice.esimSubscriptions = normalizedEsimSubscriptions;
           }
 
+          if (!existingDevice.deviceTokenHash && existingDevice.ownerUserId) {
+            logSecurityEvent("device_register_rejected_claimed_legacy_device_after_race", {
+              ip: req.ip,
+              path: req.originalUrl,
+              method: req.method,
+              deviceUid: normalizedDeviceUid
+            });
+            return res.status(401).json({ error: "Unauthorized" });
+          }
+
           if (!existingDevice.deviceTokenHash) {
             issuedDeviceToken = issueDeviceTokenForDevice(existingDevice);
           }
@@ -191,14 +225,13 @@ function createDevicesRouter({
       });
     } catch (error) {
       console.error("[DeviceRegister] Registration failed:", {
-        error: error?.message,
-        stack: error?.stack
+        ...safeErrorMetadata(error)
       });
       return handleServerError(res, error, "POST /devices/register");
     }
   });
 
-  router.post("/devices/heartbeat", requireAuthenticatedDeviceAllowBootstrap, async (req, res) => {
+  router.post("/devices/heartbeat", requireAuthenticatedDevice, async (req, res) => {
     try {
       const { payload } = extractDeviceRegistrationInput(req.body);
       const hasEsimSubscriptionsPayload = Array.isArray(payload?.esimSubscriptions);
@@ -210,8 +243,7 @@ function createDevicesRouter({
       console.log("[DeviceHeartbeat] Incoming request:", {
         contentType: req.headers["content-type"] ?? null,
         userAgent: req.headers["user-agent"] ?? null,
-        keys: Object.keys(payload || {}),
-        body: redactSensitivePayload(payload)
+        keys: Object.keys(payload || {})
       });
 
       if (!normalizedDeviceUid) {
@@ -227,11 +259,6 @@ function createDevicesRouter({
           deviceUid: normalizedDeviceUid
         });
         return res.status(401).json({ error: "Unauthorized" });
-      }
-
-      let issuedDeviceToken = null;
-      if (req.deviceAuthNeedsProvision === true && !device.deviceTokenHash) {
-        issuedDeviceToken = issueDeviceTokenForDevice(device);
       }
 
       device.online = true;
@@ -252,8 +279,7 @@ function createDevicesRouter({
 
       return res.json({
         success: true,
-        device: mappedDevice,
-        ...(issuedDeviceToken ? { deviceToken: issuedDeviceToken } : {})
+        device: mappedDevice
       });
     } catch (error) {
       return handleServerError(res, error, "POST /devices/heartbeat");
@@ -275,8 +301,17 @@ function createDevicesRouter({
           : { ownerUserId: currentUserId })
       }).lean();
       const mappedDevices = await mapDeviceListForResponseWithLinkedAccount(devices);
+      const ownershipScopedDevices = mappedDevices.map((mappedDevice, index) => {
+        const sourceDevice = devices[index];
+        if (isDeviceOwnedByUser(sourceDevice, currentUserId)) return mappedDevice;
+        return {
+          ...mappedDevice,
+          linkedAccount: null,
+          esimSubscriptions: []
+        };
+      });
 
-      return res.json(mappedDevices);
+      return res.json(ownershipScopedDevices);
     } catch (error) {
       return handleServerError(res, error, "GET /devices");
     }
@@ -322,7 +357,9 @@ function createDevicesRouter({
         return res.status(404).json({ error: "Pairing token user not found" });
       }
 
-      let device = await Device.findOne({ deviceUid: normalizedDeviceUid }).select("+deviceTokenHash");
+      let device = await Device.findOne({ deviceUid: normalizedDeviceUid }).select(
+        "+deviceTokenHash +ownershipEpoch"
+      );
       if (pairingCredentialType === "code") {
         if (!providedDeviceToken) {
           return res.status(401).json({ error: "Unauthorized" });
@@ -361,6 +398,8 @@ function createDevicesRouter({
 
       const now = new Date(toUtcISOString());
       let issuedDeviceToken = null;
+      const previousOwnerUserId = device?.ownerUserId ? String(device.ownerUserId) : "";
+      const ownershipChanged = previousOwnerUserId !== String(ownerUserId);
 
       if (!device) {
         device = new Device({
@@ -369,6 +408,7 @@ function createDevicesRouter({
           platform: normalizedPlatform,
           online: true,
           ownerUserId,
+          ownershipEpoch: crypto.randomUUID(),
           claimedAt: now,
           lastSeen: now
         });
@@ -376,6 +416,9 @@ function createDevicesRouter({
         device.online = true;
         device.lastSeen = now;
         device.ownerUserId = ownerUserId;
+        if (ownershipChanged) {
+          device.ownershipEpoch = crypto.randomUUID();
+        }
         device.claimedAt = now;
 
         if (normalizedDeviceName) {
@@ -399,6 +442,9 @@ function createDevicesRouter({
       }
 
       await device.save();
+      if (ownershipChanged) {
+        await revokeDashboardAccessForDevice(normalizedDeviceUid, ownerUserId);
+      }
       const mappedDevice = await mapDeviceForResponseWithLinkedAccount(device);
 
       return res.json({
@@ -439,8 +485,10 @@ function createDevicesRouter({
       }
 
       device.ownerUserId = null;
+      device.ownershipEpoch = crypto.randomUUID();
       device.claimedAt = null;
       await device.save();
+      await revokeDashboardAccessForDevice(normalizedDeviceUid, null);
 
       return res.json({ success: true, device: mapDeviceForResponse(device) });
     } catch (error) {
@@ -474,6 +522,7 @@ function createDevicesRouter({
       }
 
       await device.deleteOne();
+      await revokeDashboardAccessForDevice(normalizedDeviceUid, null);
 
       return res.json({
         success: true,

@@ -18,18 +18,52 @@ function cleanupExpiredEvents(now, dedupeMs) {
   }
 }
 
-function compactPayload(payload = {}) {
+function getSafeRequestPath(value) {
+  if (typeof value !== "string") return value;
+  const queryIndex = value.indexOf("?");
+  const fragmentIndex = value.indexOf("#");
+  const indexes = [queryIndex, fragmentIndex].filter((index) => index >= 0);
+  const endIndex = indexes.length > 0 ? Math.min(...indexes) : value.length;
+  return value.slice(0, endIndex) || "/";
+}
+
+function sanitizeLogValue(key, value, depth = 0) {
+  const normalizedKey = String(key).toLowerCase();
+  if (
+    normalizedKey.includes("token") ||
+    normalizedKey.includes("password") ||
+    normalizedKey.includes("secret") ||
+    normalizedKey.includes("authorization") ||
+    normalizedKey.includes("credential") ||
+    normalizedKey.includes("activationcode")
+  ) {
+    return "[REDACTED]";
+  }
+  if (normalizedKey === "path" || normalizedKey === "url") {
+    return getSafeRequestPath(value);
+  }
+  if (depth >= 6 || value === null || value === undefined) return value;
+  if (Array.isArray(value)) {
+    return value.map((item) => sanitizeLogValue("item", item, depth + 1));
+  }
+  if (typeof value === "object" && Object.getPrototypeOf(value) === Object.prototype) {
+    return compactPayload(value, depth + 1);
+  }
+  return value;
+}
+
+function compactPayload(payload = {}, depth = 0) {
   const normalized = {};
   for (const [key, value] of Object.entries(payload)) {
     if (value === undefined) continue;
-    normalized[key] = value;
+    normalized[key] = sanitizeLogValue(key, value, depth);
   }
   return normalized;
 }
 
 function buildDedupeKey(event, payload = {}) {
   const ip = payload.ip ?? payload.sourceIp ?? "-";
-  const path = payload.path ?? payload.url ?? "-";
+  const path = getSafeRequestPath(payload.path ?? payload.url ?? "-");
   const userId = payload.userId ?? "-";
   const deviceUid = payload.deviceUid ?? "-";
   const reason = payload.reason ?? payload.code ?? "-";
@@ -60,4 +94,4 @@ function logSecurityEvent(event, payload = {}, options = {}) {
   });
 }
 
-module.exports = { logSecurityEvent };
+module.exports = { getSafeRequestPath, logSecurityEvent };

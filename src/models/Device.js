@@ -1,4 +1,5 @@
 const mongoose = require("mongoose");
+const crypto = require("crypto");
 
 const DEVICE_NAME_MAX_LENGTH = 60;
 const DEVICE_UID_LENGTH = 5;
@@ -59,6 +60,12 @@ const deviceSchema = new mongoose.Schema(
       ref: "User",
       default: null,
       index: true
+    },
+    ownershipEpoch: {
+      type: String,
+      default: () => crypto.randomUUID(),
+      required: true,
+      select: false
     },
     deviceTokenHash: {
       type: String,
