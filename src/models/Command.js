@@ -2,6 +2,7 @@ const mongoose = require("mongoose");
 
 const DEVICE_UID_LENGTH = 5;
 const DEVICE_UID_REGEX = new RegExp(`^[a-z0-9]{${DEVICE_UID_LENGTH}}$`);
+const OPEN_APP_PACKAGE_REGEX = /^[a-zA-Z0-9_]+(\.[a-zA-Z0-9_]+)+$/;
 const ACTION_TO_TYPE = {
   call: "CALL",
   end: "END",
@@ -291,7 +292,13 @@ commandSchema.pre("validate", function normalizeUidBeforeValidation() {
     }
     if (this.action === "open_app") {
       requireNonEmptyString("appName", "appName is required");
-      requireNonEmptyString("resolvedPackageName", "resolvedPackageName is required");
+      if (
+        typeof this.resolvedPackageName === "string" &&
+        this.resolvedPackageName.trim() &&
+        !OPEN_APP_PACKAGE_REGEX.test(this.resolvedPackageName.trim())
+      ) {
+        this.invalidate("resolvedPackageName", "resolvedPackageName must be a valid package name");
+      }
     }
     if (this.action === "download_data") {
       requireFiniteNumber("downloadSizeMb", { min: 10, max: 1000, integer: true });
@@ -333,9 +340,24 @@ commandSchema.pre("validate", function normalizeUidBeforeValidation() {
 });
 
 commandSchema.index({ deviceUid: 1, status: 1, createdAt: -1 });
-commandSchema.index({ deviceUid: 1, ownerUserId: 1, deviceOwnershipEpoch: 1, status: 1 });
+commandSchema.index(
+  {
+    deviceUid: 1,
+    ownerUserId: 1,
+    deviceOwnershipEpoch: 1,
+    status: 1,
+    isImmediate: -1,
+    scheduledAt: 1,
+    createdAt: 1,
+    _id: 1
+  },
+  { name: "device_command_dispatch" }
+);
 commandSchema.index({ deviceUid: 1, status: 1 });
-commandSchema.index({ isImmediate: -1, scheduledAt: 1, createdAt: -1 });
+commandSchema.index(
+  { ownerUserId: 1, isImmediate: -1, scheduledAt: 1, createdAt: -1, _id: -1 },
+  { name: "owner_command_dashboard" }
+);
 commandSchema.index({ deviceUid: 1, createdAt: -1 });
 
 module.exports = mongoose.model("Command", commandSchema);

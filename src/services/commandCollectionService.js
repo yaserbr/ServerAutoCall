@@ -247,7 +247,12 @@ class CommandCollectionService {
   /**
    * Listens for command status updates and handles sequence advancement or halting.
    */
-  static async handleCommandStatusChange(commandId, newStatus, failureReason = "") {
+  static async handleCommandStatusChange(
+    commandId,
+    newStatus,
+    failureReason = "",
+    preloadedCommand = null
+  ) {
     console.log(`\n[CommandCollection Service] === handleCommandStatusChange TRIGGERED ===`);
     console.log(`[CommandCollection Service] - Incoming Command ID: ${commandId}`);
     console.log(`[CommandCollection Service] - Reported Status: ${newStatus}`);
@@ -268,43 +273,31 @@ class CommandCollectionService {
     }
 
     try {
-      // Find the physical Command document first to retrieve its deviceUid reliably
-      const command = await Command.findById(commandId).select("+deviceOwnershipEpoch");
+      const command =
+        preloadedCommand && String(preloadedCommand._id) === String(commandId)
+          ? preloadedCommand
+          : await Command.findById(commandId).select("+deviceOwnershipEpoch");
       if (!command) {
         console.log(`[CommandCollection Service] Result: Command with ID ${commandId} not found in DB. Skip.`);
         return;
       }
 
       console.log(`[CommandCollection Service] Command found. Target deviceUid: ${command.deviceUid}`);
-      console.log(`[CommandCollection Service] Querying MongoDB for executing collections running on target device: ${command.deviceUid}`);
-      
-      // Query by indexed fields: deviceUid and status
-      const collections = await CommandCollection.find({
+      console.log(`[CommandCollection Service] Querying MongoDB for the active collection command on target device: ${command.deviceUid}`);
+
+      const collection = await CommandCollection.findOne({
         deviceUid: command.deviceUid,
         ownerUserId: command.ownerUserId,
         deviceOwnershipEpoch: command.deviceOwnershipEpoch,
-        status: "executing"
+        status: "executing",
+        activeCommandIds: { $in: [command._id, String(command._id)] }
       }).select("+deviceOwnershipEpoch");
-
-      if (!collections || collections.length === 0) {
-        console.warn(`[CommandCollection Service] Potentially stuck status callback: no executing collections found for deviceUid: ${command.deviceUid}`, {
-          commandId,
-          status: normalizedStatus
-        });
-        return;
-      }
-
-      // 100% BULLETPROOF MANUAL MATCHING: Bypass all Mongoose schema-level casting filters
-      // Matches regardless of whether the array elements are stored as native ObjectIds or plain strings!
-      const collection = collections.find(col => {
-        return col.activeCommandIds && col.activeCommandIds.some(id => id && String(id) === String(commandId));
-      });
 
       if (!collection) {
         console.warn(`[CommandCollection Service] Potentially stuck status callback: no executing collection contains Command ID.`, {
           commandId,
           deviceUid: command.deviceUid,
-          executingCollectionCount: collections.length
+          status: normalizedStatus
         });
         return;
       }

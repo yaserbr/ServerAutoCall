@@ -4,6 +4,24 @@ const { hasPresentValue, addIfPresent, commandIdFrom, toPlainObject } = require(
 const { ensureDeviceOwnershipEpoch } = require("../security/deviceOwnership");
 const { safeErrorMetadata } = require("../security/safeError");
 
+const COMMAND_PAGE_DEFAULT_SIZE = 100;
+const COMMAND_PAGE_MAX_SIZE = 200;
+const COMMAND_PAGE_MAX_NUMBER = 1000;
+const COMMAND_DASHBOARD_SORT = {
+  isImmediate: -1,
+  scheduledAt: 1,
+  createdAt: -1,
+  _id: -1
+};
+
+function parsePositiveIntegerQuery(value, defaultValue, maximum) {
+  if (value === undefined || value === null || value === "") return defaultValue;
+  if (typeof value !== "string" || !/^\d+$/.test(value.trim())) return null;
+  const parsed = Number(value);
+  if (!Number.isSafeInteger(parsed) || parsed < 1 || parsed > maximum) return null;
+  return parsed;
+}
+
 function commandMatchesDeviceOwnership(command, device, expectedUserId = null) {
   if (!command?.ownerUserId || !command?.deviceOwnershipEpoch || !device?.ownerUserId) {
     return false;
@@ -55,8 +73,7 @@ function createCommandsRouter({
   ESIM_ACTIVATION_CODE_MAX_LENGTH,
   DUMMY_DOWNLOAD_MIN_MB,
   DUMMY_DOWNLOAD_MAX_MB,
-  COMMAND_DUPLICATE_GUARD_WINDOW_MS,
-  DEVICE_UID_REGEX
+  COMMAND_DUPLICATE_GUARD_WINDOW_MS
 }) {
   const router = express.Router();
 
@@ -1014,6 +1031,23 @@ function createCommandsRouter({
       res.set("Cache-Control", "no-store");
 
       const { deviceUid, status } = req.query;
+      const pageSize = parsePositiveIntegerQuery(
+        req.query?.limit,
+        COMMAND_PAGE_DEFAULT_SIZE,
+        COMMAND_PAGE_MAX_SIZE
+      );
+      const page = parsePositiveIntegerQuery(
+        req.query?.page,
+        1,
+        COMMAND_PAGE_MAX_NUMBER
+      );
+      if (!pageSize || !page) {
+        return res.status(400).json({
+          error: `page must be between 1 and ${COMMAND_PAGE_MAX_NUMBER}, and limit must be between 1 and ${COMMAND_PAGE_MAX_SIZE}`
+        });
+      }
+      res.set("X-Page", String(page));
+      res.set("X-Page-Size", String(pageSize));
       const currentUserId = normalizeAuthUserId(req.user?.id);
       if (!currentUserId) {
         return res.status(401).json({ error: "Unauthorized" });
@@ -1050,8 +1084,7 @@ function createCommandsRouter({
         filter.deviceOwnershipEpoch = targetDevice.ownershipEpoch;
       } else {
         const ownedDevices = await Device.find({
-          ownerUserId: currentUserId,
-          deviceUid: { $regex: DEVICE_UID_REGEX }
+          ownerUserId: currentUserId
         }).select("deviceUid +ownershipEpoch");
 
         if (!ownedDevices.length) {
@@ -1072,28 +1105,26 @@ function createCommandsRouter({
 
       filter.createdAt = { $gte: last24HoursCutoff };
 
-      const result = await Command.find(filter).lean();
-
-      const sortedResult = [...result].sort((a, b) => {
-        const aImmediate = !a.scheduledAt;
-        const bImmediate = !b.scheduledAt;
-
-        if (aImmediate && !bImmediate) return -1;
-        if (!aImmediate && bImmediate) return 1;
-        if (aImmediate && bImmediate) return 0;
-
-        return new Date(a.scheduledAt).getTime() - new Date(b.scheduledAt).getTime();
-      });
+      const pageOffset = (page - 1) * pageSize;
+      const result = await Command.find(filter)
+        .sort(COMMAND_DASHBOARD_SORT)
+        .skip(pageOffset)
+        .limit(pageSize + 1)
+        .lean();
+      const hasMore = result.length > pageSize;
+      const visibleCommands = hasMore ? result.slice(0, pageSize) : result;
+      res.set("X-Has-More", hasMore ? "true" : "false");
 
       logCommandLifecycle("fetched", {
         deviceUid: typeof filter.deviceUid === "string" ? filter.deviceUid : null,
         oldStatus: null,
         newStatus: status ?? null,
-        count: sortedResult.length,
-        ids: sortedResult.map((command) => commandIdFrom(command))
+        count: visibleCommands.length,
+        ids: visibleCommands.map((command) => commandIdFrom(command)),
+        details: { page, pageSize, hasMore }
       });
 
-      return res.json(sortedResult.map(mapCommandForResponse));
+      return res.json(visibleCommands.map(mapCommandForResponse));
     } catch (error) {
       return handleServerError(res, error, "GET /commands");
     }
@@ -1234,8 +1265,7 @@ function createCommandsRouter({
       }
 
       const ownedDevices = await Device.find({
-        ownerUserId: currentUserId,
-        deviceUid: { $regex: DEVICE_UID_REGEX }
+        ownerUserId: currentUserId
       }).select("deviceUid +ownershipEpoch");
 
       if (!ownedDevices.length) {
@@ -1409,7 +1439,8 @@ function createCommandsRouter({
           await CommandCollectionService.handleCommandStatusChange(
             command._id.toString(),
             normalizedStatus,
-            command.failureReason
+            command.failureReason,
+            command
           );
         } catch (collectionError) {
           console.error("[CommandStatus] Collection status hook failed after command save", {

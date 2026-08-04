@@ -237,4 +237,15 @@ commandCollectionSchema.pre("validate", function normalizeUidBeforeValidation() 
   this.deviceUid = normalizeDeviceUid(this.deviceUid);
 });
 
+commandCollectionSchema.index(
+  {
+    deviceUid: 1,
+    ownerUserId: 1,
+    deviceOwnershipEpoch: 1,
+    status: 1,
+    activeCommandIds: 1
+  },
+  { name: "active_collection_command_lookup" }
+);
+
 module.exports = mongoose.model("CommandCollection", commandCollectionSchema);

@@ -38,7 +38,6 @@ function createDevicesRouter({
   mapDeviceForResponse,
   parseRequestBodyObject,
   DEVICE_UID_FORMAT_ERROR,
-  DEVICE_UID_REGEX,
   translatePairingTokenReasonToCodeReason,
   revokeDashboardAccessForDevice
 }) {
@@ -295,7 +294,6 @@ function createDevicesRouter({
 
       const includeUnclaimed = parseIncludeUnclaimedQueryValue(req.query?.unclaimed);
       const devices = await Device.find({
-        deviceUid: { $regex: DEVICE_UID_REGEX },
         ...(includeUnclaimed
           ? { $or: [{ ownerUserId: currentUserId }, { ownerUserId: null }] }
           : { ownerUserId: currentUserId })

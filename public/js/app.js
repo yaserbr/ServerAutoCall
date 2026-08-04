@@ -43,7 +43,8 @@
         const PAIRING_QR_DEFAULT_SECONDS = 5 * 60;
         const MANUAL_PAIRING_CODE_REGEX = /^\d{6}$/;
         const MANUAL_PAIRING_CODE_PLACEHOLDER = "------";
-        const COMMANDS_AUTO_REFRESH_INTERVAL_MS = 2000;
+        const COMMANDS_SOCKET_FALLBACK_REFRESH_INTERVAL_MS = 30000;
+        const COMMANDS_CACHE_MAX_ITEMS = 100;
         let screenMirrorSocket = null;
         let commandDashboardJoinedDeviceUids = new Set();
         let commandsCache = [];
@@ -486,7 +487,9 @@
         }
 
         function replaceCommandsCache(commands) {
-            commandsCache = Array.isArray(commands) ? commands.filter(Boolean) : [];
+            commandsCache = Array.isArray(commands)
+                ? commands.filter(Boolean).slice(0, COMMANDS_CACHE_MAX_ITEMS)
+                : [];
             renderCommandsFromCache();
         }
 
@@ -517,6 +520,9 @@
             } else {
                 commandsCache = [commandRecord, ...commandsCache];
             }
+            if (commandsCache.length > COMMANDS_CACHE_MAX_ITEMS) {
+                commandsCache = commandsCache.slice(0, COMMANDS_CACHE_MAX_ITEMS);
+            }
 
             renderCommandsFromCache();
         }
@@ -540,8 +546,11 @@
             renderCommandsFromCache();
         }
 
-        async function refreshCommandsSilently() {
+        async function refreshCommandsSilently({ force = false } = {}) {
             if (!authenticatedUser || commandsAutoRefreshInFlight) {
+                return;
+            }
+            if (!force && screenMirrorSocket?.connected) {
                 return;
             }
 
@@ -577,8 +586,7 @@
             }
             commandsAutoRefreshIntervalId = setInterval(() => {
                 void refreshCommandsSilently();
-            }, COMMANDS_AUTO_REFRESH_INTERVAL_MS);
-            void refreshCommandsSilently();
+            }, COMMANDS_SOCKET_FALLBACK_REFRESH_INTERVAL_MS);
         }
 
         function getDeviceDropdownRecordByUid(devices, uid) {
@@ -4129,6 +4137,7 @@
             });
 
             screenMirrorSocket.on("connect", () => {
+                void refreshCommandsSilently({ force: true });
                 if (screenMirrorJoinedDeviceUid) {
                     screenMirrorSocket.emit("dashboard:join", {
                         deviceUid: screenMirrorJoinedDeviceUid
@@ -4144,6 +4153,9 @@
                         void startWebRtcViewerForDevice(deviceUid);
                     }
                 });
+            });
+            screenMirrorSocket.on("disconnect", () => {
+                void refreshCommandsSilently({ force: true });
             });
             screenMirrorSocket.on("connect_error", (error) => {
                 const reason = String(error?.message || "").toLowerCase();

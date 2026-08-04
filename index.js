@@ -185,6 +185,7 @@ const MANUAL_PAIRING_CODE_LENGTH = 6;
 const MANUAL_PAIRING_CODE_REGEX = new RegExp(`^\\d{${MANUAL_PAIRING_CODE_LENGTH}}$`);
 const PAIRING_TOKEN_GENERATION_MAX_ATTEMPTS = 10;
 const PAIRING_TOKEN_EXPIRY_CLEANUP_INTERVAL_MS = 60 * 1000;
+const SCREEN_MIRROR_SESSION_TTL_MS = 10 * 60 * 1000;
 const DEFAULT_PUBLIC_SERVER_URL = "https://autocall--serverautocall--yh4cgzrdywjc.code.run";
 const OPEN_APP_PACKAGE_REGEX = /^[a-zA-Z0-9_]+(\.[a-zA-Z0-9_]+)+$/;
 const screenMirrorSessions = new Map();
@@ -194,6 +195,17 @@ const deviceUidBySocketId = new Map();
 const pairingTokenMemoryStore = new Map();
 const requireAuthenticatedDevice = buildRequireDeviceAuth();
 const OPEN_APP_ALIAS_DEFINITIONS = [
+  {
+    packageName: "com.android.settings",
+    aliases: [
+      "settings",
+      "android settings",
+      "system settings",
+      "phone settings",
+      "الإعدادات",
+      "اعدادات"
+    ]
+  },
   { packageName: "com.whatsapp", aliases: ["whatsapp", "whats app", "wa"] },
   { packageName: "org.telegram.messenger", aliases: ["telegram", "telegram app", "tg"] },
   { packageName: "com.google.android.youtube", aliases: ["youtube", "youtube app", "yt"] },
@@ -1792,11 +1804,13 @@ async function listFutureScheduledCommandsForDevice(
     ownerUserId,
     deviceOwnershipEpoch,
     status: "pending",
+    isImmediate: false,
     createdAt: { $gte: getCommandFetchCutoffDate() },
     scheduledAt: { $gt: new Date(toUtcISOString()) }
   })
     .sort({ scheduledAt: 1, createdAt: 1, _id: 1 })
-    .limit(MAX_SCHEDULED_COMMAND_SYNC + 1);
+    .limit(MAX_SCHEDULED_COMMAND_SYNC + 1)
+    .lean();
 
   const visibleScheduledCommands = futureScheduledCommands.slice(0, MAX_SCHEDULED_COMMAND_SYNC);
   return {
@@ -1971,11 +1985,27 @@ function ensureScreenMirrorSession(deviceUid) {
       viewerCount: 0,
       width: null,
       height: null,
-      fps: null
+      fps: null,
+      updatedAtMs: Date.now()
     });
   }
 
   return screenMirrorSessions.get(normalizedDeviceUid) ?? null;
+}
+
+function cleanupInactiveScreenMirrorSessions(nowMs = Date.now()) {
+  for (const [deviceUid, session] of screenMirrorSessions.entries()) {
+    const updatedAtMs = Number(session?.updatedAtMs || 0);
+    const hasViewer = Number(session?.viewerCount || 0) > 0;
+    const hasDeviceSocket = getActiveDeviceSocketCount(deviceUid) > 0;
+    if (
+      !hasViewer &&
+      !hasDeviceSocket &&
+      (!updatedAtMs || nowMs - updatedAtMs >= SCREEN_MIRROR_SESSION_TTL_MS)
+    ) {
+      screenMirrorSessions.delete(deviceUid);
+    }
+  }
 }
 
 function buildScreenMirrorStatus(deviceUid) {
@@ -2126,6 +2156,7 @@ function updateScreenMirrorViewerCount(deviceUid) {
     }
   }
   session.viewerCount = viewerCount;
+  session.updatedAtMs = Date.now();
 }
 
 io.use(createSocketAuthMiddleware());
@@ -2293,6 +2324,7 @@ io.on("connection", (socket) => {
     session.fps = Number.isFinite(Number(payload?.fps))
       ? Math.max(0, Math.round(Number(payload.fps)))
       : null;
+    session.updatedAtMs = Date.now();
 
     console.log("[SCREEN_MIRROR] started", { deviceUid });
     emitScreenMirrorStatus(deviceUid);
@@ -2307,6 +2339,7 @@ io.on("connection", (socket) => {
 
     session.status = "stopped";
     session.lastFrameAt = nowIsoTimestamp();
+    session.updatedAtMs = Date.now();
 
     console.log("[SCREEN_MIRROR] stopped", {
       deviceUid,
@@ -2327,6 +2360,7 @@ io.on("connection", (socket) => {
 
     session.status = "error";
     session.lastFrameAt = nowIsoTimestamp();
+    session.updatedAtMs = Date.now();
 
     console.log("[SCREEN_MIRROR] error", {
       deviceUid,
@@ -2687,7 +2721,6 @@ const devicesRouter = createDevicesRouter({
   mapDeviceForResponse,
   parseRequestBodyObject,
   DEVICE_UID_FORMAT_ERROR,
-  DEVICE_UID_REGEX,
   translatePairingTokenReasonToCodeReason,
   revokeDashboardAccessForDevice
 });
@@ -2731,8 +2764,7 @@ const commandsRouter = createCommandsRouter({
   ESIM_ACTIVATION_CODE_MAX_LENGTH,
   DUMMY_DOWNLOAD_MIN_MB,
   DUMMY_DOWNLOAD_MAX_MB,
-  COMMAND_DUPLICATE_GUARD_WINDOW_MS,
-  DEVICE_UID_REGEX
+  COMMAND_DUPLICATE_GUARD_WINDOW_MS
 });
 app.use(commandsRouter);
 
@@ -2771,16 +2803,25 @@ app.post(["/contacts", "/api/contacts"], requireAuth, async (req, res) => {
     const trimmedName = name.trim();
     const trimmedPhoneNumber = phoneNumber.trim();
 
-    // Check if a contact with this phone number already exists for this user
-    let contact = await Contact.findOne({ userId: currentUserId, phoneNumber: trimmedPhoneNumber });
-    
+    const matchingContacts = await Contact.find({
+      userId: currentUserId,
+      $or: [
+        { phoneNumber: trimmedPhoneNumber },
+        { name: trimmedName }
+      ]
+    }).limit(2);
+
+    // Preserve phone-number precedence while resolving both possible matches in one query.
+    let contact = matchingContacts.find(
+      (candidate) => candidate.phoneNumber === trimmedPhoneNumber
+    );
+
     if (contact) {
       // If same phone number exists, overwrite/update the contact's name to the new one
       contact.name = trimmedName;
       await contact.save();
     } else {
-      // Otherwise, check if a contact with this name already exists for this user
-      contact = await Contact.findOne({ userId: currentUserId, name: trimmedName });
+      contact = matchingContacts.find((candidate) => candidate.name === trimmedName);
       if (contact) {
         // If same name exists, overwrite/update the phone number
         contact.phoneNumber = trimmedPhoneNumber;
@@ -3070,7 +3111,9 @@ function startPairingTokenMemoryCleanupLoop() {
   }
 
   pairingTokenCleanupIntervalId = setInterval(() => {
-    cleanupExpiredPairingTokensInMemory(Date.now());
+    const nowMs = Date.now();
+    cleanupExpiredPairingTokensInMemory(nowMs);
+    cleanupInactiveScreenMirrorSessions(nowMs);
   }, PAIRING_TOKEN_EXPIRY_CLEANUP_INTERVAL_MS);
 
   if (typeof pairingTokenCleanupIntervalId.unref === "function") {

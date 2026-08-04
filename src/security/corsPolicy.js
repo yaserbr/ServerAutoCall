@@ -65,6 +65,7 @@ function createExpressCorsMiddleware(cors, logSecurityEvent) {
         "X-Device-Uid"
       ],
       credentials: true,
+      exposedHeaders: ["X-Page", "X-Page-Size", "X-Has-More"],
       methods: ["GET", "HEAD", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
       origin: origin ? normalizeOrigin(origin) : false
     })(req, res, next);
